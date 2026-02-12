@@ -17,6 +17,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@system-design-sandbox/component-library':
+        specifier: workspace:*
+        version: link:../../packages/component-library
+      '@system-design-sandbox/simulation-engine':
+        specifier: workspace:*
+        version: link:../../packages/simulation-engine
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.1.18(vite@7.3.1(@types/node@24.10.13)(jiti@2.6.1)(lightningcss@1.30.2))

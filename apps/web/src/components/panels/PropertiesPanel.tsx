@@ -45,13 +45,8 @@ export function PropertiesPanel() {
 
   if (!selectedNode) {
     return (
-      <div className="w-64 bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col">
-        <div className="px-3 py-3 border-b border-[var(--color-border)]">
-          <h2 className="text-sm font-bold text-slate-200">Properties</h2>
-        </div>
-        <div className="flex-1 flex items-center justify-center p-4">
-          <p className="text-xs text-slate-500 text-center">Select a component on the canvas to edit its properties</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center p-4">
+        <p className="text-xs text-slate-500 text-center">Select a component on the canvas to edit its properties</p>
       </div>
     );
   }
@@ -61,7 +56,7 @@ export function PropertiesPanel() {
   const config = selectedNode.data.config;
 
   return (
-    <div className="w-64 bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
+    <div className="flex flex-col flex-1 overflow-hidden">
       <div className="px-3 py-3 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-lg">{paletteItem?.icon || selectedNode.data.icon}</span>

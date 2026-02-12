@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@system-design-sandbox/component-library": "workspace:*",
+    "@system-design-sandbox/simulation-engine": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@xyflow/react": "^12.10.0",
     "framer-motion": "^12.34.0",

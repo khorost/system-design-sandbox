@@ -8,6 +8,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
   type NodeTypes,
+  type EdgeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -20,6 +21,7 @@ import { CacheNode } from './nodes/CacheNode.tsx';
 import { QueueNode } from './nodes/QueueNode.tsx';
 import { LoadBalancerNode } from './nodes/LoadBalancerNode.tsx';
 import { GatewayNode } from './nodes/GatewayNode.tsx';
+import { FlowEdge } from './edges/FlowEdge.tsx';
 import { Toolbar } from './controls/Toolbar.tsx';
 
 const nodeTypes: NodeTypes = {
@@ -29,6 +31,10 @@ const nodeTypes: NodeTypes = {
   queueNode: QueueNode,
   loadBalancerNode: LoadBalancerNode,
   gatewayNode: GatewayNode,
+};
+
+const edgeTypes: EdgeTypes = {
+  flow: FlowEdge,
 };
 
 let nodeId = 0;
@@ -106,11 +112,12 @@ function CanvasInner() {
         onDragOver={onDragOver}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         snapToGrid
         snapGrid={[15, 15]}
         defaultEdgeOptions={{
-          animated: true,
+          type: 'flow',
           style: { stroke: '#3b82f6', strokeWidth: 2 },
         }}
         proOptions={{ hideAttribution: true }}

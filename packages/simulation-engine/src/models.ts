@@ -96,3 +96,12 @@ export interface LoadProfile {
   rps: number;
   durationSec: number;
 }
+
+export interface SimRequest {
+  id: string;
+  path: string[];
+  currentStep: number;
+  totalLatencyMs: number;
+  failed: boolean;
+  failureReason?: string;
+}

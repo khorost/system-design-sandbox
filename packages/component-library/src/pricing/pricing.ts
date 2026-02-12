@@ -57,6 +57,71 @@ export const pricingModels: PricingModel[] = [
       return 50; // $/month estimate
     },
   },
+  {
+    type: 'mongodb',
+    calculate: (config) => {
+      const replicas = (config.replicas as number) || 3;
+      const shards = (config.shards as number) || 1;
+      const nodePrice = 0.28; // $/hour per node
+      return replicas * shards * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 'cassandra',
+    calculate: (config) => {
+      const nodes = (config.nodes as number) || 3;
+      const nodePrice = 0.35; // $/hour per node
+      return nodes * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 'elasticsearch',
+    calculate: (config) => {
+      const nodes = (config.nodes as number) || 3;
+      const nodePrice = 0.32; // $/hour per node
+      return nodes * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 'rabbitmq',
+    calculate: (config) => {
+      const haMode = (config.ha_mode as boolean) ?? true;
+      const nodes = haMode ? 3 : 1;
+      const nodePrice = 0.14; // $/hour per node
+      return nodes * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 's3',
+    calculate: (config) => {
+      const storageClass = (config.storage_class as string) || 'standard';
+      const storageGb = (config.storage_gb as number) || 100;
+      const pricePerGb = storageClass === 'glacier' ? 0.004 : storageClass === 'infrequent' ? 0.0125 : 0.023;
+      return storageGb * pricePerGb;
+    },
+  },
+  {
+    type: 'serverless_function',
+    calculate: (config) => {
+      const maxConcurrent = (config.max_concurrent as number) || 1000;
+      // Estimate: ~1M invocations/month at avg 200ms, 256MB
+      const invocations = maxConcurrent * 1000;
+      const pricePerInvocation = 0.0000002; // $0.20 per 1M
+      const computeGbSec = invocations * 0.2 * 0.25; // 200ms avg, 256MB
+      const computePrice = 0.0000166667; // per GB-second
+      return invocations * pricePerInvocation + computeGbSec * computePrice;
+    },
+  },
+  {
+    type: 'api_gateway',
+    calculate: (config) => {
+      const maxRps = (config.max_rps as number) || 50000;
+      // Estimate monthly requests from max RPS * 30% average utilization
+      const monthlyRequests = maxRps * 0.3 * 86400 * 30;
+      const pricePerMillion = 3.5;
+      return (monthlyRequests / 1_000_000) * pricePerMillion;
+    },
+  },
 ];
 
 export function estimateMonthlyCost(type: ComponentType, config: Record<string, unknown>): number {
