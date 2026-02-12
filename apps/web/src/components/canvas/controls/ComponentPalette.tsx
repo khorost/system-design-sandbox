@@ -1,0 +1,58 @@
+import { useState, type DragEvent } from 'react';
+import { paletteCategories, paletteItems, type PaletteItem } from './paletteData.ts';
+import type { ComponentCategory } from '../../../types/index.ts';
+
+export function ComponentPalette() {
+  const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('compute');
+
+  const onDragStart = (event: DragEvent, item: PaletteItem) => {
+    event.dataTransfer.setData('application/reactflow-type', item.type);
+    event.dataTransfer.setData('application/reactflow-label', item.label);
+    event.dataTransfer.setData('application/reactflow-icon', item.icon);
+    event.dataTransfer.setData('application/reactflow-category', item.category);
+    event.dataTransfer.effectAllowed = 'move';
+  };
+
+  return (
+    <div className="w-56 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col overflow-hidden">
+      <div className="px-3 py-3 border-b border-[var(--color-border)]">
+        <h2 className="text-sm font-bold text-slate-200">Components</h2>
+        <p className="text-[10px] text-slate-400 mt-0.5">Drag to canvas</p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {paletteCategories.map((cat) => {
+          const items = paletteItems.filter((i) => i.category === cat.key);
+          const isExpanded = expandedCategory === cat.key;
+          return (
+            <div key={cat.key}>
+              <button
+                onClick={() => setExpandedCategory(isExpanded ? null : cat.key)}
+                className="w-full px-3 py-2 flex items-center justify-between text-xs font-semibold text-slate-300 hover:bg-[var(--color-surface-hover)] transition-colors"
+              >
+                <span>{cat.label}</span>
+                <span className="text-slate-500 text-[10px]">
+                  {items.length} {isExpanded ? '▼' : '▶'}
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="px-2 pb-2 space-y-1">
+                  {items.map((item) => (
+                    <div
+                      key={item.type}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, item)}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab active:cursor-grabbing hover:bg-[var(--color-surface-hover)] transition-colors border border-transparent hover:border-[var(--color-border)]"
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      <span className="text-xs text-slate-300">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

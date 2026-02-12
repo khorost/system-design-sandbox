@@ -1,0 +1,17 @@
+{
+  "name": "system-design-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive System Design Constructor — visual architecture editor with simulation",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
