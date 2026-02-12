@@ -14,7 +14,7 @@ function RightPanel() {
   const [activeTab, setActiveTab] = useState<Tab>('Properties');
 
   return (
-    <div className="w-64 bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
+    <div className="bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
       <div className="flex border-b border-[var(--color-border)]">
         {TABS.map((tab) => (
           <button
@@ -44,9 +44,14 @@ export default function App() {
   useWhatIfMode();
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-bg)]">
+    <div
+      className="h-screen overflow-hidden bg-[var(--color-bg)]"
+      style={{ display: 'grid', gridTemplateColumns: '14rem 1fr 14rem' }}
+    >
       <ComponentPalette />
-      <Canvas />
+      <div className="min-w-0 min-h-0 overflow-hidden">
+        <Canvas />
+      </div>
       <RightPanel />
     </div>
   );

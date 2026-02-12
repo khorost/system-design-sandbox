@@ -100,7 +100,7 @@ function CanvasInner() {
   }, [selectNode]);
 
   return (
-    <div ref={reactFlowWrapper} className="flex-1 h-full relative">
+    <div ref={reactFlowWrapper} className="w-full h-full relative">
       <Toolbar />
       <ReactFlow
         nodes={nodes}

@@ -14,7 +14,7 @@ export function ComponentPalette() {
   };
 
   return (
-    <div className="w-56 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col overflow-hidden">
+    <div className="bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col overflow-hidden">
       <div className="px-3 py-3 border-b border-[var(--color-border)]">
         <h2 className="text-sm font-bold text-slate-200">Components</h2>
         <p className="text-[10px] text-slate-400 mt-0.5">Drag to canvas</p>
