@@ -11,6 +11,7 @@
 | [TD-007](#td-007-статический-анализ-архитектуры-spof-anti-patterns-health-report) | Статический анализ архитектуры (SPOF, anti-patterns, health report) | High |
 | [TD-008](#td-008-экспорт-схемы-в-png) | Экспорт схемы в PNG | Medium |
 | [TD-009](#td-009-sizing-calculator) | Sizing Calculator (RPS → ресурсы) | Medium |
+| [TD-010](#td-010-фаза-3--chaos-engineering) | Фаза 3 — Chaos Engineering | High |
 
 ---
 
@@ -689,3 +690,273 @@ function exportToPng() {
 - [ ] Автопересчёт при изменении любого входного параметра
 - [ ] «Apply to Canvas» — обновить config узлов (replicas, maxRps, storage) по результатам
 - [ ] Привязка к курсу: Занятие 22 (Sizing), ДЗ 4
+
+---
+
+## TD-010: Фаза 3 — Chaos Engineering
+
+**Приоритет:** High
+**Компоненты:** packages/simulation-engine, apps/web
+**Фаза спеки:** 3 (Chaos Mode)
+
+### Текущее состояние
+
+Движок уже умеет:
+- `engine.injectFailure(nodeId)` — убивает ноду (`isAlive = false`)
+- `propagateFailure()` — каскадный эффект: нагрузка перераспределяется, зависимые могут упасть
+- Worker protocol: `INJECT_FAILURE` → `FAILURE_REPORT`
+- `WorkerManager.injectFailure()` + `onFailureReport()` callback
+
+Не подключено:
+- `failureRate` в ComponentModel — заведён, всегда 0
+- `failure_probability` в UI config контейнеров — не передаётся в движок
+- ChaosPanel.tsx — пустой stub, не в табах App.tsx
+- simulationStore — нет chaos-действий
+
+### Шаг 1. Расширить типы инъекций в движке
+
+Добавить `ChaosEvent` и обработчики в engine.ts:
+
+| Тип инъекции | Эффект на модель | Recover |
+|--|--|--|
+| `kill_instance` | `isAlive = false` (уже есть) | `isAlive = true` |
+| `latency_injection` | `baseLatencyMs += injectedMs` | Вернуть исходное значение |
+| `network_partition` | Убрать connection из adjacency | Восстановить connection |
+| `packet_loss` | Вероятность `lossRate` на ребре: запрос пропадает | Убрать lossRate |
+| `cpu_spike` | `maxRps *= degradeFactor` (снизить capacity) | Вернуть исходное maxRps |
+
+```typescript
+export interface ChaosEvent {
+  id: string;
+  type: 'kill_instance' | 'latency_injection' | 'network_partition' | 'packet_loss' | 'cpu_spike';
+  targetNode?: string;       // для node-level инъекций
+  targetEdge?: string;       // "from->to" для edge-level инъекций
+  params: {
+    latencyMs?: number;      // для latency_injection
+    lossRate?: number;       // 0..1 для packet_loss
+    degradeFactor?: number;  // 0..1 для cpu_spike
+  };
+  injectedAtTick: number;
+}
+```
+
+Worker protocol — добавить:
+- `INJECT_CHAOS { event: ChaosEvent }` — применить инъекцию
+- `RECOVER_CHAOS { eventId: string }` — откатить
+- `CHAOS_STATE { active: ChaosEvent[] }` — текущие активные инъекции
+
+**Файлы:** `models.ts`, `engine.ts`, `protocol.ts`, `worker.ts`, `workerManager.ts`
+
+### Задачи
+
+- [ ] Тип `ChaosEvent` в models.ts
+- [ ] `injectChaos(event)` и `recoverChaos(eventId)` в engine
+- [ ] Хранение оригинальных значений для recover (`Map<eventId, snapshot>`)
+- [ ] `packet_loss` — в цикле обработки запросов: `if (Math.random() < lossRate) req.failed = true`
+- [ ] `network_partition` — временное удаление ребра из adjacency + connectionMap
+- [ ] Protocol messages: `INJECT_CHAOS`, `RECOVER_CHAOS`, `RECOVER_ALL`
+
+### Шаг 2. SimulationStore: chaos state и actions
+
+Добавить в `simulationStore.ts`:
+
+```typescript
+// State
+chaosEvents: ChaosEvent[];          // активные инъекции
+chaosLog: ChaosLogEntry[];          // лог всех событий с timestamp
+
+// Actions
+injectChaos(event: Omit<ChaosEvent, 'id' | 'injectedAtTick'>): void;
+recoverChaos(eventId: string): void;
+recoverAll(): void;
+```
+
+### Задачи
+
+- [ ] Расширить `SimulationState` interface
+- [ ] `injectChaos()` — генерация id, отправка в worker, добавление в chaosEvents
+- [ ] `recoverChaos()` — отправка RECOVER, удаление из chaosEvents
+- [ ] `recoverAll()` — откат всех активных инъекций
+- [ ] Подписка на `onFailureReport` — запись в chaosLog
+
+### Шаг 3. ChaosPanel UI
+
+Заменить stub на рабочую панель. Добавить в табы App.tsx.
+
+Структура панели:
+- **Секция «Inject»** — кнопки инъекций для выделенного узла/ребра:
+  - Узел: Kill Instance, +Latency (input ms), CPU Spike (slider 0.1-0.9)
+  - Ребро: Network Partition, Packet Loss (slider 0-100%)
+  - Без выделения: «Select a node or edge»
+- **Секция «Active Faults»** — список активных инъекций с кнопкой Recover на каждой + Recover All
+- **Секция «Presets»** — готовые chaos-сценарии (шаг 9)
+
+### Задачи
+
+- [ ] Компонент `ChaosPanel` с секциями Inject / Active / Presets
+- [ ] Контекстное меню: кнопки инъекций зависят от типа выделенного элемента
+- [ ] Input для latencyMs, slider для lossRate/degradeFactor
+- [ ] Список активных инъекций с иконкой типа, целью и кнопкой Recover
+- [ ] Добавить «Chaos» в табы нижней зоны App.tsx (рядом с Simulation / Metrics)
+
+### Шаг 4. Визуализация на канвасе
+
+Отображение активных инъекций прямо на графе:
+
+| Инъекция | Визуальный эффект |
+|--|--|
+| `kill_instance` | Нода серая + перечёркнутая + иконка черепа |
+| `latency_injection` | Оранжевый бейдж `+500ms` на ноде |
+| `network_partition` | Ребро пунктирное красное + иконка разрыва |
+| `packet_loss` | Ребро мерцает, бейдж `30% loss` |
+| `cpu_spike` | Красный бейдж `CPU 80%↓` на ноде |
+
+### Задачи
+
+- [ ] Передавать `chaosEvents` в компоненты нод через simulationStore
+- [ ] В BaseNode/ServiceNode/DatabaseNode: рендер overlay при активной инъекции
+- [ ] В FlowEdge: стиль пунктира/мерцания при partition/packet_loss
+- [ ] Бейджи с параметрами инъекции
+
+### Шаг 5. Timeline событий
+
+Компонент `ChaosTimeline` — хронологическая лента:
+
+```
+[0.0s]  ▶ Simulation started (constant 1000 rps)
+[5.2s]  💀 Kill Instance: Order Service
+[5.2s]  ⚡ Cascade: 3 nodes affected (Payment, Notification, Analytics)
+[5.3s]  📈 Error rate: 0% → 34%
+[12.1s] 🔧 Recover: Order Service
+[14.5s] ✅ Error rate back to 0% (RTO: 9.3s, lost: 847 requests)
+```
+
+### Задачи
+
+- [ ] Тип `ChaosLogEntry { timestamp, type, message, details }`
+- [ ] Компонент `ChaosTimeline` — scroll-лента с цветными иконками
+- [ ] Автоматическая запись: инъекция, cascade report, recover, метрики-переходы
+- [ ] Фильтр по типу событий
+
+### Шаг 6. Circuit Breaker
+
+Реализовать state machine для компонента `circuit_breaker`:
+
+```
+closed ──(error rate > threshold)──► open ──(timeout)──► half_open
+  ▲                                                         │
+  └──────────(success rate OK)──────────────────────────────┘
+              half_open ──(failure)──► open
+```
+
+В движке:
+- Ребро, проходящее через circuit_breaker ноду, проверяет состояние
+- `open`: все запросы мгновенно fail с reason `circuit open`
+- `half_open`: пропускать N% запросов, остальные fail
+- `closed`: нормальная работа
+
+На канвасе:
+- Нода circuit_breaker: зелёная (closed), красная (open), жёлтая (half_open)
+- Tooltip: текущее состояние, error count, threshold
+
+### Задачи
+
+- [ ] `CircuitBreakerState` в models.ts: `{ state, errorCount, lastTransition, config }`
+- [ ] Логика в engine.ts: трекинг error rate per-downstream, переключение состояний
+- [ ] Визуализация состояния в узле circuit_breaker на канвасе
+- [ ] Параметры в Properties Panel: threshold, timeout, halfOpenPercent
+
+### Шаг 7. RTO/RPO измерение
+
+Автоматическое измерение при inject → recover:
+
+- **RTO** (Recovery Time Objective): время от инъекции до error rate < 1%
+- **RPO** (Recovery Point Objective): количество потерянных/failed запросов за время отказа
+- **MTTR** (Mean Time To Recovery): среднее RTO по всем инъекциям сессии
+
+Отображение:
+- В ChaosTimeline — при recover показать RTO и RPO
+- В Chaos Report — агрегат по всей сессии
+
+### Задачи
+
+- [ ] Трекинг момента инъекции (tick) и момента восстановления (error rate < threshold)
+- [ ] Подсчёт failed запросов между inject и recover
+- [ ] Отображение RTO/RPO в timeline и active faults
+
+### Шаг 8. Chaos Report
+
+Автоматический отчёт по итогам chaos-сессии:
+
+```
+╔═══ CHAOS REPORT ═══════════════════════════╗
+║ Experiments: 4       Duration: 120s         ║
+║ System survived: 3/4  (75%)                ║
+╠═════════════════════════════════════════════╣
+║ ✅ Kill Order Service    RTO: 9.3s  RPO: 847║
+║ ✅ +500ms on DB          Error rate: 2%     ║
+║ ✅ CPU spike on Gateway  Throughput: -15%   ║
+║ ❌ Network partition     Cascade failure    ║
+╠═════════════════════════════════════════════╣
+║ Рекомендации:                               ║
+║ • Добавить circuit breaker перед DB         ║
+║ • Увеличить реплики Order Service до 3      ║
+║ • Добавить retry policy на partition-prone  ║
+╚═════════════════════════════════════════════╝
+```
+
+### Задачи
+
+- [ ] Агрегация: пережитые/непережитые эксперименты
+- [ ] Per-experiment метрики: RTO, RPO, max error rate, throughput drop
+- [ ] Генерация рекомендаций на основе результатов
+- [ ] UI: модалка или панель Chaos Report
+- [ ] Кнопка «Generate Report» в ChaosPanel
+
+### Шаг 9. Предустановленные chaos-сценарии
+
+Готовые последовательности инъекций с автоматическим выполнением:
+
+| Сценарий | Действия |
+|--|--|
+| Random Kill | Убить случайную ноду, подождать 10s, recover |
+| Zone Failure | Убить все ноды в одном контейнере (rack/DC) |
+| Network Split | Partition между двумя группами нод |
+| Gradual Degradation | +100ms → +200ms → +500ms на случайных нодах |
+| Stress Test | CPU spike на всех сервисах одновременно |
+
+```typescript
+interface ChaosScenario {
+  id: string;
+  name: string;
+  description: string;
+  steps: ChaosScenarioStep[];
+}
+
+interface ChaosScenarioStep {
+  delayMs: number;             // задержка перед выполнением
+  action: 'inject' | 'recover' | 'recover_all';
+  event?: Omit<ChaosEvent, 'id' | 'injectedAtTick'>;
+  targetSelector?: 'random_node' | 'random_edge' | 'all_in_container';
+}
+```
+
+### Задачи
+
+- [ ] Тип `ChaosScenario` и `ChaosScenarioStep`
+- [ ] 5 предустановленных сценариев
+- [ ] Runner: последовательное выполнение шагов с таймерами
+- [ ] UI: список сценариев в ChaosPanel / Presets, кнопка Run, прогресс
+- [ ] Привязка к курсу: Занятие 28 (Chaos Engineering), ДЗ 5
+
+### Порядок реализации
+
+```
+Шаг 1 (движок)  →  Шаг 2 (store)  →  Шаг 3 (ChaosPanel UI)
+                                    →  Шаг 4 (визуализация канвас)
+                                    →  Шаг 5 (timeline)
+                 →  Шаг 6 (circuit breaker) — параллельно с 3-5
+                 →  Шаг 7 (RTO/RPO) — после шага 3
+                 →  Шаг 8 (chaos report) — после шага 7
+                 →  Шаг 9 (сценарии) — после шага 5
+```
