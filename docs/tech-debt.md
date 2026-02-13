@@ -12,6 +12,7 @@
 | [TD-008](#td-008-экспорт-схемы-в-png) | Экспорт схемы в PNG | Medium |
 | [TD-009](#td-009-sizing-calculator) | Sizing Calculator (RPS → ресурсы) | Medium |
 | [TD-010](#td-010-фаза-3--chaos-engineering) | Фаза 3 — Chaos Engineering | High |
+| [TD-011](#td-011-фаза-4--сценарии-и-геймификация) | Фаза 4 — Сценарии и геймификация | High |
 
 ---
 
@@ -960,3 +961,341 @@ interface ChaosScenarioStep {
                  →  Шаг 8 (chaos report) — после шага 7
                  →  Шаг 9 (сценарии) — после шага 5
 ```
+
+---
+
+## TD-011: Фаза 4 — Сценарии и геймификация
+
+**Приоритет:** High
+**Компоненты:** apps/web, apps/server, packages/scenario-pack
+**Фаза спеки:** 4 (Scenarios & Gamification)
+
+### Текущее состояние
+
+**Готово:**
+- `packages/scenario-pack` — типы `Scenario`, `SuccessCriteria`, `ScenarioComponent`, хелперы `getScenarioById()`, `getScenariosByModule()`
+- 2 сценария реализованы: Messenger (lesson-02), Sharding (lesson-17) — с hints, criteria, starting architecture
+- Go-бэкенд: таблицы `scenarios`, `simulation_results`, view `leaderboard`; API: GET/POST scenarios, GET leaderboard
+- `apps/web/src/scenarios/module1-5/` — заготовки по модулям (пустые stubs)
+- Pricing модели для cost-based challenges
+- What-If mode для live exploration
+
+**Не реализовано:**
+- Frontend: загрузка/выбор сценария, hint system, scoring, leaderboard UI
+- 13+ недостающих сценариев
+- Шаблоны реальных систем
+- Interview mode
+- Галерея решений
+
+### Шаг 1. Scenario Store и загрузка сценария
+
+Zustand store для управления активным сценарием:
+
+```typescript
+interface ScenarioState {
+  availableScenarios: Scenario[];
+  activeScenario: Scenario | null;
+  progress: ScenarioProgress | null;
+
+  loadScenario(id: string): void;     // загрузить сценарий, подставить starting architecture
+  exitScenario(): void;               // вернуться в свободный режим
+  checkCriteria(): CriteriaResult;    // проверить success criteria против текущих метрик
+}
+
+interface ScenarioProgress {
+  startedAt: number;
+  hintsRevealed: number;           // сколько подсказок открыто
+  criteriaResults: CriteriaResult; // текущее состояние критериев
+  bestScore: number;
+}
+
+interface CriteriaResult {
+  passed: boolean;
+  details: { criterion: string; target: string; actual: string; met: boolean }[];
+}
+```
+
+### Задачи
+
+- [ ] `scenarioStore.ts` — state, actions
+- [ ] `loadScenario()` — очистить канвас, загрузить starting architecture, применить available components filter
+- [ ] `checkCriteria()` — сверка текущих метрик/стоимости/архитектуры с `successCriteria`
+- [ ] Автоматическая проверка критериев при работающей симуляции (debounce 1s)
+
+### Шаг 2. Scenario Browser UI
+
+Экран выбора сценария (модалка или отдельный роут):
+
+```
+┌─────────────────────────────────────────────────┐
+│  📚 Scenarios                                    │
+│                                                  │
+│  Module 1 — Погружение через примеры             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐        │
+│  │ 💬       │ │ 📰       │ │ 🛒       │        │
+│  │Messenger │ │News Feed │ │E-commerce│        │
+│  │⭐⭐☆     │ │⭐⭐☆     │ │⭐⭐⭐    │        │
+│  │ ✅ 87pts │ │          │ │          │        │
+│  └──────────┘ └──────────┘ └──────────┘        │
+│                                                  │
+│  Module 2 — Основы проектирования                │
+│  ...                                             │
+└─────────────────────────────────────────────────┘
+```
+
+- Группировка по модулям курса
+- Карточка: иконка, название, difficulty (звёзды), лучший score
+- Фильтр по модулю, сложности
+- Клик → загрузка сценария
+
+### Задачи
+
+- [ ] Компонент `ScenarioBrowser` — сетка карточек по модулям
+- [ ] Карточка `ScenarioCard` — иконка, название, difficulty, score badge
+- [ ] Фильтрация по модулю и сложности
+- [ ] Кнопка «Scenarios» в Toolbar для открытия
+- [ ] При выборе: `loadScenario()` → канвас с starting architecture
+
+### Шаг 3. Scenario HUD (Head-Up Display)
+
+Когда сценарий активен — оверлей поверх канваса:
+
+```
+┌─ 💬 Messenger ─────────────────────── [Exit] ─┐
+│ Goal: 1M users, latency < 200ms, no msg loss   │
+│ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
+│ │ no_spof │ │p99<200ms│ │loss = 0%│           │
+│ │   ✅    │ │   ❌    │ │   ✅    │           │
+│ └─────────┘ └─────────┘ └─────────┘           │
+│ Score: 67/100        💡 Hints (1/4)  [Check ▶] │
+└─────────────────────────────────────────────────┘
+```
+
+- Название сценария и goal
+- Карточки criteria: зелёная галочка / красный крестик
+- Текущий score
+- Кнопка Hints, кнопка Check (ручная проверка), кнопка Exit
+
+### Задачи
+
+- [ ] Компонент `ScenarioHUD` — фиксированная панель сверху канваса
+- [ ] Карточки критериев с live-обновлением из simulationStore
+- [ ] Score calculation: weighted sum по критериям
+- [ ] Кнопка Exit → подтверждение → `exitScenario()`
+
+### Шаг 4. Hint System
+
+Подсказки раскрываются последовательно, каждая снижает score:
+
+```
+┌─ 💡 Hints ─────────────────────────────────────┐
+│                                                  │
+│  1. ✅ "Think about a presence service..."       │
+│                                                  │
+│  2. 🔒 Reveal next hint? (-5 points)  [Reveal]  │
+│                                                  │
+│  3. 🔒                                           │
+│  4. 🔒                                           │
+└─────────────────────────────────────────────────┘
+```
+
+- Hints из `scenario.hints[]`
+- Каждый reveal: `hintsRevealed++`, score penalty (напр. -5 за hint)
+- Первый hint бесплатный
+
+### Задачи
+
+- [ ] Компонент `HintPanel` — список подсказок (reveal / locked)
+- [ ] Penalty logic: `score -= hintsRevealed * HINT_PENALTY`
+- [ ] Анимация раскрытия (Framer Motion)
+- [ ] Кнопка «Hints» в ScenarioHUD открывает popover
+
+### Шаг 5. Scoring и Success Screen
+
+Формула score:
+
+```
+baseScore = criteriaMetPct * 100                    // 0-100 за выполнение критериев
+bonusLatency = max(0, (target - actual) / target * 10)  // бонус за запас
+bonusCost = max(0, (budget - actual) / budget * 10)     // бонус за экономию
+penalty = hintsRevealed * 5                         // штраф за подсказки
+timePenalty = max(0, (elapsed - parTime) / parTime * 5) // штраф за время
+
+finalScore = clamp(baseScore + bonusLatency + bonusCost - penalty - timePenalty, 0, 100)
+```
+
+Success screen при прохождении:
+
+```
+┌──────────────────────────────────────┐
+│        🎉 Scenario Complete!          │
+│                                       │
+│        Score: 87 / 100                │
+│                                       │
+│  Criteria:  3/3 ✅                    │
+│  Latency:   p99 = 142ms (< 200ms)    │
+│  Cost:      $2,340/mo                 │
+│  Hints:     1 used (-5)              │
+│  Time:      4m 12s                    │
+│                                       │
+│  [Submit to Leaderboard]              │
+│  [Try Again]  [Next Scenario →]       │
+└──────────────────────────────────────┘
+```
+
+### Задачи
+
+- [ ] Функция `calculateScore(scenario, metrics, progress) → number`
+- [ ] Компонент `SuccessScreen` — модалка с результатами
+- [ ] Кнопка «Submit to Leaderboard» → POST /api/v1/simulations (требует бэкенд)
+- [ ] Кнопка «Try Again» → перезагрузка сценария
+- [ ] Кнопка «Next Scenario» → следующий по модулю
+
+### Шаг 6. Контент: 15+ сценариев
+
+Наполнить `packages/scenario-pack` по spec.md §4:
+
+| Модуль | Сценарий | Занятие | Сложность |
+|--|--|--|--|
+| 1 | Messenger (WhatsApp) | 2 | Intermediate |
+| 1 | News Feed (Facebook) | 3 | Intermediate |
+| 1 | E-commerce (Ozon) | 4 | Advanced |
+| 1 | Video Streaming (YouTube) | 5 | Advanced |
+| 2 | Монолит → микросервисы | 8 | Beginner |
+| 2 | CQRS: read/write split | 9 | Intermediate |
+| 2 | Sync → Async (EDA) | 10 | Intermediate |
+| 2 | Canary deployment routing | 13 | Intermediate |
+| 3 | Шардирование PostgreSQL | 17 | Advanced |
+| 3 | Кэширование каталога | 18 | Intermediate |
+| 3 | Kafka vs RabbitMQ | 19 | Intermediate |
+| 4 | Sizing Instagram | 22 | Beginner |
+| 4 | Масштабирование 1k→50k RPS | 25 | Intermediate |
+| 4 | Failover PostgreSQL | 26 | Advanced |
+| 4 | Multi-region EU+US | 27 | Advanced |
+| 5 | mTLS между сервисами | 30 | Intermediate |
+| 5 | DDoS защита | 31 | Advanced |
+
+Каждый сценарий содержит: goal, availableComponents, hints (3-5), successCriteria, startingArchitecture, tags.
+
+### Задачи
+
+- [ ] Реализовать 15 сценариев (2 уже есть: messenger, sharding)
+- [ ] Starting architecture для каждого (начальное состояние канваса)
+- [ ] 3-5 hints на сценарий с прогрессивной подробностью
+- [ ] Success criteria: комбинация latency/throughput/cost/spof/replicas
+- [ ] Заполнить `apps/web/src/scenarios/module1-5/` реальными ссылками
+
+### Шаг 7. System Templates
+
+Шаблоны реальных систем для изучения и форка:
+
+| Шаблон | Компоненты |
+|--|--|
+| Netflix | CDN → LB → API GW → Video Service + Recommendation Service → Cassandra + Redis + S3 + Kafka |
+| WhatsApp | Client → LB → Chat Service → Redis (presence) + PostgreSQL (messages) + Kafka |
+| Uber | Client → API GW → Ride Service + Payment Service + Location Service → PostgreSQL + Redis + Kafka |
+| Twitter | Client → LB → API GW → Tweet Service + Timeline Service → PostgreSQL + Redis + Kafka + Elasticsearch |
+
+Отличие от сценариев:
+- Шаблон = готовая полная архитектура для изучения
+- Сценарий = задача, которую надо решить самому
+
+### Задачи
+
+- [ ] Тип `SystemTemplate` — полная архитектура (nodes + edges + конфиги)
+- [ ] 4 шаблона: Netflix, WhatsApp, Uber, Twitter
+- [ ] UI: кнопка «Templates» в ScenarioBrowser, отдельная секция
+- [ ] «Load Template» → загрузить в канвас, «Fork» → копия для редактирования
+
+### Шаг 8. Leaderboard UI
+
+Таблица лидеров per-scenario (бэкенд API уже есть: `GET /api/v1/leaderboard/:scenarioID`):
+
+```
+┌─ 🏆 Leaderboard: Messenger ────────────────────┐
+│                                                   │
+│  #1  🥇 Alice       95 pts   2m 30s   0 hints   │
+│  #2  🥈 Bob         87 pts   4m 12s   1 hint    │
+│  #3  🥉 Charlie     82 pts   3m 45s   2 hints   │
+│  ...                                              │
+│  #12    You         67 pts   6m 10s   3 hints   │
+│                                                   │
+│  [All Scenarios ▼]                                │
+└───────────────────────────────────────────────────┘
+```
+
+### Задачи
+
+- [ ] Компонент `Leaderboard` — таблица с рангом, именем, score, временем, hints
+- [ ] Фильтр по сценарию (dropdown)
+- [ ] Подсветка текущего пользователя
+- [ ] Fetch из `GET /api/v1/leaderboard/:scenarioID`
+- [ ] Требует auth (хотя бы имя/никнейм) — интеграция с бэкендом
+
+### Шаг 9. Interview Mode
+
+Режим имитации System Design Interview:
+
+```
+┌─ 🎤 Interview Mode ─────── ⏱ 37:12 ─────────┐
+│                                                 │
+│  Task: "Design a URL shortener for 100M DAU"    │
+│                                                 │
+│  Requirements:                                   │
+│  • < 50ms redirect latency                      │
+│  • 10k new URLs/sec                             │
+│  • 99.99% availability                          │
+│  • Cost < $10k/month                            │
+│                                                 │
+│  [💡 Hints (0/3)]     [📊 Check]  [🏁 Submit]  │
+└─────────────────────────────────────────────────┘
+```
+
+- Таймер 45 минут (настраиваемый)
+- Случайный сценарий из пула или выбранной категории
+- По истечении таймера — автоматический submit
+- Score учитывает время (быстрее = больше бонус)
+
+### Задачи
+
+- [ ] Компонент `InterviewMode` — обёртка с таймером над ScenarioHUD
+- [ ] Кнопка «Interview» в Toolbar → выбор категории → random scenario → старт таймера
+- [ ] Countdown timer с визуальным предупреждением (< 5min → красный)
+- [ ] Auto-submit при истечении времени
+- [ ] Time bonus в scoring: `max(0, (timeLimit - elapsed) / timeLimit * 15)`
+
+### Шаг 10. Галерея студенческих решений
+
+Просмотр чужих решений для обучения (зависит от TD-004 — каталог схем):
+
+- Фильтр по сценарию: «Все решения Messenger с score > 80»
+- Read-only просмотр чужой архитектуры
+- «Fork» — скопировать к себе и модифицировать
+- Сортировка по score / дате / популярности
+
+### Задачи
+
+- [ ] Расширить каталог (TD-004) полем `scenarioId`
+- [ ] Фильтр по сценарию в галерее
+- [ ] Read-only режим канваса
+- [ ] Fork с привязкой к исходному решению
+
+### Порядок реализации
+
+```
+Шаг 1 (store)           →  Шаг 2 (browser)  →  Шаг 3 (HUD)
+                                              →  Шаг 4 (hints)
+                         →  Шаг 5 (scoring)
+Шаг 6 (контент 15 сценариев) — параллельно с UI
+Шаг 7 (templates) — параллельно с 6
+Шаг 8 (leaderboard) — после шага 5, требует auth
+Шаг 9 (interview) — после шага 3
+Шаг 10 (галерея) — после TD-004
+```
+
+### Зависимости от других TD
+
+- **TD-004** (каталог схем) — для галереи решений (шаг 10)
+- **TD-007** (статический анализ) — для criteria проверки `no_spof`
+- **TD-010** (chaos) — для chaos-сценариев в модуле 4
+- Бэкенд auth — для leaderboard и submit
