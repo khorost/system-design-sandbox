@@ -306,3 +306,95 @@ Go-бэкенд на `GET /s/<slug>` отдаёт минимальный HTML с
 - [ ] MinIO в Docker Compose для dev
 - [ ] S3 bucket / R2 для prod
 - [ ] CDN для превью-картинок
+
+---
+
+## TD-005: Совместное редактирование схемы (Real-time Collaboration)
+
+**Приоритет:** Medium
+**Компоненты:** apps/web, apps/server
+
+### Описание
+
+Несколько пользователей одновременно редактируют одну схему: видят курсоры друг друга, изменения синхронизируются в реальном времени без конфликтов. Текущая архитектура — Zustand стор с localStorage — не поддерживает многопользовательский режим.
+
+### Подход: Yjs (CRDT)
+
+CRDT (Conflict-free Replicated Data Types) — оптимальный выбор для совместного редактирования графов. Каждый клиент хранит локальную реплику, изменения мержатся автоматически без центрального арбитра.
+
+```
+Browser A  ──►  WebSocket Server  ◄──  Browser B
+  Yjs Doc    (y-websocket relay)     Yjs Doc
+  Zustand        persistence         Zustand
+  React Flow                         React Flow
+```
+
+### Стек
+
+| Слой | Технология | Назначение |
+|------|-----------|------------|
+| CRDT | `yjs` | Shared-документ с автоматическим мержем |
+| Транспорт | `y-websocket` (Node) или Go-реализация | Relay + persistence |
+| Awareness | Yjs Awareness protocol | Курсоры, имена, присутствие |
+| Persistence | `y-leveldb` или PostgreSQL snapshot | Сохранение между сессиями |
+
+### Модель данных (Yjs)
+
+```typescript
+const ydoc = new Y.Doc();
+const yNodes = ydoc.getMap('nodes');   // nodeId → Y.Map (node data)
+const yEdges = ydoc.getMap('edges');   // edgeId → Y.Map (edge data)
+const awareness = provider.awareness;   // cursor positions, user info
+```
+
+### Ключевое изменение: инверсия потока данных
+
+Сейчас:
+```
+User action → Zustand (мутация) → React (рендер) → localStorage
+```
+
+Нужно:
+```
+User action → Yjs Doc (мутация) → observe → Zustand (read-only проекция) → React (рендер)
+```
+
+`canvasStore.ts` перестаёт быть source-of-truth — им становится Yjs-документ. Zustand подписывается на `yNodes.observe()` / `yEdges.observe()` и обновляет своё состояние.
+
+### Awareness (курсоры)
+
+```typescript
+awareness.setLocalStateField('user', { name, color });
+awareness.setLocalStateField('cursor', { x, y });  // viewport coords
+awareness.setLocalStateField('selected', nodeId);   // подсветка выделения
+```
+
+React Flow рендерит чужие курсоры поверх канваса (отдельный слой).
+
+### Комнаты
+
+Каждая схема — отдельная комната (`room`). URL: `sdsandbox.ru/collab/<room-id>`. При подключении клиент получает полный Yjs-документ, далее — инкрементальные обновления.
+
+### Этапы реализации
+
+**Этап 1 — P2P (без сервера):**
+- [ ] Добавить `yjs` + `y-webrtc`
+- [ ] Обёртка `YjsSyncProvider` — связывает Yjs ↔ canvasStore
+- [ ] Шаринг по ссылке с room-id (WebRTC signaling через публичный сервер)
+- [ ] Ограничение: 2-5 человек, нет persistence
+
+**Этап 2 — WebSocket сервер:**
+- [ ] Развернуть `y-websocket` (Node.js ~50 строк) или встроить в Go-бэкенд
+- [ ] Persistence: сохранение Yjs-документа в PostgreSQL при каждом изменении
+- [ ] Масштабирование: sticky sessions или Redis pub/sub между инстансами
+
+**Этап 3 — Awareness UI:**
+- [ ] Рендер курсоров других пользователей на канвасе
+- [ ] Список участников (аватары/цвета)
+- [ ] Подсветка выделенного чужого узла
+- [ ] Индикатор «кто сейчас редактирует» на node/edge
+
+**Этап 4 — Права доступа:**
+- [ ] Роли: owner / editor / viewer (read-only)
+- [ ] Приглашение по ссылке с ролью
+- [ ] Требует auth на бэкенде (TD для отдельного тикета)
