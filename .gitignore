@@ -11,4 +11,5 @@ coverage/
 .DS_Store
 Thumbs.db
 /.idea/***
+.claude/settings.local.json
 
