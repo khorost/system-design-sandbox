@@ -4,7 +4,9 @@ export function aggregateMetrics(
   completedRequests: SimRequest[],
   components: Map<string, ComponentModel>,
   timestamp: number,
-  tickDurationSec: number
+  tickDurationSec: number,
+  edgeThroughput: Record<string, number> = {},
+  edgeLatency: Record<string, number> = {}
 ): SimulationMetrics {
   const latencies = completedRequests
     .filter((r) => !r.failed)
@@ -15,11 +17,15 @@ export function aggregateMetrics(
   const failed = completedRequests.filter((r) => r.failed).length;
   const succeeded = total - failed;
 
+  const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
   const componentUtilization: Record<string, number> = {};
   const queueDepths: Record<string, number> = {};
 
   for (const [id, comp] of components) {
-    componentUtilization[id] = comp.maxRps > 0 ? comp.currentLoad / comp.maxRps : 0;
+    // Client nodes are traffic sources — always show 0% utilization
+    componentUtilization[id] = CLIENT_TYPES.has(comp.type)
+      ? 0
+      : comp.maxRps > 0 ? comp.currentLoad / comp.maxRps : 0;
     queueDepths[id] = comp.queueSize;
   }
 
@@ -32,6 +38,8 @@ export function aggregateMetrics(
     errorRate: total > 0 ? failed / total : 0,
     componentUtilization,
     queueDepths,
+    edgeThroughput,
+    edgeLatency,
   };
 }
 

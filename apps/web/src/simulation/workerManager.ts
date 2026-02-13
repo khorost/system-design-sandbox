@@ -55,6 +55,10 @@ class WorkerManager {
     this.send({ type: 'STOP' });
   }
 
+  updateProfile(profile: LoadProfile) {
+    this.send({ type: 'UPDATE_PROFILE', profile });
+  }
+
   injectFailure(nodeId: string) {
     this.send({ type: 'INJECT_FAILURE', nodeId });
   }

@@ -47,6 +47,15 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
       break;
     }
 
+    case 'UPDATE_PROFILE': {
+      if (!engine) {
+        post({ type: 'ERROR', message: 'Engine not initialized' });
+        return;
+      }
+      engine.updateProfile(cmd.profile);
+      break;
+    }
+
     case 'INJECT_FAILURE': {
       if (!engine) {
         post({ type: 'ERROR', message: 'Engine not initialized' });

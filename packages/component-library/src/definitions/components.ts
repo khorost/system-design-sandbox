@@ -45,7 +45,8 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🌐',
     description: 'Browser-based client generating HTTP requests',
     params: [
-      { key: 'requests_per_sec', label: 'Requests/sec', type: 'number', default: 100, min: 1 },
+      { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', default: 1, min: 0.1 },
+      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 0.1, min: 0.01 },
       { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', default: 10, min: 1 },
     ],
     defaults: { maxRps: 10000, baseLatencyMs: 0, replicas: 1 },
@@ -57,7 +58,8 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📱',
     description: 'Mobile app generating HTTP/WebSocket requests',
     params: [
-      { key: 'requests_per_sec', label: 'Requests/sec', type: 'number', default: 50, min: 1 },
+      { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', default: 5, min: 0.1 },
+      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 0.01, min: 0.001 },
       { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', default: 5, min: 1 },
     ],
     defaults: { maxRps: 5000, baseLatencyMs: 0, replicas: 1 },
@@ -69,7 +71,8 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔗',
     description: 'Third-party API consumer',
     params: [
-      { key: 'requests_per_sec', label: 'Requests/sec', type: 'number', default: 200, min: 1 },
+      { key: 'concurrent_users_k', label: 'Consumers (K)', type: 'number', default: 0.5, min: 0.01 },
+      { key: 'requests_per_user', label: 'Requests/Consumer/sec', type: 'number', default: 0.4, min: 0.01 },
       { key: 'auth_type', label: 'Auth Type', type: 'select', default: 'api_key', options: ['api_key', 'oauth2', 'basic'] },
     ],
     defaults: { maxRps: 50000, baseLatencyMs: 0, replicas: 1 },
@@ -83,11 +86,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🚪',
     description: 'API Gateway with rate limiting and auth',
     params: [
-      { key: 'max_rps', label: 'Max RPS', type: 'number', default: 50000, min: 100 },
+      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 25000, min: 100 },
       { key: 'rate_limit', label: 'Rate Limit', type: 'number', default: 1000, min: 10 },
       { key: 'auth_enabled', label: 'Auth Enabled', type: 'boolean', default: true },
     ],
-    defaults: { maxRps: 50000, baseLatencyMs: 5, replicas: 2 },
+    defaults: { maxRps: 25000, baseLatencyMs: 5, replicas: 2 },
   },
   {
     type: 'load_balancer',
@@ -96,10 +99,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '⚖️',
     description: 'Distributes traffic across service instances',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 50000, min: 100 },
       { key: 'algorithm', label: 'Algorithm', type: 'select', default: 'round_robin', options: ['round_robin', 'least_conn', 'ip_hash'] },
       { key: 'max_connections', label: 'Max Connections', type: 'number', default: 100000, min: 100 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 1, replicas: 2 },
+    defaults: { maxRps: 50000, baseLatencyMs: 1, replicas: 2 },
   },
   {
     type: 'cdn',
@@ -108,11 +112,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🌍',
     description: 'Content Delivery Network for static assets',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 500000, min: 1000 },
       { key: 'cache_hit_ratio', label: 'Cache Hit Ratio', type: 'number', default: 0.9, min: 0, max: 1 },
       { key: 'edge_locations', label: 'Edge Locations', type: 'number', default: 50, min: 1 },
       { key: 'ttl_sec', label: 'TTL (sec)', type: 'number', default: 3600, min: 1 },
     ],
-    defaults: { maxRps: 1000000, baseLatencyMs: 10, replicas: 1 },
+    defaults: { maxRps: 500000, baseLatencyMs: 10, replicas: 1 },
   },
   {
     type: 'dns',
@@ -121,9 +126,10 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📡',
     description: 'DNS routing with various policies',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1000 },
       { key: 'routing_policy', label: 'Routing Policy', type: 'select', default: 'latency', options: ['latency', 'geo', 'weighted'] },
     ],
-    defaults: { maxRps: 1000000, baseLatencyMs: 50, replicas: 1 },
+    defaults: { maxRps: 200000, baseLatencyMs: 50, replicas: 1 },
   },
   {
     type: 'waf',
@@ -132,10 +138,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🛡️',
     description: 'Web Application Firewall',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 20000, min: 100 },
       { key: 'rules_count', label: 'Rules Count', type: 'number', default: 100, min: 1 },
       { key: 'inspection_latency_ms', label: 'Inspection Latency (ms)', type: 'number', default: 2, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 2, replicas: 2 },
+    defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 2 },
   },
 
   // --- Compute ---
@@ -149,10 +156,10 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'replicas', label: 'Replicas', type: 'number', default: 3, min: 1 },
       { key: 'cpu_cores', label: 'CPU Cores', type: 'number', default: 4, min: 1 },
       { key: 'memory_gb', label: 'Memory (GB)', type: 'number', default: 8, min: 1 },
-      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 5000, min: 100 },
+      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 2000, min: 100 },
       { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 10, min: 1 },
     ],
-    defaults: { maxRps: 15000, baseLatencyMs: 10, replicas: 3 },
+    defaults: { maxRps: 2000, baseLatencyMs: 10, replicas: 3 },
   },
   {
     type: 'serverless_function',
@@ -161,11 +168,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: 'λ',
     description: 'Serverless compute with cold start',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 3000, min: 100 },
       { key: 'cold_start_ms', label: 'Cold Start (ms)', type: 'number', default: 200, min: 0 },
       { key: 'max_concurrent', label: 'Max Concurrent', type: 'number', default: 1000, min: 1 },
       { key: 'timeout_ms', label: 'Timeout (ms)', type: 'number', default: 30000, min: 100 },
     ],
-    defaults: { maxRps: 10000, baseLatencyMs: 50, replicas: 1 },
+    defaults: { maxRps: 3000, baseLatencyMs: 50, replicas: 1 },
   },
   {
     type: 'worker',
@@ -174,10 +182,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '👷',
     description: 'Background worker processing async tasks',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Tasks/sec/Instance', type: 'number', default: 200, min: 10 },
       { key: 'concurrency', label: 'Concurrency', type: 'number', default: 10, min: 1 },
       { key: 'poll_interval_ms', label: 'Poll Interval (ms)', type: 'number', default: 100, min: 10 },
     ],
-    defaults: { maxRps: 1000, baseLatencyMs: 100, replicas: 2 },
+    defaults: { maxRps: 200, baseLatencyMs: 100, replicas: 2 },
   },
   {
     type: 'cron_job',
@@ -200,6 +209,7 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🐘',
     description: 'Relational database with ACID guarantees',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Queries/sec', type: 'number', default: 5000, min: 100 },
       { key: 'replicas', label: 'Replicas', type: 'number', default: 1, min: 1 },
       { key: 'read_replicas', label: 'Read Replicas', type: 'number', default: 0, min: 0 },
       { key: 'max_connections', label: 'Max Connections', type: 'number', default: 200, min: 10 },
@@ -215,6 +225,7 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🍃',
     description: 'Document database with horizontal scaling',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Ops/sec/Node', type: 'number', default: 10000, min: 100 },
       { key: 'replicas', label: 'Replicas', type: 'number', default: 3, min: 1 },
       { key: 'shards', label: 'Shards', type: 'number', default: 1, min: 1 },
       { key: 'shard_key', label: 'Shard Key', type: 'string', default: '_id' },
@@ -229,11 +240,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '👁️',
     description: 'Wide-column store for high write throughput',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Ops/sec/Node', type: 'number', default: 20000, min: 100 },
       { key: 'nodes', label: 'Nodes', type: 'number', default: 3, min: 1 },
       { key: 'replication_factor', label: 'Replication Factor', type: 'number', default: 3, min: 1 },
       { key: 'consistency_level', label: 'Consistency', type: 'select', default: 'QUORUM', options: ['ONE', 'QUORUM', 'ALL'] },
     ],
-    defaults: { maxRps: 50000, baseLatencyMs: 2, replicas: 3 },
+    defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 3 },
   },
 
   // --- Cache ---
@@ -244,6 +256,7 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔴',
     description: 'In-memory data store / cache',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Ops/sec', type: 'number', default: 100000, min: 1000 },
       { key: 'mode', label: 'Mode', type: 'select', default: 'standalone', options: ['standalone', 'cluster', 'sentinel'] },
       { key: 'memory_gb', label: 'Memory (GB)', type: 'number', default: 8, min: 1 },
       { key: 'max_connections', label: 'Max Connections', type: 'number', default: 10000, min: 100 },
@@ -257,10 +270,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🟢',
     description: 'Distributed memory caching',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Ops/sec/Node', type: 'number', default: 50000, min: 1000 },
       { key: 'nodes', label: 'Nodes', type: 'number', default: 3, min: 1 },
       { key: 'memory_gb', label: 'Memory (GB)', type: 'number', default: 4, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 1, replicas: 3 },
+    defaults: { maxRps: 50000, baseLatencyMs: 1, replicas: 3 },
   },
   {
     type: 's3',
@@ -269,10 +283,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🪣',
     description: 'Scalable object storage',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Req/sec', type: 'number', default: 5500, min: 100 },
       { key: 'storage_class', label: 'Storage Class', type: 'select', default: 'standard', options: ['standard', 'infrequent', 'glacier'] },
       { key: 'max_throughput_mbps', label: 'Max Throughput (Mbps)', type: 'number', default: 1000, min: 100 },
     ],
-    defaults: { maxRps: 5000, baseLatencyMs: 20, replicas: 1 },
+    defaults: { maxRps: 5500, baseLatencyMs: 20, replicas: 1 },
   },
   {
     type: 'elasticsearch',
@@ -281,11 +296,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔍',
     description: 'Full-text search and analytics engine',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Queries/sec/Node', type: 'number', default: 5000, min: 100 },
       { key: 'nodes', label: 'Nodes', type: 'number', default: 3, min: 1 },
       { key: 'shards', label: 'Shards', type: 'number', default: 5, min: 1 },
       { key: 'replicas', label: 'Replicas', type: 'number', default: 1, min: 0 },
     ],
-    defaults: { maxRps: 10000, baseLatencyMs: 10, replicas: 3 },
+    defaults: { maxRps: 5000, baseLatencyMs: 10, replicas: 3 },
   },
 
   // --- Messaging ---
@@ -296,12 +312,13 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📨',
     description: 'Distributed event streaming platform',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Broker', type: 'number', default: 100000, min: 1000 },
       { key: 'brokers', label: 'Brokers', type: 'number', default: 3, min: 1 },
       { key: 'partitions', label: 'Partitions', type: 'number', default: 12, min: 1 },
       { key: 'replication_factor', label: 'Replication Factor', type: 'number', default: 3, min: 1 },
       { key: 'retention_hours', label: 'Retention (hours)', type: 'number', default: 168, min: 1 },
     ],
-    defaults: { maxRps: 500000, baseLatencyMs: 5, replicas: 3 },
+    defaults: { maxRps: 100000, baseLatencyMs: 5, replicas: 3 },
   },
   {
     type: 'rabbitmq',
@@ -310,11 +327,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🐇',
     description: 'Message broker with flexible routing',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Node', type: 'number', default: 20000, min: 100 },
       { key: 'queues', label: 'Queues', type: 'number', default: 10, min: 1 },
       { key: 'prefetch_count', label: 'Prefetch Count', type: 'number', default: 10, min: 1 },
       { key: 'ha_mode', label: 'HA Mode', type: 'boolean', default: true },
     ],
-    defaults: { maxRps: 50000, baseLatencyMs: 2, replicas: 3 },
+    defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 3 },
   },
   {
     type: 'event_bus',
@@ -323,13 +341,58 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🚌',
     description: 'Pub/Sub event bus',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Msg/sec', type: 'number', default: 50000, min: 1000 },
       { key: 'type', label: 'Type', type: 'select', default: 'pub_sub', options: ['pub_sub', 'point_to_point'] },
-      { key: 'max_throughput', label: 'Max Throughput', type: 'number', default: 100000, min: 1000 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 3, replicas: 1 },
+    defaults: { maxRps: 50000, baseLatencyMs: 3, replicas: 1 },
   },
 
-  // --- Reliability ---
+  // --- Infrastructure / Storage ---
+  {
+    type: 'local_ssd',
+    label: 'Local SSD',
+    category: 'infrastructure',
+    icon: '💾',
+    description: 'Local SSD disk attached to host. High IOPS, low latency, no network overhead. Data lost on instance termination.',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max IOPS', type: 'number', default: 80000, min: 1000 },
+      { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 0.1, min: 0.01 },
+      { key: 'capacity_gb', label: 'Capacity (GB)', type: 'number', default: 500, min: 50 },
+      { key: 'throughput_mbps', label: 'Throughput (MB/s)', type: 'number', default: 3000, min: 100 },
+    ],
+    defaults: { maxRps: 80000, baseLatencyMs: 0.1, replicas: 1 },
+  },
+  {
+    type: 'nvme',
+    label: 'NVMe Storage',
+    category: 'infrastructure',
+    icon: '⚡',
+    description: 'NVMe SSD via PCIe. Ultra-high IOPS and throughput for latency-critical workloads.',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max IOPS', type: 'number', default: 200000, min: 1000 },
+      { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 0.05, min: 0.01 },
+      { key: 'capacity_gb', label: 'Capacity (GB)', type: 'number', default: 1000, min: 100 },
+      { key: 'throughput_mbps', label: 'Throughput (MB/s)', type: 'number', default: 7000, min: 500 },
+    ],
+    defaults: { maxRps: 200000, baseLatencyMs: 0.05, replicas: 1 },
+  },
+  {
+    type: 'network_disk',
+    label: 'Network Disk (EBS/PD)',
+    category: 'infrastructure',
+    icon: '🌐💿',
+    description: 'Network-attached block storage (AWS EBS, GCP PD). Persistent, replicated, higher latency due to network hop.',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max IOPS', type: 'number', default: 16000, min: 100 },
+      { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 1, min: 0.1 },
+      { key: 'capacity_gb', label: 'Capacity (GB)', type: 'number', default: 500, min: 10 },
+      { key: 'throughput_mbps', label: 'Throughput (MB/s)', type: 'number', default: 1000, min: 100 },
+      { key: 'disk_type', label: 'Disk Type', type: 'select', default: 'gp3', options: ['gp3', 'io2', 'st1', 'sc1'] },
+    ],
+    defaults: { maxRps: 16000, baseLatencyMs: 1, replicas: 1 },
+  },
+
+  // --- Reliability (passthrough, high capacity) ---
   {
     type: 'circuit_breaker',
     label: 'Circuit Breaker',
@@ -337,11 +400,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔌',
     description: 'Prevents cascading failures',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1000 },
       { key: 'threshold', label: 'Threshold', type: 'number', default: 5, min: 1 },
       { key: 'timeout_ms', label: 'Timeout (ms)', type: 'number', default: 30000, min: 1000 },
       { key: 'half_open_requests', label: 'Half-Open Requests', type: 'number', default: 3, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 0, replicas: 1 },
+    defaults: { maxRps: 200000, baseLatencyMs: 0, replicas: 1 },
   },
   {
     type: 'rate_limiter',
@@ -350,11 +414,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🚦',
     description: 'Controls request rate',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1000 },
       { key: 'algorithm', label: 'Algorithm', type: 'select', default: 'token_bucket', options: ['token_bucket', 'sliding_window'] },
       { key: 'limit', label: 'Limit', type: 'number', default: 1000, min: 1 },
       { key: 'window_sec', label: 'Window (sec)', type: 'number', default: 60, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 0, replicas: 1 },
+    defaults: { maxRps: 200000, baseLatencyMs: 0, replicas: 1 },
   },
   {
     type: 'health_check',
@@ -363,11 +428,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '💓',
     description: 'Monitors component health',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1000 },
       { key: 'interval_sec', label: 'Interval (sec)', type: 'number', default: 10, min: 1 },
       { key: 'timeout_ms', label: 'Timeout (ms)', type: 'number', default: 5000, min: 100 },
       { key: 'unhealthy_threshold', label: 'Unhealthy Threshold', type: 'number', default: 3, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 0, replicas: 1 },
+    defaults: { maxRps: 200000, baseLatencyMs: 0, replicas: 1 },
   },
 
   // --- Security ---
@@ -378,10 +444,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔐',
     description: 'Authentication & authorization service',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 5000, min: 100 },
       { key: 'protocol', label: 'Protocol', type: 'select', default: 'JWT', options: ['OAuth2', 'JWT', 'SAML'] },
       { key: 'token_ttl_sec', label: 'Token TTL (sec)', type: 'number', default: 3600, min: 60 },
     ],
-    defaults: { maxRps: 10000, baseLatencyMs: 15, replicas: 2 },
+    defaults: { maxRps: 5000, baseLatencyMs: 15, replicas: 2 },
   },
 
   // --- Observability ---
@@ -392,10 +459,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📋',
     description: 'Centralized logging stack',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Events/sec/Node', type: 'number', default: 20000, min: 100 },
       { key: 'retention_days', label: 'Retention (days)', type: 'number', default: 30, min: 1 },
       { key: 'index_shards', label: 'Index Shards', type: 'number', default: 5, min: 1 },
     ],
-    defaults: { maxRps: 50000, baseLatencyMs: 10, replicas: 3 },
+    defaults: { maxRps: 20000, baseLatencyMs: 10, replicas: 3 },
   },
   {
     type: 'metrics_collector',
@@ -404,10 +472,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📊',
     description: 'Metrics collection and monitoring',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Samples/sec', type: 'number', default: 50000, min: 1000 },
       { key: 'scrape_interval_sec', label: 'Scrape Interval (sec)', type: 'number', default: 15, min: 5 },
       { key: 'retention_days', label: 'Retention (days)', type: 'number', default: 15, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 0, replicas: 2 },
+    defaults: { maxRps: 50000, baseLatencyMs: 0, replicas: 2 },
   },
   {
     type: 'tracing',
@@ -416,10 +485,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🔎',
     description: 'Distributed tracing',
     params: [
+      { key: 'max_rps_per_instance', label: 'Max Spans/sec', type: 'number', default: 30000, min: 1000 },
       { key: 'sampling_rate', label: 'Sampling Rate', type: 'number', default: 0.1, min: 0, max: 1 },
       { key: 'retention_days', label: 'Retention (days)', type: 'number', default: 7, min: 1 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 0, replicas: 2 },
+    defaults: { maxRps: 30000, baseLatencyMs: 0, replicas: 2 },
   },
 ];
 

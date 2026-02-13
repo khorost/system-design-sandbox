@@ -42,12 +42,19 @@ export function propagateFailure(
 
 export interface SimulationEngine {
   start(profile: LoadProfile): void;
+  updateProfile(profile: LoadProfile): void;
   stop(): void;
   tick(): SimulationMetrics;
   injectFailure(nodeId: string): FailureReport;
 }
 
 const TICK_DURATION_SEC = 0.1;
+
+const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
+
+function isClientType(type: string): boolean {
+  return CLIENT_TYPES.has(type);
+}
 
 let requestCounter = 0;
 
@@ -57,6 +64,12 @@ export function createSimulationEngine(
 ): SimulationEngine {
   const adjacency = buildAdjacencyList(connections);
   const entryNodes = findEntryNodes(components, connections);
+
+  // Build connection lookup: "from->to" → ConnectionModel
+  const connectionMap = new Map<string, ConnectionModel>();
+  for (const conn of connections) {
+    connectionMap.set(`${conn.from}->${conn.to}`, conn);
+  }
 
   let activeRequests: SimRequest[] = [];
   let profile: LoadProfile | null = null;
@@ -80,6 +93,11 @@ export function createSimulationEngine(
       }
     },
 
+    updateProfile(loadProfile: LoadProfile) {
+      profile = loadProfile;
+      // Don't reset tickCount/activeRequests — seamless transition
+    },
+
     stop() {
       profile = null;
       activeRequests = [];
@@ -93,36 +111,41 @@ export function createSimulationEngine(
           latencyP50: 0, latencyP95: 0, latencyP99: 0,
           throughput: 0, errorRate: 0,
           componentUtilization: {}, queueDepths: {},
+          edgeThroughput: {}, edgeLatency: {},
         };
       }
 
       tickCount++;
 
-      // Calculate current RPS based on load profile
-      let currentRps = profile.rps;
+      // Calculate load multiplier based on profile type
       const elapsed = tickCount * TICK_DURATION_SEC;
+      let multiplier = 1;
       if (profile.type === 'ramp') {
-        const progress = Math.min(elapsed / Math.max(profile.durationSec, 1), 1);
-        currentRps = profile.rps * progress;
+        multiplier = Math.min(elapsed / Math.max(profile.durationSec, 1), 1);
       } else if (profile.type === 'spike') {
         const cycle = elapsed % 10;
-        currentRps = cycle < 5 ? profile.rps : profile.rps * 3;
+        multiplier = cycle < 5 ? 1 : 3;
       }
 
-      // 1. Generate new requests (Poisson, lambda = rps * tickDuration)
-      const lambda = currentRps * TICK_DURATION_SEC;
-      const newCount = poissonSample(lambda);
+      // 1. Generate requests per entry node based on each node's generatedRps
+      for (const entryId of entryNodes) {
+        const comp = components.get(entryId);
+        if (!comp || comp.generatedRps <= 0) continue;
 
-      for (let i = 0; i < newCount; i++) {
-        const entry = entryNodes[Math.floor(Math.random() * entryNodes.length)];
-        const path = resolveRequestPath(adjacency, entry);
-        activeRequests.push({
-          id: `req-${++requestCounter}`,
-          path,
-          currentStep: 0,
-          totalLatencyMs: 0,
-          failed: false,
-        });
+        const nodeRps = comp.generatedRps * multiplier;
+        const lambda = nodeRps * TICK_DURATION_SEC;
+        const newCount = poissonSample(lambda);
+
+        for (let i = 0; i < newCount; i++) {
+          const path = resolveRequestPath(adjacency, entryId);
+          activeRequests.push({
+            id: `req-${++requestCounter}`,
+            path,
+            currentStep: 0,
+            totalLatencyMs: 0,
+            failed: false,
+          });
+        }
       }
 
       // 2. Reset current loads for this tick
@@ -141,6 +164,8 @@ export function createSimulationEngine(
 
       // 3. Process each active request: advance one hop
       const completed: SimRequest[] = [];
+      const edgeCounts: Record<string, number> = {};
+      const edgeLatencySum: Record<string, number> = {};
 
       for (const req of activeRequests) {
         if (req.failed) {
@@ -170,31 +195,52 @@ export function createSimulationEngine(
           continue;
         }
 
-        // Check if overloaded
-        if (comp.currentLoad > comp.maxRps) {
-          // Probabilistic failure based on overload degree
-          const overloadRatio = comp.currentLoad / comp.maxRps;
-          if (Math.random() < (overloadRatio - 1) / overloadRatio) {
+        // Client nodes are traffic sources — skip capacity/latency checks
+        if (!isClientType(comp.type)) {
+          // Check if overloaded
+          if (comp.currentLoad > comp.maxRps) {
+            // Probabilistic failure based on overload degree
+            const overloadRatio = comp.currentLoad / comp.maxRps;
+            if (Math.random() < (overloadRatio - 1) / overloadRatio) {
+              req.failed = true;
+              req.failureReason = `Node ${nodeId} overloaded`;
+              completed.push(req);
+              continue;
+            }
+          }
+
+          // Calculate latency for this hop
+          const hopLatency = calculateLatency(comp);
+          if (hopLatency === Infinity) {
             req.failed = true;
-            req.failureReason = `Node ${nodeId} overloaded`;
+            req.failureReason = `Node ${nodeId} at capacity`;
             completed.push(req);
             continue;
           }
-        }
 
-        // Calculate latency for this hop
-        const hopLatency = calculateLatency(comp);
-        if (hopLatency === Infinity) {
-          req.failed = true;
-          req.failureReason = `Node ${nodeId} at capacity`;
-          completed.push(req);
-          continue;
+          req.totalLatencyMs += hopLatency;
         }
-
-        req.totalLatencyMs += hopLatency;
 
         // Advance to next step
         req.currentStep++;
+
+        // Track edge transition: previous node → current node
+        if (req.currentStep > 0 && req.currentStep <= req.path.length) {
+          const prevNodeId = req.path[req.currentStep - 1];
+          const nextNodeId = req.path[req.currentStep];
+          if (prevNodeId && nextNodeId) {
+            const edgeKey = `${prevNodeId}->${nextNodeId}`;
+            edgeCounts[edgeKey] = (edgeCounts[edgeKey] || 0) + 1;
+
+            // Add network latency from connection
+            const conn = connectionMap.get(edgeKey);
+            if (conn) {
+              req.totalLatencyMs += conn.latencyMs;
+              edgeLatencySum[edgeKey] = (edgeLatencySum[edgeKey] || 0) + conn.latencyMs;
+            }
+          }
+        }
+
         if (req.currentStep >= req.path.length) {
           completed.push(req);
         }
@@ -204,7 +250,15 @@ export function createSimulationEngine(
       const completedIds = new Set(completed.map((r) => r.id));
       activeRequests = activeRequests.filter((r) => !completedIds.has(r.id));
 
-      return aggregateMetrics(completed, components, Date.now(), TICK_DURATION_SEC);
+      // Compute edge metrics
+      const edgeThroughput: Record<string, number> = {};
+      const edgeLatency: Record<string, number> = {};
+      for (const key of Object.keys(edgeCounts)) {
+        edgeThroughput[key] = TICK_DURATION_SEC > 0 ? edgeCounts[key] / TICK_DURATION_SEC : 0;
+        edgeLatency[key] = edgeCounts[key] > 0 ? edgeLatencySum[key] / edgeCounts[key] : 0;
+      }
+
+      return aggregateMetrics(completed, components, Date.now(), TICK_DURATION_SEC, edgeThroughput, edgeLatency);
     },
 
     injectFailure(nodeId: string): FailureReport {

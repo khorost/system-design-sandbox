@@ -47,6 +47,9 @@ export type ComponentType =
   | 'metrics_collector'
   | 'tracing'
   | 'alerting'
+  | 'local_ssd'
+  | 'nvme'
+  | 'network_disk'
   | 'region'
   | 'availability_zone'
   | 'vpc';
@@ -62,8 +65,23 @@ export interface ComponentNodeData {
   [key: string]: unknown;
 }
 
+export interface EdgeData {
+  protocol: ProtocolType;
+  latencyMs: number;
+  bandwidthMbps: number;
+  timeoutMs: number;
+  [key: string]: unknown;
+}
+
+export const DEFAULT_EDGE_DATA: EdgeData = {
+  protocol: 'REST',
+  latencyMs: 1,
+  bandwidthMbps: 1000,
+  timeoutMs: 5000,
+};
+
 export type ComponentNode = Node<ComponentNodeData>;
-export type ComponentEdge = Edge;
+export type ComponentEdge = Edge<EdgeData>;
 
 export interface ArchitectureSchema {
   version: string;
@@ -112,6 +130,9 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   metrics_collector: 'serviceNode',
   tracing: 'serviceNode',
   alerting: 'serviceNode',
+  local_ssd: 'databaseNode',
+  nvme: 'databaseNode',
+  network_disk: 'databaseNode',
   region: 'serviceNode',
   availability_zone: 'serviceNode',
   vpc: 'serviceNode',

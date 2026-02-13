@@ -2,6 +2,8 @@ import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentT
 import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ComponentNode, ComponentEdge } from '../types/index.ts';
 
+const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
+
 export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, ComponentModel> {
   const components = new Map<string, ComponentModel>();
 
@@ -10,16 +12,35 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
     const def = getDefinition(compType);
     const config = node.data.config;
 
-    const replicas = (config.replicas as number) || def?.defaults.replicas || 1;
-    const maxRpsPerInstance = (config.max_rps_per_instance as number) || (config.max_rps as number) || def?.defaults.maxRps || 1000;
+    const replicas = (config.replicas as number) || def?.defaults?.replicas || 1;
+    const maxRpsPerInstance = (config.max_rps_per_instance as number) || (config.max_rps as number) || def?.defaults?.maxRps || 1000;
     const maxRps = maxRpsPerInstance * replicas;
-    const baseLatencyMs = (config.base_latency_ms as number) || def?.defaults.baseLatencyMs || 10;
+    const baseLatencyMs = (config.base_latency_ms as number) || def?.defaults?.baseLatencyMs || 10;
+
+    // Client nodes: compute RPS from concurrent_users_k * 1000 * requests_per_user
+    // Backward compat: if requests_per_sec exists but concurrent_users_k doesn't, use old value
+    let generatedRps = 0;
+    if (CLIENT_TYPES.has(compType)) {
+      if (config.concurrent_users_k != null) {
+        const usersK = config.concurrent_users_k as number;
+        const rpu = (config.requests_per_user as number) ??
+          (def?.params?.find(p => p.key === 'requests_per_user')?.default as number ?? 0.1);
+        generatedRps = usersK * 1000 * rpu;
+      } else if (config.requests_per_sec != null) {
+        generatedRps = config.requests_per_sec as number;
+      } else {
+        const defUsersK = (def?.params?.find(p => p.key === 'concurrent_users_k')?.default as number) ?? 1;
+        const defRpu = (def?.params?.find(p => p.key === 'requests_per_user')?.default as number) ?? 0.1;
+        generatedRps = defUsersK * 1000 * defRpu;
+      }
+    }
 
     components.set(node.id, {
       id: node.id,
       type: compType,
       maxRps,
       currentLoad: 0,
+      generatedRps,
       baseLatencyMs,
       loadLatencyFactor: 0.001,
       failureRate: 0,
@@ -40,8 +61,20 @@ export function convertEdgesToConnections(edges: ComponentEdge[]): ConnectionMod
     .map((e) => ({
       from: e.source,
       to: e.target,
-      protocol: ((e.data as Record<string, unknown>)?.protocol as ConnectionModel['protocol']) || 'REST',
-      bandwidthMbps: ((e.data as Record<string, unknown>)?.bandwidth as number) || 1000,
-      timeoutMs: ((e.data as Record<string, unknown>)?.timeout as number) || 5000,
+      protocol: e.data?.protocol ?? 'REST',
+      latencyMs: e.data?.latencyMs ?? 1,
+      bandwidthMbps: e.data?.bandwidthMbps ?? 1000,
+      timeoutMs: e.data?.timeoutMs ?? 5000,
     }));
+}
+
+/** Maps engine edge keys ("source->target") back to React Flow edge IDs */
+export function buildEdgeKeyToIdMap(edges: ComponentEdge[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const e of edges) {
+    if (e.source && e.target) {
+      map[`${e.source}->${e.target}`] = e.id;
+    }
+  }
+  return map;
 }

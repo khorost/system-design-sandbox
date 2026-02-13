@@ -2,11 +2,14 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { ComponentNode } from '../../../types/index.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
+import type { NodeEma } from '../../../store/simulationStore.ts';
+import { getDefinition } from '@system-design-sandbox/component-library';
 
 interface BaseNodeProps {
   nodeProps: NodeProps<ComponentNode>;
   borderColor: string;
   bgColor: string;
+  hideTargetHandle?: boolean;
 }
 
 function getUtilColor(util: number): string {
@@ -16,19 +19,88 @@ function getUtilColor(util: number): string {
   return '';
 }
 
-export function BaseNode({ nodeProps, borderColor, bgColor }: BaseNodeProps) {
+function getTrendArrow(ema: NodeEma): string {
+  const diff = ema.ema1 - ema.ema5;
+  if (diff > 0.05) return '\u2191';
+  if (diff < -0.05) return '\u2193';
+  return '';
+}
+
+function fmtK(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
+
+function getNodeSummary(componentType: string, config: Record<string, unknown>): string[] {
+  const def = getDefinition(componentType as Parameters<typeof getDefinition>[0]);
+  const v = (key: string): unknown => config[key] ?? def?.params.find(p => p.key === key)?.default;
+
+  if (CLIENT_TYPES.has(componentType)) {
+    const usersK = (v('concurrent_users_k') as number) ?? 1;
+    const rpu = (v('requests_per_user') as number) ?? 0.1;
+    const rps = usersK * 1000 * rpu;
+    return [`${usersK}K users \u00d7 ${rpu}/s`, `\u2192 ${fmtK(Math.round(rps))} rps`];
+  }
+
+  const replicas = v('replicas') as number | undefined;
+  const nodes = v('nodes') as number | undefined;
+  const brokers = v('brokers') as number | undefined;
+  const maxRps = v('max_rps_per_instance') as number | undefined;
+
+  switch (componentType) {
+    case 'service':
+    case 'worker':
+    case 'auth_service':
+      return [`${replicas ?? 1}\u00d7 @ ${fmtK(maxRps ?? 0)} rps`];
+    case 'serverless_function':
+      return [`${fmtK(maxRps ?? 0)} rps, ${v('max_concurrent')} conc`];
+    case 'postgresql':
+      return [`${replicas ?? 1}+${v('read_replicas') ?? 0}R`, `${v('max_connections')} conn`];
+    case 'mongodb':
+      return [`${replicas ?? 3}\u00d7 RS, ${v('shards')} shards`];
+    case 'cassandra':
+      return [`${nodes ?? 3} nodes, ${v('consistency_level')}`];
+    case 'redis':
+      return [`${v('mode')}, ${v('memory_gb')}GB`];
+    case 'memcached':
+      return [`${nodes ?? 3} nodes, ${v('memory_gb')}GB`];
+    case 'kafka':
+      return [`${brokers ?? 3} brkrs, ${v('partitions')} parts`];
+    case 'rabbitmq':
+      return [`${v('queues')} queues${v('ha_mode') ? ', HA' : ''}`];
+    case 'load_balancer':
+      return [`${v('algorithm')}`, `${fmtK((v('max_connections') as number) ?? 0)} conn`];
+    case 'api_gateway':
+      return [`${fmtK(maxRps ?? 0)} rps, lim ${fmtK((v('rate_limit') as number) ?? 0)}`];
+    case 'cdn':
+      return [`${Math.round(((v('cache_hit_ratio') as number) ?? 0.9) * 100)}% hit, ${v('edge_locations')} edges`];
+    default: {
+      const r = replicas ?? nodes ?? brokers;
+      if (r && r > 1 && maxRps) return [`${r}\u00d7 @ ${fmtK(maxRps)} rps`];
+      if (maxRps) return [`${fmtK(maxRps)} rps`];
+      return [];
+    }
+  }
+}
+
+export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: BaseNodeProps) {
   const { id, data, selected } = nodeProps;
   const selectNode = useCanvasStore((s) => s.selectNode);
-  const util = useSimulationStore((s) => s.nodeUtilization[id] ?? 0);
+  const ema = useSimulationStore((s) => s.nodeEma[id]);
   const isRunning = useSimulationStore((s) => s.isRunning);
 
-  const utilColor = isRunning ? getUtilColor(util) : '';
+  const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
+  const utilColor = isRunning ? getUtilColor(maxEma) : '';
   const activeBorder = selected ? '#3b82f6' : utilColor || borderColor;
+  const summaryLines = getNodeSummary(data.componentType, data.config);
 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="rounded-lg shadow-lg min-w-[140px] cursor-pointer transition-all relative"
+      className="rounded shadow-lg min-w-[170px] cursor-pointer transition-all relative"
       style={{
         background: bgColor,
         border: `2px solid ${activeBorder}`,
@@ -39,23 +111,37 @@ export function BaseNode({ nodeProps, borderColor, bgColor }: BaseNodeProps) {
             : undefined,
       }}
     >
-      {isRunning && util > 0 && (
+      {isRunning && ema && maxEma > 0 && (
         <div
-          className="absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-[8px] font-bold text-white z-10"
+          className="absolute -top-5 -right-5 rounded flex items-center gap-1 px-2.5 py-1.5 text-white z-10 shadow-md"
           style={{ background: utilColor }}
         >
-          {Math.round(util * 100)}%
+          <span className="font-mono text-[9px] font-bold leading-none whitespace-nowrap">
+            {Math.round(ema.ema1 * 100)}/{Math.round(ema.ema5 * 100)}/{Math.round(ema.ema30 * 100)}
+          </span>
+          {getTrendArrow(ema) && (
+            <span className="text-[11px] leading-none">{getTrendArrow(ema)}</span>
+          )}
         </div>
       )}
-      <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-400 !border-blue-600" />
-      <div className="px-3 py-2">
-        <div className="flex items-center gap-2 mb-1">
+      {!hideTargetHandle && (
+        <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-400 !border-blue-600" />
+      )}
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">{data.icon}</span>
-          <span className="text-xs font-semibold text-slate-200 truncate max-w-[100px]">
+          <span className="text-sm font-semibold text-slate-200 truncate max-w-[120px]">
             {data.label}
           </span>
         </div>
-        <div className="text-[10px] text-slate-400">{data.componentType}</div>
+        {summaryLines.length > 0 && (
+          <div className="space-y-1 mb-2 pl-1">
+            {summaryLines.map((line, i) => (
+              <div key={i} className="text-[11px] font-mono text-slate-400 leading-snug">{line}</div>
+            ))}
+          </div>
+        )}
+        <div className="text-[10px] text-slate-500 mt-1">{data.componentType}</div>
       </div>
       <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-400 !border-blue-600" />
     </div>

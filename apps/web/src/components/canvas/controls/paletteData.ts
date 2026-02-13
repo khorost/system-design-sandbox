@@ -15,6 +15,7 @@ export const paletteCategories: { key: ComponentCategory; label: string }[] = [
   { key: 'cache', label: 'Cache' },
   { key: 'messaging', label: 'Messaging' },
   { key: 'reliability', label: 'Reliability' },
+  { key: 'infrastructure', label: 'Infrastructure' },
   { key: 'security', label: 'Security' },
   { key: 'observability', label: 'Observability' },
 ];
@@ -53,6 +54,11 @@ export const paletteItems: PaletteItem[] = [
   { type: 'kafka', label: 'Kafka', icon: '📨', category: 'messaging' },
   { type: 'rabbitmq', label: 'RabbitMQ', icon: '🐇', category: 'messaging' },
   { type: 'event_bus', label: 'Event Bus', icon: '🚌', category: 'messaging' },
+
+  // Infrastructure / Storage
+  { type: 'local_ssd', label: 'Local SSD', icon: '💾', category: 'infrastructure' },
+  { type: 'nvme', label: 'NVMe Storage', icon: '⚡', category: 'infrastructure' },
+  { type: 'network_disk', label: 'Network Disk', icon: '🌐💿', category: 'infrastructure' },
 
   // Reliability
   { type: 'circuit_breaker', label: 'Circuit Breaker', icon: '🔌', category: 'reliability' },

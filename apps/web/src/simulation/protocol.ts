@@ -5,6 +5,7 @@ export type WorkerCommand =
   | { type: 'INIT'; components: [string, ComponentModel][]; connections: ConnectionModel[] }
   | { type: 'START'; profile: LoadProfile }
   | { type: 'STOP' }
+  | { type: 'UPDATE_PROFILE'; profile: LoadProfile }
   | { type: 'INJECT_FAILURE'; nodeId: string }
   | { type: 'RECONFIGURE'; components: [string, ComponentModel][]; connections: ConnectionModel[] };
 

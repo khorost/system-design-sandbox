@@ -33,6 +33,9 @@ export type ComponentType =
   | 'metrics_collector'
   | 'tracing'
   | 'alerting'
+  | 'local_ssd'
+  | 'nvme'
+  | 'network_disk'
   | 'region'
   | 'availability_zone'
   | 'vpc';
@@ -46,6 +49,9 @@ export interface ComponentModel {
   // Capacity
   maxRps: number;
   currentLoad: number;
+
+  // Traffic generation (client nodes only)
+  generatedRps: number;
 
   // Latency model: baseLatency + loadFactor * load^2
   baseLatencyMs: number;
@@ -66,6 +72,7 @@ export interface ConnectionModel {
   from: string;
   to: string;
   protocol: ProtocolType;
+  latencyMs: number;
   bandwidthMbps: number;
   timeoutMs: number;
   retryPolicy?: {
@@ -83,6 +90,8 @@ export interface SimulationMetrics {
   errorRate: number;
   componentUtilization: Record<string, number>;
   queueDepths: Record<string, number>;
+  edgeThroughput: Record<string, number>;
+  edgeLatency: Record<string, number>;
 }
 
 export interface FailureReport {

@@ -1,4 +1,10 @@
+import { useMemo } from 'react';
 import { useSimulationStore } from '../../store/simulationStore.ts';
+import { useCanvasStore } from '../../store/canvasStore.ts';
+import { getDefinition } from '@system-design-sandbox/component-library';
+import type { ComponentType as EngineComponentType } from '@system-design-sandbox/simulation-engine';
+
+const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -6,99 +12,102 @@ function formatNumber(n: number): string {
   return n.toFixed(0);
 }
 
-const LOG_MIN = 2; // 10^2 = 100
-const LOG_MAX = 6; // 10^6 = 1,000,000
+function useClientNodes() {
+  const nodes = useCanvasStore((s) => s.nodes);
+  return useMemo(
+    () => nodes.filter((n) => CLIENT_TYPES.has(n.data.componentType)),
+    [nodes],
+  );
+}
 
 export function SimulationPanel() {
   const isRunning = useSimulationStore((s) => s.isRunning);
-  const rps = useSimulationStore((s) => s.rps);
-  const payloadSizeKb = useSimulationStore((s) => s.payloadSizeKb);
   const loadType = useSimulationStore((s) => s.loadType);
   const currentMetrics = useSimulationStore((s) => s.currentMetrics);
-  const setRps = useSimulationStore((s) => s.setRps);
-  const setPayloadSizeKb = useSimulationStore((s) => s.setPayloadSizeKb);
   const setLoadType = useSimulationStore((s) => s.setLoadType);
   const start = useSimulationStore((s) => s.start);
   const stop = useSimulationStore((s) => s.stop);
+  const clientNodes = useClientNodes();
 
-  const logValue = Math.log10(rps);
-
-  const handleRpsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const log = parseFloat(e.target.value);
-    setRps(Math.round(Math.pow(10, log)));
-  };
+  const totalRps = clientNodes.reduce((sum, n) => {
+    return sum + getClientRps(n.data.componentType, n.data.config);
+  }, 0);
 
   return (
-    <div className="p-3 space-y-3">
-      <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Load Simulation</h3>
+    <div className="p-4 space-y-4">
+      <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Load Simulation</h3>
 
+      {/* Per-client traffic sources */}
       <div>
-        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          RPS: {formatNumber(rps)}
+        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          Traffic Sources
         </label>
-        <input
-          type="range"
-          min={LOG_MIN}
-          max={LOG_MAX}
-          step={0.01}
-          value={logValue}
-          onChange={handleRpsChange}
-          disabled={isRunning}
-          className="w-full mt-1 accent-blue-500"
-        />
-        <div className="flex justify-between text-[9px] text-slate-500">
-          <span>100</span>
-          <span>10K</span>
-          <span>1M</span>
-        </div>
+        {clientNodes.length === 0 ? (
+          <p className="text-xs text-slate-500 mt-1">
+            Add client nodes to canvas to generate traffic
+          </p>
+        ) : (
+          <div className="mt-1.5 space-y-1.5">
+            {clientNodes.map((node) => {
+              const rps = getClientRps(node.data.componentType, node.data.config);
+              return (
+                <div
+                  key={node.id}
+                  className="flex items-center justify-between px-3 py-2 bg-[var(--color-bg)] rounded text-xs"
+                >
+                  <span className="text-slate-300 truncate">
+                    {node.data.icon} {node.data.label}
+                  </span>
+                  <span className="text-blue-400 font-mono font-semibold ml-2 shrink-0">
+                    {formatNumber(rps)}/s
+                  </span>
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20 text-xs">
+              <span className="text-slate-300 font-semibold">Total RPS</span>
+              <span className="text-blue-400 font-mono font-bold">{formatNumber(totalRps)}/s</span>
+            </div>
+          </div>
+        )}
+        <p className="text-[11px] text-slate-500 mt-1.5">
+          Configure RPS per client in Properties
+        </p>
       </div>
 
       <div>
-        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-          Payload Size (KB)
-        </label>
-        <input
-          type="number"
-          min={1}
-          max={10000}
-          value={payloadSizeKb}
-          onChange={(e) => setPayloadSizeKb(Number(e.target.value))}
-          disabled={isRunning}
-          className="w-full mt-1 px-2 py-1.5 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
-        />
-      </div>
-
-      <div>
-        <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
           Load Type
         </label>
         <select
           value={loadType}
           onChange={(e) => setLoadType(e.target.value as 'constant' | 'ramp' | 'spike')}
-          disabled={isRunning}
-          className="w-full mt-1 px-2 py-1.5 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+          className="w-full mt-1 px-3 py-2 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
         >
           <option value="constant">Constant</option>
           <option value="ramp">Ramp Up</option>
-          <option value="spike">Spike</option>
+          <option value="spike">Spike (3x bursts)</option>
         </select>
       </div>
 
       <button
         onClick={() => (isRunning ? stop() : start())}
-        className={`w-full px-3 py-2 text-xs font-semibold rounded transition-colors ${
-          isRunning
-            ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
-            : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+        disabled={clientNodes.length === 0}
+        className={`w-full px-4 py-2.5 text-sm font-semibold rounded transition-colors ${
+          clientNodes.length === 0
+            ? 'bg-slate-500/20 text-slate-500 border border-slate-500/30 cursor-not-allowed'
+            : isRunning
+              ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+              : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
         }`}
       >
         {isRunning ? 'Stop Simulation' : 'Start Simulation'}
       </button>
 
       {currentMetrics && (
-        <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
-          <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">Live Metrics</h4>
-          <div className="grid grid-cols-2 gap-1.5">
+        <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Metrics</h4>
+          <div className="grid grid-cols-2 gap-2">
             <MetricCard label="P50" value={`${currentMetrics.latencyP50.toFixed(1)}ms`} />
             <MetricCard label="P95" value={`${currentMetrics.latencyP95.toFixed(1)}ms`} />
             <MetricCard label="P99" value={`${currentMetrics.latencyP99.toFixed(1)}ms`} />
@@ -113,9 +122,25 @@ export function SimulationPanel() {
 
 function MetricCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="bg-[var(--color-bg)] rounded px-2 py-1.5">
-      <div className="text-[9px] text-slate-500 uppercase">{label}</div>
-      <div className={`text-xs font-mono font-semibold ${color || 'text-slate-200'}`}>{value}</div>
+    <div className="bg-[var(--color-bg)] rounded px-3 py-2">
+      <div className="text-[11px] text-slate-500 uppercase">{label}</div>
+      <div className={`text-sm font-mono font-semibold ${color || 'text-slate-200'}`}>{value}</div>
     </div>
   );
+}
+
+function getClientRps(componentType: string, config: Record<string, unknown>): number {
+  const def = getDefinition(componentType as EngineComponentType);
+  if (config.concurrent_users_k != null) {
+    const usersK = config.concurrent_users_k as number;
+    const rpu = (config.requests_per_user as number) ??
+      (def?.params?.find(p => p.key === 'requests_per_user')?.default as number ?? 0.1);
+    return usersK * 1000 * rpu;
+  }
+  if (config.requests_per_sec != null) {
+    return config.requests_per_sec as number;
+  }
+  const defUsersK = (def?.params?.find(p => p.key === 'concurrent_users_k')?.default as number) ?? 1;
+  const defRpu = (def?.params?.find(p => p.key === 'requests_per_user')?.default as number) ?? 0.1;
+  return defUsersK * 1000 * defRpu;
 }

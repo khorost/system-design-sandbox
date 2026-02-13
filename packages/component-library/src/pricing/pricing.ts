@@ -113,6 +113,31 @@ export const pricingModels: PricingModel[] = [
     },
   },
   {
+    type: 'local_ssd',
+    calculate: (config) => {
+      const capacityGb = (config.capacity_gb as number) || 500;
+      return capacityGb * 0.08; // $/GB/month (local NVMe instance store priced into instance)
+    },
+  },
+  {
+    type: 'nvme',
+    calculate: (config) => {
+      const capacityGb = (config.capacity_gb as number) || 1000;
+      return capacityGb * 0.12; // $/GB/month (high-perf NVMe)
+    },
+  },
+  {
+    type: 'network_disk',
+    calculate: (config) => {
+      const capacityGb = (config.capacity_gb as number) || 500;
+      const diskType = (config.disk_type as string) || 'gp3';
+      const iops = (config.max_rps_per_instance as number) || 16000;
+      const pricePerGb = diskType === 'io2' ? 0.125 : diskType === 'st1' ? 0.045 : diskType === 'sc1' ? 0.015 : 0.08;
+      const iopsCost = diskType === 'io2' ? iops * 0.065 : 0; // io2 charges per provisioned IOPS
+      return capacityGb * pricePerGb + iopsCost;
+    },
+  },
+  {
     type: 'api_gateway',
     calculate: (config) => {
       const maxRps = (config.max_rps as number) || 50000;
