@@ -22,11 +22,14 @@ function useClientNodes() {
 
 export function SimulationPanel() {
   const isRunning = useSimulationStore((s) => s.isRunning);
+  const isPaused = useSimulationStore((s) => s.isPaused);
   const loadType = useSimulationStore((s) => s.loadType);
   const currentMetrics = useSimulationStore((s) => s.currentMetrics);
   const setLoadType = useSimulationStore((s) => s.setLoadType);
   const start = useSimulationStore((s) => s.start);
   const stop = useSimulationStore((s) => s.stop);
+  const pause = useSimulationStore((s) => s.pause);
+  const resume = useSimulationStore((s) => s.resume);
   const clientNodes = useClientNodes();
 
   const totalRps = clientNodes.reduce((sum, n) => {
@@ -90,19 +93,41 @@ export function SimulationPanel() {
         </select>
       </div>
 
-      <button
-        onClick={() => (isRunning ? stop() : start())}
-        disabled={clientNodes.length === 0}
-        className={`w-full px-4 py-2.5 text-sm font-semibold rounded transition-colors ${
-          clientNodes.length === 0
-            ? 'bg-slate-500/20 text-slate-500 border border-slate-500/30 cursor-not-allowed'
-            : isRunning
-              ? 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+      {!isRunning ? (
+        <button
+          onClick={() => start()}
+          disabled={clientNodes.length === 0}
+          className={`w-full px-6 py-4 text-base font-bold rounded-lg transition-colors ${
+            clientNodes.length === 0
+              ? 'bg-slate-500/20 text-slate-500 border border-slate-500/30 cursor-not-allowed'
               : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-        }`}
-      >
-        {isRunning ? 'Stop Simulation' : 'Start Simulation'}
-      </button>
+          }`}
+        >
+          Start Simulation
+        </button>
+      ) : isPaused ? (
+        <div className="flex gap-2">
+          <button
+            onClick={() => resume()}
+            className="flex-1 px-4 py-4 text-base font-bold rounded-lg transition-colors bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30"
+          >
+            Resume
+          </button>
+          <button
+            onClick={() => stop()}
+            className="flex-1 px-4 py-4 text-base font-bold rounded-lg transition-colors bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+          >
+            Stop
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => pause()}
+          className="w-full px-6 py-4 text-base font-bold rounded-lg transition-colors bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30"
+        >
+          Pause Simulation
+        </button>
+      )}
 
       {currentMetrics && (
         <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">

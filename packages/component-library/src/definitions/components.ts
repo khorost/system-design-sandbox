@@ -10,7 +10,8 @@ export type ComponentCategory =
   | 'reliability'
   | 'security'
   | 'observability'
-  | 'infrastructure';
+  | 'infrastructure'
+  | 'storage';
 
 export interface ComponentParam {
   key: string;
@@ -290,6 +291,32 @@ export const componentDefinitions: ComponentDefinition[] = [
     defaults: { maxRps: 5500, baseLatencyMs: 20, replicas: 1 },
   },
   {
+    type: 'nfs',
+    label: 'NFS Storage',
+    category: 'storage',
+    icon: '📂',
+    description: 'Network File System shared storage',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max IOPS', type: 'number', default: 3000, min: 100 },
+      { key: 'storage_tb', label: 'Storage (TB)', type: 'number', default: 1, min: 0.1 },
+      { key: 'max_throughput_mbps', label: 'Max Throughput (Mbps)', type: 'number', default: 500, min: 50 },
+    ],
+    defaults: { maxRps: 3000, baseLatencyMs: 5, replicas: 1 },
+  },
+  {
+    type: 'etcd',
+    label: 'etcd',
+    category: 'database',
+    icon: '🔑',
+    description: 'Distributed key-value store for configuration and service discovery',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max Req/sec/Node', type: 'number', default: 10000, min: 100 },
+      { key: 'replicas', label: 'Nodes', type: 'number', default: 3, min: 1 },
+      { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 2, min: 0.5 },
+    ],
+    defaults: { maxRps: 10000, baseLatencyMs: 2, replicas: 3 },
+  },
+  {
     type: 'elasticsearch',
     label: 'Elasticsearch',
     category: 'database',
@@ -410,11 +437,11 @@ export const componentDefinitions: ComponentDefinition[] = [
     defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
   },
 
-  // --- Infrastructure / Storage ---
+  // --- Storage ---
   {
     type: 'local_ssd',
     label: 'Local SSD',
-    category: 'infrastructure',
+    category: 'storage',
     icon: '💾',
     description: 'Local SSD disk attached to host. High IOPS, low latency, no network overhead. Data lost on instance termination.',
     params: [
@@ -428,7 +455,7 @@ export const componentDefinitions: ComponentDefinition[] = [
   {
     type: 'nvme',
     label: 'NVMe Storage',
-    category: 'infrastructure',
+    category: 'storage',
     icon: '⚡',
     description: 'NVMe SSD via PCIe. Ultra-high IOPS and throughput for latency-critical workloads.',
     params: [
@@ -442,7 +469,7 @@ export const componentDefinitions: ComponentDefinition[] = [
   {
     type: 'network_disk',
     label: 'Network Disk (EBS/PD)',
-    category: 'infrastructure',
+    category: 'storage',
     icon: '🌐💿',
     description: 'Network-attached block storage (AWS EBS, GCP PD). Persistent, replicated, higher latency due to network hop.',
     params: [
@@ -560,13 +587,14 @@ export const categoryLabels: Record<ComponentCategory, string> = {
   clients: 'Clients & Entry Points',
   network: 'Network Layer',
   compute: 'Compute',
-  database: 'Databases & Storage',
+  database: 'Databases',
   cache: 'Cache',
   messaging: 'Messaging & Events',
   reliability: 'Reliability',
   security: 'Security',
   observability: 'Observability',
-  infrastructure: 'Infrastructure',
+  infrastructure: 'Containers',
+  storage: 'Storage',
 };
 
 export function getDefinition(type: ComponentType): ComponentDefinition | undefined {

@@ -6,6 +6,7 @@ export function useWhatIfMode() {
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const isRunning = useSimulationStore((s) => s.isRunning);
+  const isPaused = useSimulationStore((s) => s.isPaused);
   const reconfigure = useSimulationStore((s) => s.reconfigure);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialRef = useRef(true);
@@ -17,7 +18,7 @@ export function useWhatIfMode() {
       return;
     }
 
-    if (!isRunning) return;
+    if (!isRunning || isPaused) return;
 
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -32,5 +33,5 @@ export function useWhatIfMode() {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [nodes, edges, isRunning, reconfigure]);
+  }, [nodes, edges, isRunning, isPaused, reconfigure]);
 }

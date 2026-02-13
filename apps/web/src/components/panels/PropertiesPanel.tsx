@@ -1,12 +1,24 @@
+import { useState } from 'react';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import { paletteItems } from '../canvas/controls/paletteData.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import type { ProtocolType } from '../../types/index.ts';
+import type { ProtocolType, EdgeRoutingRule } from '../../types/index.ts';
+import { DISK_COMPONENT_TYPES, NETWORK_PROTOCOLS, DISK_PROTOCOLS } from '../../types/index.ts';
 import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../utils/networkLatency.ts';
+
+interface TagWeightEntry {
+  tag: string;
+  weight: number;
+}
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
-const PROTOCOL_OPTIONS: ProtocolType[] = ['REST', 'gRPC', 'WebSocket', 'GraphQL', 'async', 'TCP'];
+function getProtocolOptions(targetComponentType?: string): ProtocolType[] {
+  if (targetComponentType && DISK_COMPONENT_TYPES.has(targetComponentType)) {
+    return DISK_PROTOCOLS;
+  }
+  return NETWORK_PROTOCOLS;
+}
 
 const COMPONENT_PARAMS: Record<string, { key: string; label: string; type: 'number' | 'text' | 'select'; options?: string[] }[]> = {
   web_client: [
@@ -95,6 +107,15 @@ function EdgeProperties() {
   const targetNode = nodes.find((n) => n.id === edge.target);
   const data = edge.data;
 
+  const allowedProtocols = getProtocolOptions(targetNode?.data.componentType);
+  const currentProtocol = data?.protocol ?? 'REST';
+  const effectiveProtocol = allowedProtocols.includes(currentProtocol) ? currentProtocol : allowedProtocols[0];
+
+  // Auto-correct protocol if it's not in the allowed list
+  if (effectiveProtocol !== currentProtocol) {
+    updateEdgeData(edge.id, { protocol: effectiveProtocol });
+  }
+
   const handleDelete = () => {
     onEdgesChange([{ id: edge.id, type: 'remove' }]);
     selectEdge(null);
@@ -118,11 +139,11 @@ function EdgeProperties() {
         <div>
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Protocol</label>
           <select
-            value={data?.protocol ?? 'REST'}
+            value={effectiveProtocol}
             onChange={(e) => updateEdgeData(edge.id, { protocol: e.target.value as ProtocolType })}
             className={inputClass}
           >
-            {PROTOCOL_OPTIONS.map((p) => (
+            {allowedProtocols.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
@@ -170,6 +191,8 @@ function EdgeProperties() {
             className={inputClass}
           />
         </div>
+
+        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} />
       </div>
 
       <div className="p-4 border-t border-[var(--color-border)]">
@@ -179,6 +202,108 @@ function EdgeProperties() {
         >
           Delete Connection
         </button>
+      </div>
+    </div>
+  );
+}
+
+function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
+  edgeId: string;
+  rules: EdgeRoutingRule[];
+  updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: EdgeRoutingRule[]) => {
+    updateEdgeData(edgeId, { routingRules: updated.length > 0 ? updated : undefined });
+  };
+
+  const addRule = () => {
+    const tag = newTag.trim() || 'default';
+    if (rules.some(r => r.tag === tag)) return;
+    update([...rules, { tag, weight: 1.0 }]);
+    setNewTag('');
+  };
+
+  const removeRule = (idx: number) => {
+    update(rules.filter((_, i) => i !== idx));
+  };
+
+  const updateRule = (idx: number, field: 'tag' | 'weight' | 'outTag', value: string | number) => {
+    const updated = rules.map((r, i) => {
+      if (i !== idx) return r;
+      if (field === 'outTag' && value === '') {
+        const { outTag: _, ...rest } = r;
+        return rest;
+      }
+      return { ...r, [field]: value };
+    });
+    update(updated);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Routing Rules</label>
+        <button
+          onClick={addRule}
+          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+        >
+          + Add Rule
+        </button>
+      </div>
+      {rules.length === 0 ? (
+        <p className="text-xs text-slate-500">No rules — equal distribution</p>
+      ) : (
+        <div className="space-y-2">
+          {rules.map((rule, idx) => (
+            <div key={idx} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={rule.tag}
+                  placeholder="tag"
+                  onChange={(e) => updateRule(idx, 'tag', e.target.value)}
+                  className="flex-1 min-w-0 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={rule.weight}
+                  onChange={(e) => updateRule(idx, 'weight', Number(e.target.value))}
+                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  onClick={() => removeRule(idx)}
+                  className="text-red-400 hover:text-red-300 text-xs px-1"
+                >
+                  x
+                </button>
+              </div>
+              <div className="flex items-center gap-1 pl-1">
+                <span className="text-[10px] text-slate-500">→</span>
+                <input
+                  type="text"
+                  value={rule.outTag ?? ''}
+                  placeholder="rewrite tag"
+                  onChange={(e) => updateRule(idx, 'outTag', e.target.value)}
+                  className="flex-1 min-w-0 px-2 py-0.5 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="new tag name"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addRule()}
+          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+        />
       </div>
     </div>
   );
@@ -304,6 +429,14 @@ function NodeProperties() {
           );
         })()}
 
+        {CLIENT_TYPES.has(selectedNode.data.componentType) && (
+          <TagDistributionEditor
+            nodeId={selectedNode.id}
+            tags={(config.tagDistribution as TagWeightEntry[] | undefined) ?? []}
+            updateNodeConfig={updateNodeConfig}
+          />
+        )}
+
         {params.length === 0 && (
           <p className="text-sm text-slate-500">No configurable parameters for this component type.</p>
         )}
@@ -316,6 +449,95 @@ function NodeProperties() {
         >
           Delete Component
         </button>
+      </div>
+    </div>
+  );
+}
+
+function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
+  nodeId: string;
+  tags: TagWeightEntry[];
+  updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: TagWeightEntry[]) => {
+    updateNodeConfig(nodeId, { tagDistribution: updated.length > 0 ? updated : undefined });
+  };
+
+  const addTag = () => {
+    const tag = newTag.trim() || 'read';
+    if (tags.some(t => t.tag === tag)) return;
+    update([...tags, { tag, weight: 1.0 }]);
+    setNewTag('');
+  };
+
+  const removeTag = (idx: number) => {
+    update(tags.filter((_, i) => i !== idx));
+  };
+
+  const updateTag = (idx: number, field: 'tag' | 'weight', value: string | number) => {
+    const updated = tags.map((t, i) => i === idx ? { ...t, [field]: value } : t);
+    update(updated);
+  };
+
+  const totalWeight = tags.reduce((s, t) => s + t.weight, 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Traffic Tags</label>
+        <button
+          onClick={addTag}
+          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+        >
+          + Add Tag
+        </button>
+      </div>
+      {tags.length === 0 ? (
+        <p className="text-xs text-slate-500">All traffic tagged as 'default'</p>
+      ) : (
+        <div className="space-y-2">
+          {tags.map((entry, idx) => {
+            const pct = totalWeight > 0 ? ((entry.weight / totalWeight) * 100).toFixed(0) : '0';
+            return (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={entry.tag}
+                  placeholder="tag"
+                  onChange={(e) => updateTag(idx, 'tag', e.target.value)}
+                  className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={entry.weight}
+                  onChange={(e) => updateTag(idx, 'weight', Number(e.target.value))}
+                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-xs text-slate-400 w-10 text-right">{pct}%</span>
+                <button
+                  onClick={() => removeTag(idx)}
+                  className="text-red-400 hover:text-red-300 text-xs px-1"
+                >
+                  x
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="new tag name"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addTag()}
+          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+        />
       </div>
     </div>
   );

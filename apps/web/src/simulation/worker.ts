@@ -32,7 +32,12 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
       if (intervalId !== null) clearInterval(intervalId);
       intervalId = setInterval(() => {
         if (!engine) return;
+        const t0 = performance.now();
         const metrics = engine.tick();
+        const tickMs = performance.now() - t0;
+        if (metrics.engineStats) {
+          metrics.engineStats.tickDurationMs = tickMs;
+        }
         post({ type: 'TICK', metrics });
       }, 100);
       break;
@@ -44,6 +49,33 @@ self.onmessage = (event: MessageEvent<WorkerCommand>) => {
         intervalId = null;
       }
       engine?.stop();
+      break;
+    }
+
+    case 'PAUSE': {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      break;
+    }
+
+    case 'RESUME': {
+      if (!engine) {
+        post({ type: 'ERROR', message: 'Engine not initialized' });
+        return;
+      }
+      if (intervalId !== null) break; // already running
+      intervalId = setInterval(() => {
+        if (!engine) return;
+        const t0 = performance.now();
+        const metrics = engine.tick();
+        const tickMs = performance.now() - t0;
+        if (metrics.engineStats) {
+          metrics.engineStats.tickDurationMs = tickMs;
+        }
+        post({ type: 'TICK', metrics });
+      }, 100);
       break;
     }
 

@@ -18,7 +18,7 @@ import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ComponentNode, ComponentEdge, ComponentNodeData, ComponentCategory, ComponentType } from '../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../types/index.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import { CONTAINER_TYPES, CONTAINER_Z_INDEX } from '../../utils/networkLatency.ts';
+import { CONTAINER_TYPES, CONTAINER_Z_INDEX, isValidNesting, getAbsolutePosition, getNestingDepth } from '../../utils/networkLatency.ts';
 import { ServiceNode } from './nodes/ServiceNode.tsx';
 import { DatabaseNode } from './nodes/DatabaseNode.tsx';
 import { CacheNode } from './nodes/CacheNode.tsx';
@@ -28,6 +28,7 @@ import { GatewayNode } from './nodes/GatewayNode.tsx';
 import { ContainerNode } from './nodes/ContainerNode.tsx';
 import { FlowEdge } from './edges/FlowEdge.tsx';
 import { Toolbar } from './controls/Toolbar.tsx';
+import { DebugStats } from './DebugStats.tsx';
 
 const nodeTypes: NodeTypes = {
   serviceNode: ServiceNode,
@@ -50,9 +51,26 @@ function getNextId() {
   return `node-${++nodeId}-${Date.now()}`;
 }
 
+/** Pick the most deeply nested container (innermost wins). */
+function pickInnermostContainer(containers: ComponentNode[]): ComponentNode {
+  const storeNodes = useCanvasStore.getState().nodes;
+  const nodeMap = new Map(storeNodes.map(n => [n.id, n]));
+  return containers.reduce((best, curr) => {
+    const bestNode = nodeMap.get(best.id) ?? best;
+    const currNode = nodeMap.get(curr.id) ?? curr;
+    const bestDepth = getNestingDepth(bestNode, nodeMap);
+    const currDepth = getNestingDepth(currNode, nodeMap);
+    if (currDepth !== bestDepth) return currDepth > bestDepth ? curr : best;
+    // Tiebreaker: smaller area
+    const ba = ((best.style?.width as number) ?? 400) * ((best.style?.height as number) ?? 300);
+    const ca = ((curr.style?.width as number) ?? 400) * ((curr.style?.height as number) ?? 300);
+    return ca < ba ? curr : best;
+  });
+}
+
 function CanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getIntersectingNodes } = useReactFlow();
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -96,6 +114,36 @@ function CanvasInner() {
     [selectEdge],
   );
 
+  const onNodeDragStop = useCallback(
+    (_event: React.MouseEvent, draggedNode: ComponentNode) => {
+      const { setNodeParent } = useCanvasStore.getState();
+      const intersecting = getIntersectingNodes(draggedNode);
+
+      const validContainers = intersecting.filter((n) => {
+        const nd = n as ComponentNode;
+        return nd.id !== draggedNode.id &&
+          CONTAINER_TYPES.has(nd.data.componentType) &&
+          isValidNesting(draggedNode.data.componentType, nd.data.componentType);
+      }) as ComponentNode[];
+
+      if (validContainers.length === 0) {
+        // Detach if currently parented and outside all valid containers
+        if (draggedNode.parentId) {
+          setNodeParent(draggedNode.id, null);
+        }
+        return;
+      }
+
+      // Pick innermost container (deepest nesting)
+      const target = pickInnermostContainer(validContainers);
+
+      if (target.id !== draggedNode.parentId) {
+        setNodeParent(draggedNode.id, target.id);
+      }
+    },
+    [getIntersectingNodes],
+  );
+
   const onDragOver = useCallback((event: DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -129,11 +177,37 @@ function CanvasInner() {
         }
       }
 
-      // All nodes are dropped at top-level; use Properties panel to assign parent container
+      // Auto-parent: find container under the drop point
+      const currentNodes = useCanvasStore.getState().nodes;
+      const nodeMap = new Map(currentNodes.map(n => [n.id, n]));
+
+      const hitContainers = currentNodes.filter(n => {
+        if (!CONTAINER_TYPES.has(n.data.componentType)) return false;
+        if (!isValidNesting(componentType, n.data.componentType)) return false;
+        const abs = getAbsolutePosition(n, nodeMap);
+        const w = (n.style?.width as number) ?? n.width ?? 400;
+        const h = (n.style?.height as number) ?? n.height ?? 300;
+        return position.x >= abs.x && position.x <= abs.x + w &&
+               position.y >= abs.y && position.y <= abs.y + h;
+      });
+
+      let parentId: string | undefined;
+      let adjustedPosition = position;
+
+      if (hitContainers.length > 0) {
+        const target = pickInnermostContainer(hitContainers);
+        parentId = target.id;
+        const parentAbs = getAbsolutePosition(target, nodeMap);
+        adjustedPosition = {
+          x: Math.max(10, position.x - parentAbs.x),
+          y: Math.max(35, position.y - parentAbs.y),
+        };
+      }
+
       const newNode: ComponentNode = {
         id: getNextId(),
         type: nodeType,
-        position,
+        position: adjustedPosition,
         data: {
           label,
           componentType,
@@ -142,6 +216,7 @@ function CanvasInner() {
           config: defaultConfig,
         } satisfies ComponentNodeData,
         ...(isContainer ? { style: { width: 400, height: 300 }, dragHandle: '.container-drag-handle', zIndex: CONTAINER_Z_INDEX[componentType] ?? -1 } : {}),
+        ...(parentId ? { parentId, extent: 'parent' as const } : {}),
       };
 
       addNode(newNode);
@@ -180,6 +255,7 @@ function CanvasInner() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
+        onNodeDragStop={onNodeDragStop}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onPaneClick={onPaneClick}
@@ -208,6 +284,7 @@ function CanvasInner() {
           maskColor="rgba(15,23,42,0.8)"
         />
       </ReactFlow>
+      <DebugStats />
     </div>
   );
 }

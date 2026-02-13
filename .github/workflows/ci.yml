@@ -1,0 +1,72 @@
+name: CI/CD
+on:
+  push:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: [self-hosted]
+    outputs:
+      web: ${{ steps.changes.outputs.web }}
+      server: ${{ steps.changes.outputs.server }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: changes
+        run: |
+          DIFF=$(git diff --name-only HEAD~1)
+          # web зависит от apps/web + packages/*
+          if echo "$DIFF" | grep -qE '^(apps/web/|packages/)'; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+          # server зависит только от apps/server
+          if echo "$DIFF" | grep -q '^apps/server/'; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "server=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-web:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
+        env:
+          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      - run: |
+          IMAGE=images.khorost.tech/sdsandbox-web
+          TAG=${GITHUB_SHA::8}
+          docker build -f apps/web/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest .
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+      - name: Deploy
+        if: success()
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB }}"
+
+  build-server:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server == 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
+        env:
+          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      - run: |
+          IMAGE=images.khorost.tech/sdsandbox-server
+          TAG=${GITHUB_SHA::8}
+          docker build -f apps/server/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest apps/server
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+      - name: Deploy
+        if: success()
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER }}"

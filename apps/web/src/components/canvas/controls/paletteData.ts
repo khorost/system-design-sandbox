@@ -7,17 +7,25 @@ export interface PaletteItem {
   category: ComponentCategory;
 }
 
-export const paletteCategories: { key: ComponentCategory; label: string }[] = [
-  { key: 'clients', label: 'Clients' },
-  { key: 'network', label: 'Network' },
-  { key: 'compute', label: 'Compute' },
-  { key: 'database', label: 'Databases' },
-  { key: 'cache', label: 'Cache' },
-  { key: 'messaging', label: 'Messaging' },
-  { key: 'reliability', label: 'Reliability' },
-  { key: 'infrastructure', label: 'Infrastructure' },
-  { key: 'security', label: 'Security' },
-  { key: 'observability', label: 'Observability' },
+export interface PaletteCategoryMeta {
+  key: ComponentCategory;
+  label: string;
+  icon: string;
+  hint?: string;
+}
+
+export const paletteCategories: PaletteCategoryMeta[] = [
+  { key: 'infrastructure', label: 'Containers', icon: '📦' },
+  { key: 'clients', label: 'Clients', icon: '👤', hint: 'Generate load' },
+  { key: 'network', label: 'Network', icon: '🌐' },
+  { key: 'compute', label: 'Compute', icon: '⚙️' },
+  { key: 'database', label: 'Databases', icon: '🗄️' },
+  { key: 'cache', label: 'Cache', icon: '⚡' },
+  { key: 'storage', label: 'Storage', icon: '💾' },
+  { key: 'messaging', label: 'Messaging', icon: '📨' },
+  { key: 'reliability', label: 'Reliability', icon: '🛡️' },
+  { key: 'security', label: 'Security', icon: '🔐' },
+  { key: 'observability', label: 'Observability', icon: '📊' },
 ];
 
 export const paletteItems: PaletteItem[] = [
@@ -44,6 +52,7 @@ export const paletteItems: PaletteItem[] = [
   { type: 'mongodb', label: 'MongoDB', icon: '🍃', category: 'database' },
   { type: 'cassandra', label: 'Cassandra', icon: '👁️', category: 'database' },
   { type: 's3', label: 'Object Storage', icon: '🪣', category: 'database' },
+  { type: 'etcd', label: 'etcd', icon: '🔑', category: 'database' },
   { type: 'elasticsearch', label: 'Elasticsearch', icon: '🔍', category: 'database' },
 
   // Cache
@@ -55,17 +64,18 @@ export const paletteItems: PaletteItem[] = [
   { type: 'rabbitmq', label: 'RabbitMQ', icon: '🐇', category: 'messaging' },
   { type: 'event_bus', label: 'Event Bus', icon: '🚌', category: 'messaging' },
 
-  // Infrastructure / Containers
+  // Storage
+  { type: 'local_ssd', label: 'Local SSD', icon: '💾', category: 'storage' },
+  { type: 'nvme', label: 'NVMe Storage', icon: '⚡', category: 'storage' },
+  { type: 'network_disk', label: 'Network Disk', icon: '🌐💿', category: 'storage' },
+  { type: 'nfs', label: 'NFS', icon: '📂', category: 'storage' },
+
+  // Containers
   { type: 'datacenter', label: 'Datacenter', icon: '🏢', category: 'infrastructure' },
   { type: 'rack', label: 'Rack', icon: '🗄️', category: 'infrastructure' },
   { type: 'docker_container', label: 'Docker', icon: '🐳', category: 'infrastructure' },
-  { type: 'kubernetes_pod', label: 'K8s Pod', icon: '☸️', category: 'infrastructure' },
+  { type: 'kubernetes_pod', label: 'K8s Worker Node', icon: '☸️', category: 'infrastructure' },
   { type: 'vm_instance', label: 'VM Instance', icon: '🖥️', category: 'infrastructure' },
-
-  // Infrastructure / Storage
-  { type: 'local_ssd', label: 'Local SSD', icon: '💾', category: 'infrastructure' },
-  { type: 'nvme', label: 'NVMe Storage', icon: '⚡', category: 'infrastructure' },
-  { type: 'network_disk', label: 'Network Disk', icon: '🌐💿', category: 'infrastructure' },
 
   // Reliability
   { type: 'circuit_breaker', label: 'Circuit Breaker', icon: '🔌', category: 'reliability' },

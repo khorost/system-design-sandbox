@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SimulationMetrics, LoadProfile } from '@system-design-sandbox/simulation-engine';
+import type { SimulationMetrics, LoadProfile, NodeTagTraffic, EdgeTagTraffic } from '@system-design-sandbox/simulation-engine';
 import { useCanvasStore } from './canvasStore.ts';
 import { convertNodesToComponents, convertEdgesToConnections, buildEdgeKeyToIdMap } from '../simulation/converter.ts';
 import { workerManager } from '../simulation/workerManager.ts';
@@ -35,6 +35,7 @@ export interface NodeEma {
 
 interface SimulationState {
   isRunning: boolean;
+  isPaused: boolean;
   loadType: 'constant' | 'ramp' | 'spike';
   currentMetrics: SimulationMetrics | null;
   metricsHistory: ChartPoint[];
@@ -43,16 +44,21 @@ interface SimulationState {
   edgeThroughput: Record<string, number>;
   edgeLatency: Record<string, number>;
   edgeEma: Record<string, NodeEma>;
+  nodeTagTraffic: Record<string, NodeTagTraffic>;
+  edgeTagTraffic: Record<string, EdgeTagTraffic>;
 
   setLoadType: (type: 'constant' | 'ramp' | 'spike') => void;
   start: () => Promise<void>;
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
   handleTick: (metrics: SimulationMetrics) => void;
   reconfigure: () => Promise<void>;
 }
 
 export const useSimulationStore = create<SimulationState>((set, get) => ({
   isRunning: false,
+  isPaused: false,
   loadType: 'constant',
   currentMetrics: null,
   metricsHistory: [],
@@ -61,6 +67,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   edgeThroughput: {},
   edgeLatency: {},
   edgeEma: {},
+  nodeTagTraffic: {},
+  edgeTagTraffic: {},
 
   setLoadType: (type) => {
     set({ loadType: type });
@@ -93,14 +101,24 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     // Reset buffer and set isRunning BEFORE starting worker
     historyBuf = [];
     historyVersion = 0;
-    set({ isRunning: true, metricsHistory: [], currentMetrics: null, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {} });
+    set({ isRunning: true, isPaused: false, metricsHistory: [], currentMetrics: null, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {} });
     workerManager.start(profile);
   },
 
   stop: () => {
     workerManager.stop();
     if (tickUnsub) { tickUnsub(); tickUnsub = null; }
-    set({ isRunning: false, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {} });
+    set({ isRunning: false, isPaused: false, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {} });
+  },
+
+  pause: () => {
+    workerManager.pause();
+    set({ isPaused: true });
+  },
+
+  resume: () => {
+    workerManager.resume();
+    set({ isPaused: false });
   },
 
   handleTick: (metrics) => {
@@ -173,6 +191,13 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       }
     }
 
+    // Map edgeTagTraffic keys from engine format to React Flow edge IDs
+    const newEdgeTagTraffic: Record<string, EdgeTagTraffic> = {};
+    for (const [key, value] of Object.entries(metrics.edgeTagTraffic)) {
+      const edgeId = keyToId[key];
+      if (edgeId) newEdgeTagTraffic[edgeId] = value;
+    }
+
     set({
       currentMetrics: metrics,
       metricsHistory: snapshot,
@@ -181,12 +206,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       edgeThroughput: newEdgeThroughput,
       edgeLatency: newEdgeLatency,
       edgeEma: newEdgeEma,
+      nodeTagTraffic: metrics.nodeTagTraffic,
+      edgeTagTraffic: newEdgeTagTraffic,
     });
   },
 
   reconfigure: async () => {
-    const { isRunning, loadType } = get();
-    if (!isRunning) return;
+    const { isRunning, isPaused, loadType } = get();
+    if (!isRunning || isPaused) return;
 
     const { nodes, edges } = useCanvasStore.getState();
     const components = convertNodesToComponents(nodes);

@@ -101,6 +101,22 @@ export const pricingModels: PricingModel[] = [
     },
   },
   {
+    type: 'etcd',
+    calculate: (config) => {
+      const nodes = (config.replicas as number) || 3;
+      const nodePrice = 0.05; // $/hour per small instance
+      return nodes * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 'nfs',
+    calculate: (config) => {
+      const storageTb = (config.storage_tb as number) || 1;
+      const pricePerTb = 0.30; // $/GB/month → ~$300/TB
+      return storageTb * pricePerTb * 1000;
+    },
+  },
+  {
     type: 'serverless_function',
     calculate: (config) => {
       const maxConcurrent = (config.max_concurrent as number) || 1000;

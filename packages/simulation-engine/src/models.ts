@@ -17,6 +17,8 @@ export type ComponentType =
   | 'redis'
   | 'memcached'
   | 's3'
+  | 'nfs'
+  | 'etcd'
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
@@ -45,7 +47,12 @@ export type ComponentType =
   | 'rack'
   | 'datacenter';
 
-export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP';
+export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP' | 'NVMe' | 'SATA' | 'iSCSI' | 'NFS';
+
+export interface TagWeight {
+  tag: string;
+  weight: number; // relative weight, normalized to probability
+}
 
 export interface ComponentModel {
   id: string;
@@ -71,6 +78,19 @@ export interface ComponentModel {
   queueSize: number;
   queueCapacity: number;
   processingRate: number;
+
+  // Tag-based traffic routing (entry/client nodes)
+  tagDistribution?: TagWeight[];
+
+  // Traffic sizing
+  payloadSizeKb: number;
+  responseSizeKb: number;
+}
+
+export interface RoutingRule {
+  tag: string;
+  weight: number; // 0..N, fan-out semantics
+  outTag?: string; // if set, spawned requests get this tag instead of the original
 }
 
 export interface ConnectionModel {
@@ -84,6 +104,15 @@ export interface ConnectionModel {
     maxRetries: number;
     backoffMs: number;
   };
+  routingRules?: RoutingRule[];
+}
+
+export interface EngineStats {
+  tickCount: number;
+  activeRequests: number;
+  requestsGenerated: number;
+  requestsCompleted: number;
+  tickDurationMs: number;
 }
 
 export interface SimulationMetrics {
@@ -97,6 +126,9 @@ export interface SimulationMetrics {
   queueDepths: Record<string, number>;
   edgeThroughput: Record<string, number>;
   edgeLatency: Record<string, number>;
+  engineStats?: EngineStats;
+  nodeTagTraffic: Record<string, NodeTagTraffic>;
+  edgeTagTraffic: Record<string, EdgeTagTraffic>;
 }
 
 export interface FailureReport {
@@ -113,9 +145,28 @@ export interface LoadProfile {
 
 export interface SimRequest {
   id: string;
-  path: string[];
-  currentStep: number;
+  tag: string;
+  currentNode: string;
+  visited: string[];
   totalLatencyMs: number;
   failed: boolean;
   failureReason?: string;
+  payloadSizeKb: number;
+}
+
+export interface TagTraffic {
+  rps: number;
+  bytesPerSec: number; // KB/s
+}
+
+export interface NodeTagTraffic {
+  incoming: Record<string, TagTraffic>;
+  outgoing: Record<string, TagTraffic>;
+  responseIncoming: Record<string, TagTraffic>;
+  responseOutgoing: Record<string, TagTraffic>;
+}
+
+export interface EdgeTagTraffic {
+  forward: Record<string, TagTraffic>;
+  response: Record<string, TagTraffic>;
 }

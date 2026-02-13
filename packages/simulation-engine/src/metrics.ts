@@ -40,6 +40,8 @@ export function aggregateMetrics(
     queueDepths,
     edgeThroughput,
     edgeLatency,
+    nodeTagTraffic: {},
+    edgeTagTraffic: {},
   };
 }
 

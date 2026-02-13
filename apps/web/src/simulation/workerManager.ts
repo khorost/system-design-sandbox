@@ -55,6 +55,14 @@ class WorkerManager {
     this.send({ type: 'STOP' });
   }
 
+  pause() {
+    this.send({ type: 'PAUSE' });
+  }
+
+  resume() {
+    this.send({ type: 'RESUME' });
+  }
+
   updateProfile(profile: LoadProfile) {
     this.send({ type: 'UPDATE_PROFILE', profile });
   }

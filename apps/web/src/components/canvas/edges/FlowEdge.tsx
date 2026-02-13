@@ -25,6 +25,12 @@ function getAnimationByThroughput(rps: number): { dasharray: string; duration: s
   return { dasharray: '4 2', duration: '0.25s' };
 }
 
+function formatBytes(bytesPerSec: number): string {
+  if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} GB/s`;
+  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} MB/s`;
+  return `${bytesPerSec.toFixed(1)} KB/s`;
+}
+
 export function FlowEdge(props: EdgeProps) {
   const { id, source, target, selected } = props;
   const data = props.data as EdgeData | undefined;
@@ -34,8 +40,11 @@ export function FlowEdge(props: EdgeProps) {
 
   const edgeEma = useSimulationStore((s) => s.edgeEma[id!]);
   const edgeLatency = useSimulationStore((s) => s.edgeLatency[id!]);
+  const edgeTagTraffic = useSimulationStore((s) => s.edgeTagTraffic[id!]);
   const isRunning = useSimulationStore((s) => s.isRunning);
+  const isPaused = useSimulationStore((s) => s.isPaused);
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
+  const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const nodes = useCanvasStore((s) => s.nodes);
   const isSelected = selected || selectedEdgeId === id!;
 
@@ -60,10 +69,19 @@ export function FlowEdge(props: EdgeProps) {
   const latencyMs = hasOverride ? userLatency : (hierarchyLatency > 0 ? hierarchyLatency : userLatency);
   const throughput = edgeEma?.ema1 ?? 0;
 
+  // Sum bytesPerSec across all forward tags
+  let totalBytesPerSec = 0;
+  if (edgeTagTraffic?.forward) {
+    for (const tag of Object.values(edgeTagTraffic.forward)) {
+      totalBytesPerSec += tag.bytesPerSec;
+    }
+  }
+
   let strokeColor = '#3b82f6';
   let strokeWidth = getWidthByLatency(latencyMs);
   let strokeDasharray: string | undefined;
   let animation: string | undefined;
+  let animationPlayState: 'running' | 'paused' | undefined;
 
   if (isRunning && throughput > 0) {
     const ratio = Math.min(throughput / 1000, 1);
@@ -77,17 +95,45 @@ export function FlowEdge(props: EdgeProps) {
     const anim = getAnimationByThroughput(throughput);
     strokeDasharray = anim.dasharray;
     animation = `flowAnimation ${anim.duration} linear infinite`;
+    animationPlayState = isPaused ? 'paused' : 'running';
   }
 
   if (isSelected) {
     strokeWidth += 1;
   }
 
-  const showLabel = isSelected || isRunning;
+  // Determine effective display mode
+  const effectiveMode = edgeLabelMode === 'auto'
+    ? (isSelected ? (isRunning ? 'full' : 'protocol') : null)
+    : edgeLabelMode;
+
+  const showLabel = effectiveMode !== null;
 
   const effectiveColor = isSelected ? '#60a5fa' : strokeColor;
   const markerId = `edge-arrow-${id}`;
   const arrowSize = Math.max(8, strokeWidth * 2);
+
+  // Build label content
+  const protocolLine = <>{protocol} &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>;
+  const hasTrafficData = throughput > 0;
+  const trafficLine = hasTrafficData
+    ? <>{Math.round(throughput)} rps &middot; {formatBytes(totalBytesPerSec)}</>
+    : <span className="text-slate-500">&mdash; rps &middot; &mdash; KB/s</span>;
+
+  let labelContent: React.ReactNode = null;
+  if (showLabel) {
+    switch (effectiveMode) {
+      case 'protocol':
+        labelContent = protocolLine;
+        break;
+      case 'traffic':
+        labelContent = trafficLine;
+        break;
+      case 'full':
+        labelContent = <>{protocolLine}<br />{trafficLine}</>;
+        break;
+    }
+  }
 
   return (
     <>
@@ -113,9 +159,10 @@ export function FlowEdge(props: EdgeProps) {
           strokeWidth,
           strokeDasharray,
           animation,
+          animationPlayState,
         }}
       />
-      {showLabel && (
+      {showLabel && labelContent && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -126,11 +173,7 @@ export function FlowEdge(props: EdgeProps) {
             }}
             className="text-[10px] font-mono leading-tight px-2.5 py-1.5 rounded bg-[var(--color-surface)]/90 border border-[var(--color-border)] text-slate-300 whitespace-nowrap"
           >
-            {isRunning && throughput > 0 ? (
-              <>{Math.round(throughput)} rps &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>
-            ) : (
-              <>{protocol} &middot; {latencyMs}ms</>
-            )}
+            {labelContent}
           </div>
         </EdgeLabelRenderer>
       )}

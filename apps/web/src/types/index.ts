@@ -10,7 +10,8 @@ export type ComponentCategory =
   | 'reliability'
   | 'security'
   | 'observability'
-  | 'infrastructure';
+  | 'infrastructure'
+  | 'storage';
 
 export type ComponentType =
   | 'web_client'
@@ -31,6 +32,8 @@ export type ComponentType =
   | 'redis'
   | 'memcached'
   | 's3'
+  | 'nfs'
+  | 'etcd'
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
@@ -59,7 +62,12 @@ export type ComponentType =
   | 'rack'
   | 'datacenter';
 
-export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP';
+export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP' | 'NVMe' | 'SATA' | 'iSCSI' | 'NFS';
+
+export const DISK_COMPONENT_TYPES = new Set(['local_ssd', 'nvme', 'network_disk', 'nfs']);
+
+export const NETWORK_PROTOCOLS: ProtocolType[] = ['REST', 'gRPC', 'WebSocket', 'GraphQL', 'async', 'TCP'];
+export const DISK_PROTOCOLS: ProtocolType[] = ['NVMe', 'SATA', 'iSCSI', 'NFS'];
 
 export interface ComponentNodeData {
   label: string;
@@ -70,11 +78,18 @@ export interface ComponentNodeData {
   [key: string]: unknown;
 }
 
+export interface EdgeRoutingRule {
+  tag: string;
+  weight: number;
+  outTag?: string;
+}
+
 export interface EdgeData {
   protocol: ProtocolType;
   latencyMs: number;
   bandwidthMbps: number;
   timeoutMs: number;
+  routingRules?: EdgeRoutingRule[];
   [key: string]: unknown;
 }
 
@@ -119,6 +134,8 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   redis: 'cacheNode',
   memcached: 'cacheNode',
   s3: 'databaseNode',
+  nfs: 'databaseNode',
+  etcd: 'databaseNode',
   elasticsearch: 'databaseNode',
   kafka: 'queueNode',
   rabbitmq: 'queueNode',

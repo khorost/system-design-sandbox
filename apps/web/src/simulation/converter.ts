@@ -1,6 +1,6 @@
-import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentType } from '@system-design-sandbox/simulation-engine';
+import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentType, TagWeight } from '@system-design-sandbox/simulation-engine';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import type { ComponentNode, ComponentEdge } from '../types/index.ts';
+import type { ComponentNode, ComponentEdge, EdgeRoutingRule } from '../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
@@ -38,6 +38,7 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
       }
     }
 
+    const tagDist = config.tagDistribution as TagWeight[] | undefined;
     components.set(node.id, {
       id: node.id,
       type: compType,
@@ -52,6 +53,9 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
       queueSize: 0,
       queueCapacity: 10000,
       processingRate: maxRps,
+      payloadSizeKb: CLIENT_TYPES.has(compType) ? ((config.payload_size_kb as number) || 10) : 0,
+      responseSizeKb: (config.response_size_kb as number) || 0,
+      ...(tagDist?.length ? { tagDistribution: tagDist } : {}),
     });
   }
 
@@ -66,6 +70,7 @@ export function convertEdgesToConnections(edges: ComponentEdge[], nodes?: Compon
       const hasOverride = e.data?.latencyMs != null && e.data.latencyMs !== 1;
       const hierarchyLatency = nodes ? computeEffectiveLatency(e.source, e.target, nodes) : 0;
       const latencyMs = hasOverride ? userLatency : (hierarchyLatency > 0 ? hierarchyLatency : userLatency);
+      const routingRules = e.data?.routingRules as EdgeRoutingRule[] | undefined;
       return {
         from: e.source,
         to: e.target,
@@ -73,6 +78,7 @@ export function convertEdgesToConnections(edges: ComponentEdge[], nodes?: Compon
         latencyMs: latencyMs || 1,
         bandwidthMbps: e.data?.bandwidthMbps ?? 1000,
         timeoutMs: e.data?.timeoutMs ?? 5000,
+        ...(routingRules?.length ? { routingRules } : {}),
       };
     });
 }

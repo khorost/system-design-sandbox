@@ -5,6 +5,7 @@ import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
 import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { CostPanel } from './components/panels/CostPanel.tsx';
+import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -25,7 +26,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-const TOP_TABS = ['Properties', 'Cost'] as const;
+const TOP_TABS = ['Properties', 'Traffic', 'Cost'] as const;
 type TopTab = (typeof TOP_TABS)[number];
 
 const BOTTOM_TABS = ['Simulation', 'Metrics'] as const;
@@ -57,6 +58,7 @@ function RightPanel() {
         <div className="flex-1 overflow-y-auto">
           <ErrorBoundary key={activeTopTab}>
             {activeTopTab === 'Properties' && <PropertiesPanel />}
+            {activeTopTab === 'Traffic' && <TrafficPanel />}
             {activeTopTab === 'Cost' && <CostPanel />}
           </ErrorBoundary>
         </div>

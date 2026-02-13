@@ -8,9 +8,16 @@ import {
   type OnConnect,
   type Connection,
 } from '@xyflow/react';
-import type { ComponentNode, ComponentEdge, ArchitectureSchema, EdgeData } from '../types/index.ts';
-import { DEFAULT_EDGE_DATA } from '../types/index.ts';
+import type { ComponentNode, ComponentEdge, ArchitectureSchema, EdgeData, ProtocolType } from '../types/index.ts';
+import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
 import { getAbsolutePosition } from '../utils/networkLatency.ts';
+
+const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
+  local_ssd: 'SATA',
+  nvme: 'NVMe',
+  network_disk: 'iSCSI',
+  nfs: 'NFS',
+};
 
 const STORAGE_KEY = 'sds-architecture';
 
@@ -74,11 +81,14 @@ function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[]) {
   }, 500);
 }
 
+export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
+
 interface CanvasState {
   nodes: ComponentNode[];
   edges: ComponentEdge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  edgeLabelMode: EdgeLabelMode;
 
   onNodesChange: OnNodesChange<ComponentNode>;
   onEdgesChange: OnEdgesChange;
@@ -93,6 +103,7 @@ interface CanvasState {
   setNodeParent: (nodeId: string, parentId: string | null) => void;
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
+  cycleEdgeLabelMode: () => void;
 
   save: () => void;
   load: () => void;
@@ -104,6 +115,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: initial.edges,
   selectedNodeId: null,
   selectedEdgeId: null,
+  edgeLabelMode: 'auto',
 
   onNodesChange: (changes) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) });
@@ -114,13 +126,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
+    const targetNode = get().nodes.find(n => n.id === connection.target);
+    const targetType = targetNode?.data.componentType;
+    let protocol: ProtocolType = 'REST';
+    if (targetType && DISK_COMPONENT_TYPES.has(targetType)) {
+      protocol = DISK_DEFAULT_PROTOCOL[targetType] ?? 'NVMe';
+    }
     const edge: ComponentEdge = {
       ...connection,
       id: `e-${connection.source}-${connection.target}-${Date.now()}`,
       type: 'flow',
       animated: true,
       style: { stroke: '#3b82f6', strokeWidth: 2 },
-      data: { ...DEFAULT_EDGE_DATA },
+      data: { ...DEFAULT_EDGE_DATA, protocol },
     };
     set({ edges: addEdge(edge, get().edges) as ComponentEdge[] });
   },
@@ -240,6 +258,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       current = nodeMap.get(current.parentId);
     }
     return ancestors;
+  },
+
+  cycleEdgeLabelMode: () => {
+    const order: EdgeLabelMode[] = ['auto', 'protocol', 'traffic', 'full'];
+    const cur = get().edgeLabelMode;
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    set({ edgeLabelMode: next });
   },
 
   save: () => {

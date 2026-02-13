@@ -3,7 +3,7 @@ import { paletteCategories, paletteItems, type PaletteItem } from './paletteData
 import type { ComponentCategory } from '../../../types/index.ts';
 
 export function ComponentPalette() {
-  const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('compute');
+  const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('infrastructure');
 
   const onDragStart = (event: DragEvent, item: PaletteItem) => {
     event.dataTransfer.setData('application/reactflow-type', item.type);
@@ -23,13 +23,24 @@ export function ComponentPalette() {
         {paletteCategories.map((cat) => {
           const items = paletteItems.filter((i) => i.category === cat.key);
           const isExpanded = expandedCategory === cat.key;
+          const isClients = cat.key === 'clients';
           return (
-            <div key={cat.key}>
+            <div key={cat.key} className={isClients ? 'border-b border-amber-500/20' : ''}>
               <button
                 onClick={() => setExpandedCategory(isExpanded ? null : cat.key)}
-                className="w-full px-3 py-2.5 flex items-center justify-between text-sm font-semibold text-slate-300 hover:bg-[var(--color-surface-hover)] transition-colors"
+                className={`w-full px-3 py-2.5 flex items-center justify-between text-sm font-semibold transition-colors ${
+                  isClients
+                    ? 'text-amber-300 hover:bg-amber-500/10'
+                    : 'text-slate-300 hover:bg-[var(--color-surface-hover)]'
+                }`}
               >
-                <span>{cat.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="text-sm">{cat.icon}</span>
+                  <span>{cat.label}</span>
+                  {cat.hint && (
+                    <span className="text-[10px] font-normal text-amber-400/70 ml-0.5">({cat.hint})</span>
+                  )}
+                </span>
                 <span className="text-slate-500 text-xs">
                   {items.length} {isExpanded ? '▼' : '▶'}
                 </span>
