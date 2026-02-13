@@ -113,7 +113,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
     >
       {isRunning && ema && maxEma > 0 && (
         <div
-          className="absolute -top-5 -right-5 rounded flex items-center gap-1 px-2.5 py-1.5 text-white z-10 shadow-md"
+          className="absolute -top-5 -right-5 rounded flex items-center gap-1.5 px-3 py-2 text-white z-10 shadow-md"
           style={{ background: utilColor }}
         >
           <span className="font-mono text-[9px] font-bold leading-none whitespace-nowrap">
@@ -124,8 +124,13 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
           )}
         </div>
       )}
+      {/* Target (input) — circle, teal */}
       {!hideTargetHandle && (
-        <Handle type="target" position={Position.Left} className="!w-3 !h-3 !bg-blue-400 !border-blue-600" />
+        <Handle
+          type="target"
+          position={Position.Left}
+          className="!w-2.5 !h-2.5 !rounded-full !bg-teal-500 !border-teal-400 hover:!bg-teal-300 hover:!border-teal-200 !transition-colors"
+        />
       )}
       <div className="p-4">
         <div className="flex items-center gap-2 mb-2">
@@ -143,7 +148,12 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
         )}
         <div className="text-[10px] text-slate-500 mt-1">{data.componentType}</div>
       </div>
-      <Handle type="source" position={Position.Right} className="!w-3 !h-3 !bg-blue-400 !border-blue-600" />
+      {/* Source (output) — diamond, amber */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !rounded-sm !rotate-45 !bg-amber-500 !border-amber-400 hover:!bg-amber-300 hover:!border-amber-200 !transition-colors"
+      />
     </div>
   );
 }

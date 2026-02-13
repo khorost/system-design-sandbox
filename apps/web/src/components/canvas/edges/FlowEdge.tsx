@@ -1,8 +1,9 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, type EdgeProps } from '@xyflow/react';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { EdgeData } from '../../../types/index.ts';
 import { computeEffectiveLatency } from '../../../utils/networkLatency.ts';
+import { getFloatingEdgeParams } from '../../../utils/floatingEdge.ts';
 
 function getWidthByLatency(ms: number): number {
   if (ms <= 0.5) return 1;      // внутри docker/pod
@@ -25,8 +26,11 @@ function getAnimationByThroughput(rps: number): { dasharray: string; duration: s
 }
 
 export function FlowEdge(props: EdgeProps) {
-  const { id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected } = props;
+  const { id, source, target, selected } = props;
   const data = props.data as EdgeData | undefined;
+
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
 
   const edgeEma = useSimulationStore((s) => s.edgeEma[id!]);
   const edgeLatency = useSimulationStore((s) => s.edgeLatency[id!]);
@@ -35,7 +39,18 @@ export function FlowEdge(props: EdgeProps) {
   const nodes = useCanvasStore((s) => s.nodes);
   const isSelected = selected || selectedEdgeId === id!;
 
-  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  if (!sourceNode || !targetNode) return null;
+
+  const { sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode);
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX: sx,
+    sourceY: sy,
+    targetX: tx,
+    targetY: ty,
+    sourcePosition: sourcePos,
+    targetPosition: targetPos,
+  });
 
   const protocol = data?.protocol ?? 'REST';
   const userLatency = data?.latencyMs ?? 1;
@@ -70,12 +85,31 @@ export function FlowEdge(props: EdgeProps) {
 
   const showLabel = isSelected || isRunning;
 
+  const effectiveColor = isSelected ? '#60a5fa' : strokeColor;
+  const markerId = `edge-arrow-${id}`;
+  const arrowSize = Math.max(8, strokeWidth * 2);
+
   return (
     <>
+      <defs>
+        <marker
+          id={markerId}
+          viewBox="0 0 10 10"
+          refX="10"
+          refY="5"
+          markerWidth={arrowSize}
+          markerHeight={arrowSize}
+          orient="auto-start-reverse"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={effectiveColor} />
+        </marker>
+      </defs>
       <BaseEdge
         path={edgePath}
+        markerEnd={`url(#${markerId})`}
         style={{
-          stroke: isSelected ? '#60a5fa' : strokeColor,
+          stroke: effectiveColor,
           strokeWidth,
           strokeDasharray,
           animation,
@@ -86,10 +120,11 @@ export function FlowEdge(props: EdgeProps) {
           <div
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 4}px)`,
               pointerEvents: 'none',
+              zIndex: 1000,
             }}
-            className="text-[10px] font-mono leading-tight px-1.5 py-0.5 rounded bg-[var(--color-surface)]/90 border border-[var(--color-border)] text-slate-300 whitespace-nowrap"
+            className="text-[10px] font-mono leading-tight px-2.5 py-1.5 rounded bg-[var(--color-surface)]/90 border border-[var(--color-border)] text-slate-300 whitespace-nowrap"
           >
             {isRunning && throughput > 0 ? (
               <>{Math.round(throughput)} rps &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>

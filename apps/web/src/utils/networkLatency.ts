@@ -23,11 +23,11 @@ const ALLOWED_CHILDREN: Record<string, Set<string>> = {
 
 /** zIndex for each container level (outermost = lowest) */
 export const CONTAINER_Z_INDEX: Record<string, number> = {
-  datacenter: -4,
-  rack: -3,
-  kubernetes_pod: -2,
-  vm_instance: -2,
-  docker_container: -1,
+  datacenter: -50,
+  rack: -40,
+  kubernetes_pod: -30,
+  vm_instance: -30,
+  docker_container: -20,
 };
 
 /**
