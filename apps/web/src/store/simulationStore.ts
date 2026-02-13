@@ -4,12 +4,28 @@ import { useCanvasStore } from './canvasStore.ts';
 import { convertNodesToComponents, convertEdgesToConnections, buildEdgeKeyToIdMap } from '../simulation/converter.ts';
 import { workerManager } from '../simulation/workerManager.ts';
 
-const MAX_HISTORY = 300;
+/** Lightweight chart point — only the 5 numbers needed for graphs */
+export interface ChartPoint {
+  latencyP50: number;
+  latencyP95: number;
+  latencyP99: number;
+  throughput: number;
+  errorRate: number;
+}
+
+const MAX_HISTORY = 3000; // 300s at 0.1s tick
 
 // EMA alphas for tick interval = 0.1s
 const EMA_ALPHA_1S = 1 - Math.exp(-0.1 / 1);   // ≈ 0.095
 const EMA_ALPHA_5S = 1 - Math.exp(-0.1 / 5);   // ≈ 0.020
 const EMA_ALPHA_30S = 1 - Math.exp(-0.1 / 30); // ≈ 0.003
+
+/** Module-level unsub for tick listener */
+let tickUnsub: (() => void) | null = null;
+
+/** Mutable ring-buffer for chart points only */
+let historyBuf: ChartPoint[] = [];
+let historyVersion = 0;
 
 export interface NodeEma {
   ema1: number;
@@ -21,7 +37,7 @@ interface SimulationState {
   isRunning: boolean;
   loadType: 'constant' | 'ramp' | 'spike';
   currentMetrics: SimulationMetrics | null;
-  metricsHistory: SimulationMetrics[];
+  metricsHistory: ChartPoint[];
   nodeUtilization: Record<string, number>;
   nodeEma: Record<string, NodeEma>;
   edgeThroughput: Record<string, number>;
@@ -50,7 +66,6 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     set({ loadType: type });
     const { isRunning } = get();
     if (isRunning) {
-      // RPS is now per-node, profile.rps is unused by engine but kept for compat
       workerManager.updateProfile({ type, rps: 0, durationSec: 300 });
     }
   },
@@ -58,91 +73,114 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   start: async () => {
     const { nodes, edges } = useCanvasStore.getState();
     const components = convertNodesToComponents(nodes);
-    const connections = convertEdgesToConnections(edges);
+    const connections = convertEdgesToConnections(edges, nodes);
 
     await workerManager.initialize(components, connections);
 
-    workerManager.onTick((metrics) => {
+    // Remove previous tick listener, register fresh one
+    if (tickUnsub) tickUnsub();
+    tickUnsub = workerManager.onTick((metrics) => {
       get().handleTick(metrics);
     });
 
     const { loadType } = get();
     const profile: LoadProfile = {
       type: loadType,
-      rps: 0, // unused — RPS comes from each client node's generatedRps
+      rps: 0,
       durationSec: 300,
     };
 
-    workerManager.start(profile);
+    // Reset buffer and set isRunning BEFORE starting worker
+    historyBuf = [];
+    historyVersion = 0;
     set({ isRunning: true, metricsHistory: [], currentMetrics: null, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {} });
+    workerManager.start(profile);
   },
 
   stop: () => {
     workerManager.stop();
+    if (tickUnsub) { tickUnsub(); tickUnsub = null; }
     set({ isRunning: false, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {} });
   },
 
   handleTick: (metrics) => {
-    set((state) => {
-      const history = [...state.metricsHistory, metrics];
-      if (history.length > MAX_HISTORY) history.shift();
+    // Extract only the 5 chart numbers — discard heavy maps
+    const point: ChartPoint = {
+      latencyP50: metrics.latencyP50,
+      latencyP95: metrics.latencyP95,
+      latencyP99: metrics.latencyP99,
+      throughput: metrics.throughput,
+      errorRate: metrics.errorRate,
+    };
 
-      // Node EMA
-      const prevEma = state.nodeEma;
-      const newEma: Record<string, NodeEma> = {};
-      for (const [nodeId, sample] of Object.entries(metrics.componentUtilization)) {
-        const prev = prevEma[nodeId];
-        if (prev) {
-          newEma[nodeId] = {
-            ema1: prev.ema1 + EMA_ALPHA_1S * (sample - prev.ema1),
-            ema5: prev.ema5 + EMA_ALPHA_5S * (sample - prev.ema5),
-            ema30: prev.ema30 + EMA_ALPHA_30S * (sample - prev.ema30),
-          };
-        } else {
-          newEma[nodeId] = { ema1: sample, ema5: sample, ema30: sample };
-        }
+    historyBuf.push(point);
+    if (historyBuf.length > MAX_HISTORY) {
+      historyBuf = historyBuf.slice(-MAX_HISTORY);
+    }
+    historyVersion++;
+
+    // Snapshot for React every 5 ticks (0.5s), immediate for first 10
+    const snapshot = historyVersion % 5 === 0 || historyBuf.length <= 10
+      ? historyBuf.slice()
+      : get().metricsHistory;
+
+    const state = get();
+
+    // Node EMA
+    const prevEma = state.nodeEma;
+    const newEma: Record<string, NodeEma> = {};
+    for (const [nodeId, sample] of Object.entries(metrics.componentUtilization)) {
+      const prev = prevEma[nodeId];
+      if (prev) {
+        newEma[nodeId] = {
+          ema1: prev.ema1 + EMA_ALPHA_1S * (sample - prev.ema1),
+          ema5: prev.ema5 + EMA_ALPHA_5S * (sample - prev.ema5),
+          ema30: prev.ema30 + EMA_ALPHA_30S * (sample - prev.ema30),
+        };
+      } else {
+        newEma[nodeId] = { ema1: sample, ema5: sample, ema30: sample };
       }
+    }
 
-      // Edge metrics: map engine keys ("source->target") to edge IDs
-      const { edges } = useCanvasStore.getState();
-      const keyToId = buildEdgeKeyToIdMap(edges);
+    // Edge metrics: map engine keys ("source->target") to edge IDs
+    const { edges } = useCanvasStore.getState();
+    const keyToId = buildEdgeKeyToIdMap(edges);
 
-      const newEdgeThroughput: Record<string, number> = {};
-      const newEdgeLatency: Record<string, number> = {};
-      for (const [key, value] of Object.entries(metrics.edgeThroughput)) {
-        const edgeId = keyToId[key];
-        if (edgeId) newEdgeThroughput[edgeId] = value;
+    const newEdgeThroughput: Record<string, number> = {};
+    const newEdgeLatency: Record<string, number> = {};
+    for (const [key, value] of Object.entries(metrics.edgeThroughput)) {
+      const edgeId = keyToId[key];
+      if (edgeId) newEdgeThroughput[edgeId] = value;
+    }
+    for (const [key, value] of Object.entries(metrics.edgeLatency)) {
+      const edgeId = keyToId[key];
+      if (edgeId) newEdgeLatency[edgeId] = value;
+    }
+
+    // Edge EMA (on throughput)
+    const prevEdgeEma = state.edgeEma;
+    const newEdgeEma: Record<string, NodeEma> = {};
+    for (const [edgeId, sample] of Object.entries(newEdgeThroughput)) {
+      const prev = prevEdgeEma[edgeId];
+      if (prev) {
+        newEdgeEma[edgeId] = {
+          ema1: prev.ema1 + EMA_ALPHA_1S * (sample - prev.ema1),
+          ema5: prev.ema5 + EMA_ALPHA_5S * (sample - prev.ema5),
+          ema30: prev.ema30 + EMA_ALPHA_30S * (sample - prev.ema30),
+        };
+      } else {
+        newEdgeEma[edgeId] = { ema1: sample, ema5: sample, ema30: sample };
       }
-      for (const [key, value] of Object.entries(metrics.edgeLatency)) {
-        const edgeId = keyToId[key];
-        if (edgeId) newEdgeLatency[edgeId] = value;
-      }
+    }
 
-      // Edge EMA (on throughput)
-      const prevEdgeEma = state.edgeEma;
-      const newEdgeEma: Record<string, NodeEma> = {};
-      for (const [edgeId, sample] of Object.entries(newEdgeThroughput)) {
-        const prev = prevEdgeEma[edgeId];
-        if (prev) {
-          newEdgeEma[edgeId] = {
-            ema1: prev.ema1 + EMA_ALPHA_1S * (sample - prev.ema1),
-            ema5: prev.ema5 + EMA_ALPHA_5S * (sample - prev.ema5),
-            ema30: prev.ema30 + EMA_ALPHA_30S * (sample - prev.ema30),
-          };
-        } else {
-          newEdgeEma[edgeId] = { ema1: sample, ema5: sample, ema30: sample };
-        }
-      }
-
-      return {
-        currentMetrics: metrics,
-        metricsHistory: history,
-        nodeUtilization: { ...metrics.componentUtilization },
-        nodeEma: newEma,
-        edgeThroughput: newEdgeThroughput,
-        edgeLatency: newEdgeLatency,
-        edgeEma: newEdgeEma,
-      };
+    set({
+      currentMetrics: metrics,
+      metricsHistory: snapshot,
+      nodeUtilization: metrics.componentUtilization,
+      nodeEma: newEma,
+      edgeThroughput: newEdgeThroughput,
+      edgeLatency: newEdgeLatency,
+      edgeEma: newEdgeEma,
     });
   },
 
@@ -152,7 +190,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
     const { nodes, edges } = useCanvasStore.getState();
     const components = convertNodesToComponents(nodes);
-    const connections = convertEdgesToConnections(edges);
+    const connections = convertEdgesToConnections(edges, nodes);
 
     await workerManager.reconfigure(components, connections);
 

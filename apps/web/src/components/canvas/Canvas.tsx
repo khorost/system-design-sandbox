@@ -18,12 +18,14 @@ import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ComponentNode, ComponentEdge, ComponentNodeData, ComponentCategory, ComponentType } from '../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../types/index.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { CONTAINER_TYPES, CONTAINER_Z_INDEX } from '../../utils/networkLatency.ts';
 import { ServiceNode } from './nodes/ServiceNode.tsx';
 import { DatabaseNode } from './nodes/DatabaseNode.tsx';
 import { CacheNode } from './nodes/CacheNode.tsx';
 import { QueueNode } from './nodes/QueueNode.tsx';
 import { LoadBalancerNode } from './nodes/LoadBalancerNode.tsx';
 import { GatewayNode } from './nodes/GatewayNode.tsx';
+import { ContainerNode } from './nodes/ContainerNode.tsx';
 import { FlowEdge } from './edges/FlowEdge.tsx';
 import { Toolbar } from './controls/Toolbar.tsx';
 
@@ -34,6 +36,7 @@ const nodeTypes: NodeTypes = {
   queueNode: QueueNode,
   loadBalancerNode: LoadBalancerNode,
   gatewayNode: GatewayNode,
+  containerNode: ContainerNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -115,6 +118,7 @@ function CanvasInner() {
       });
 
       const nodeType = NODE_TYPE_MAP[componentType] || 'serviceNode';
+      const isContainer = CONTAINER_TYPES.has(componentType);
 
       // Initialize config with definition defaults
       const def = getDefinition(componentType);
@@ -125,6 +129,7 @@ function CanvasInner() {
         }
       }
 
+      // All nodes are dropped at top-level; use Properties panel to assign parent container
       const newNode: ComponentNode = {
         id: getNextId(),
         type: nodeType,
@@ -136,6 +141,7 @@ function CanvasInner() {
           icon,
           config: defaultConfig,
         } satisfies ComponentNodeData,
+        ...(isContainer ? { style: { width: 400, height: 300 }, dragHandle: '.container-drag-handle', zIndex: CONTAINER_Z_INDEX[componentType] ?? -1 } : {}),
       };
 
       addNode(newNode);
@@ -145,11 +151,15 @@ function CanvasInner() {
 
   const isValidConnection = useCallback(
     (connection: Connection | ComponentEdge) => {
+      const source = 'source' in connection ? connection.source : null;
       const target = 'target' in connection ? connection.target : null;
+      const sourceNode = source ? nodes.find((n) => n.id === source) : null;
       const targetNode = target ? nodes.find((n) => n.id === target) : null;
-      if (targetNode && CLIENT_TYPES.has(targetNode.data.componentType)) {
-        return false;
-      }
+      // Block connections to/from container nodes
+      if (sourceNode && CONTAINER_TYPES.has(sourceNode.data.componentType)) return false;
+      if (targetNode && CONTAINER_TYPES.has(targetNode.data.componentType)) return false;
+      // Block connections targeting client nodes
+      if (targetNode && CLIENT_TYPES.has(targetNode.data.componentType)) return false;
       return true;
     },
     [nodes],

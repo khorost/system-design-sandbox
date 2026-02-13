@@ -1,6 +1,7 @@
 import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentType } from '@system-design-sandbox/simulation-engine';
 import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ComponentNode, ComponentEdge } from '../types/index.ts';
+import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
@@ -9,6 +10,8 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
 
   for (const node of nodes) {
     const compType = node.data.componentType as EngineComponentType;
+    // Skip container nodes — they don't participate in simulation as components
+    if (CONTAINER_TYPES.has(node.data.componentType)) continue;
     const def = getDefinition(compType);
     const config = node.data.config;
 
@@ -55,17 +58,23 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
   return components;
 }
 
-export function convertEdgesToConnections(edges: ComponentEdge[]): ConnectionModel[] {
+export function convertEdgesToConnections(edges: ComponentEdge[], nodes?: ComponentNode[]): ConnectionModel[] {
   return edges
     .filter((e) => e.source && e.target)
-    .map((e) => ({
-      from: e.source,
-      to: e.target,
-      protocol: e.data?.protocol ?? 'REST',
-      latencyMs: e.data?.latencyMs ?? 1,
-      bandwidthMbps: e.data?.bandwidthMbps ?? 1000,
-      timeoutMs: e.data?.timeoutMs ?? 5000,
-    }));
+    .map((e) => {
+      const userLatency = e.data?.latencyMs ?? 1;
+      const hasOverride = e.data?.latencyMs != null && e.data.latencyMs !== 1;
+      const hierarchyLatency = nodes ? computeEffectiveLatency(e.source, e.target, nodes) : 0;
+      const latencyMs = hasOverride ? userLatency : (hierarchyLatency > 0 ? hierarchyLatency : userLatency);
+      return {
+        from: e.source,
+        to: e.target,
+        protocol: e.data?.protocol ?? 'REST',
+        latencyMs: latencyMs || 1,
+        bandwidthMbps: e.data?.bandwidthMbps ?? 1000,
+        timeoutMs: e.data?.timeoutMs ?? 5000,
+      };
+    });
 }
 
 /** Maps engine edge keys ("source->target") back to React Flow edge IDs */

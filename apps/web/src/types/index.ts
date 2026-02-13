@@ -52,7 +52,12 @@ export type ComponentType =
   | 'network_disk'
   | 'region'
   | 'availability_zone'
-  | 'vpc';
+  | 'vpc'
+  | 'docker_container'
+  | 'kubernetes_pod'
+  | 'vm_instance'
+  | 'rack'
+  | 'datacenter';
 
 export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP';
 
@@ -136,4 +141,9 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   region: 'serviceNode',
   availability_zone: 'serviceNode',
   vpc: 'serviceNode',
+  docker_container: 'containerNode',
+  kubernetes_pod: 'containerNode',
+  vm_instance: 'containerNode',
+  rack: 'containerNode',
+  datacenter: 'containerNode',
 };

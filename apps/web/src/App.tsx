@@ -25,36 +25,65 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-const TABS = ['Properties', 'Simulation', 'Metrics', 'Cost'] as const;
-type Tab = (typeof TABS)[number];
+const TOP_TABS = ['Properties', 'Cost'] as const;
+type TopTab = (typeof TOP_TABS)[number];
+
+const BOTTOM_TABS = ['Simulation', 'Metrics'] as const;
+type BottomTab = (typeof BOTTOM_TABS)[number];
 
 function RightPanel() {
-  const [activeTab, setActiveTab] = useState<Tab>('Properties');
+  const [activeTopTab, setActiveTopTab] = useState<TopTab>('Properties');
+  const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('Simulation');
 
   return (
     <div className="bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
-      <div className="flex border-b border-[var(--color-border)]">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
-              activeTab === tab
-                ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+      {/* Top zone: Properties / Cost */}
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex border-b border-[var(--color-border)]">
+          {TOP_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTopTab(tab)}
+              className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
+                activeTopTab === tab
+                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ErrorBoundary key={activeTopTab}>
+            {activeTopTab === 'Properties' && <PropertiesPanel />}
+            {activeTopTab === 'Cost' && <CostPanel />}
+          </ErrorBoundary>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <ErrorBoundary key={activeTab}>
-          {activeTab === 'Properties' && <PropertiesPanel />}
-          {activeTab === 'Simulation' && <SimulationPanel />}
-          {activeTab === 'Metrics' && <MetricsPanel />}
-          {activeTab === 'Cost' && <CostPanel />}
-        </ErrorBoundary>
+      {/* Bottom zone: Simulation / Metrics */}
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden border-t border-[var(--color-border)]">
+        <div className="flex border-b border-[var(--color-border)]">
+          {BOTTOM_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveBottomTab(tab)}
+              className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
+                activeBottomTab === tab
+                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <ErrorBoundary key={activeBottomTab}>
+            {activeBottomTab === 'Simulation' && <SimulationPanel />}
+            {activeBottomTab === 'Metrics' && <MetricsPanel />}
+          </ErrorBoundary>
+        </div>
       </div>
     </div>
   );

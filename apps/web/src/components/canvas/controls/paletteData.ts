@@ -55,6 +55,13 @@ export const paletteItems: PaletteItem[] = [
   { type: 'rabbitmq', label: 'RabbitMQ', icon: '🐇', category: 'messaging' },
   { type: 'event_bus', label: 'Event Bus', icon: '🚌', category: 'messaging' },
 
+  // Infrastructure / Containers
+  { type: 'datacenter', label: 'Datacenter', icon: '🏢', category: 'infrastructure' },
+  { type: 'rack', label: 'Rack', icon: '🗄️', category: 'infrastructure' },
+  { type: 'docker_container', label: 'Docker', icon: '🐳', category: 'infrastructure' },
+  { type: 'kubernetes_pod', label: 'K8s Pod', icon: '☸️', category: 'infrastructure' },
+  { type: 'vm_instance', label: 'VM Instance', icon: '🖥️', category: 'infrastructure' },
+
   // Infrastructure / Storage
   { type: 'local_ssd', label: 'Local SSD', icon: '💾', category: 'infrastructure' },
   { type: 'nvme', label: 'NVMe Storage', icon: '⚡', category: 'infrastructure' },

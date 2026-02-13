@@ -38,7 +38,12 @@ export type ComponentType =
   | 'network_disk'
   | 'region'
   | 'availability_zone'
-  | 'vpc';
+  | 'vpc'
+  | 'docker_container'
+  | 'kubernetes_pod'
+  | 'vm_instance'
+  | 'rack'
+  | 'datacenter';
 
 export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP';
 

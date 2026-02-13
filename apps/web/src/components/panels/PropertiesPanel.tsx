@@ -2,6 +2,7 @@ import { useCanvasStore } from '../../store/canvasStore.ts';
 import { paletteItems } from '../canvas/controls/paletteData.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ProtocolType } from '../../types/index.ts';
+import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../utils/networkLatency.ts';
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
@@ -53,6 +54,27 @@ const COMPONENT_PARAMS: Record<string, { key: string; label: string; type: 'numb
   api_gateway: [
     { key: 'max_rps', label: 'Max RPS', type: 'number' },
     { key: 'rate_limit', label: 'Rate Limit', type: 'number' },
+  ],
+  docker_container: [
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+  ],
+  kubernetes_pod: [
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+  ],
+  vm_instance: [
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+  ],
+  rack: [
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'power_redundancy', label: 'Power Redundancy', type: 'select', options: ['N', 'N+1', '2N'] },
+  ],
+  datacenter: [
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'inter_rack_latency_ms', label: 'Inter-Rack Latency (ms)', type: 'number' },
+    { key: 'region', label: 'Region', type: 'text' },
   ],
 };
 
@@ -107,7 +129,7 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency (ms)</label>
+          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
           <input
             type="number"
             min={0}
@@ -116,6 +138,16 @@ function EdgeProperties() {
             className={inputClass}
           />
         </div>
+
+        {(() => {
+          const effLatency = computeEffectiveLatency(edge.source, edge.target, nodes);
+          return effLatency > 0 ? (
+            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20">
+              <span className="text-xs font-semibold text-slate-300">Effective Latency (auto)</span>
+              <span className="text-sm font-mono font-bold text-blue-400">{effLatency.toFixed(2)} ms</span>
+            </div>
+          ) : null;
+        })()}
 
         <div>
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
@@ -157,6 +189,7 @@ function NodeProperties() {
   const nodes = useCanvasStore((s) => s.nodes);
   const updateNodeConfig = useCanvasStore((s) => s.updateNodeConfig);
   const removeNode = useCanvasStore((s) => s.removeNode);
+  const setNodeParent = useCanvasStore((s) => s.setNodeParent);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   if (!selectedNode) return null;
@@ -223,6 +256,41 @@ function NodeProperties() {
             )}
           </div>
         ))}
+
+        {/* Container children count */}
+        {CONTAINER_TYPES.has(selectedNode.data.componentType) && (() => {
+          const children = nodes.filter(n => n.parentId === selectedNode.id);
+          return (
+            <div className="flex items-center justify-between px-3 py-2 bg-purple-500/10 rounded border border-purple-500/20">
+              <span className="text-xs font-semibold text-slate-300">Children</span>
+              <span className="text-sm font-mono font-bold text-purple-400">{children.length}</span>
+            </div>
+          );
+        })()}
+
+        {/* Parent container dropdown — for all node types */}
+        {(() => {
+          const validParents = nodes.filter(n =>
+            CONTAINER_TYPES.has(n.data.componentType) &&
+            n.id !== selectedNode.id &&
+            isValidNesting(selectedNode.data.componentType, n.data.componentType)
+          );
+          return validParents.length > 0 ? (
+            <div>
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
+              <select
+                value={selectedNode.parentId ?? ''}
+                onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
+                className={inputClass}
+              >
+                <option value="">None (top-level)</option>
+                {validParents.map((c) => (
+                  <option key={c.id} value={c.id}>{c.data.icon} {c.data.label} ({c.data.componentType})</option>
+                ))}
+              </select>
+            </div>
+          ) : null;
+        })()}
 
         {CLIENT_TYPES.has(selectedNode.data.componentType) && (() => {
           const usersK = (configVal('concurrent_users_k') as number) ?? 1;

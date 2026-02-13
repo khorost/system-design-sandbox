@@ -10,15 +10,45 @@ import {
 } from '@xyflow/react';
 import type { ComponentNode, ComponentEdge, ArchitectureSchema, EdgeData } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA } from '../types/index.ts';
+import { getAbsolutePosition } from '../utils/networkLatency.ts';
 
 const STORAGE_KEY = 'sds-architecture';
+
+/**
+ * Topological sort: parents always before children.
+ * Also strips orphaned parentId references.
+ */
+function sortNodesParentFirst(nodes: ComponentNode[]): ComponentNode[] {
+  const ids = new Set(nodes.map(n => n.id));
+
+  // Clean orphaned parentId references
+  const cleaned = nodes.map(n => {
+    if (n.parentId && !ids.has(n.parentId)) {
+      const { parentId: _p, extent: _e, ...rest } = n as ComponentNode & { extent?: string };
+      void _p; void _e;
+      return rest as ComponentNode;
+    }
+    return n;
+  });
+
+  // Topological sort by depth
+  const depthOf = (node: ComponentNode, visited = new Set<string>()): number => {
+    if (!node.parentId) return 0;
+    if (visited.has(node.id)) return 0; // cycle guard
+    visited.add(node.id);
+    const parent = cleaned.find(n => n.id === node.parentId);
+    return parent ? depthOf(parent, visited) + 1 : 0;
+  };
+
+  return [...cleaned].sort((a, b) => depthOf(a) - depthOf(b));
+}
 
 function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { nodes: [], edges: [] };
     const schema: ArchitectureSchema = JSON.parse(raw);
-    return { nodes: schema.nodes ?? [], edges: schema.edges ?? [] };
+    return { nodes: sortNodesParentFirst(schema.nodes ?? []), edges: schema.edges ?? [] };
   } catch {
     return { nodes: [], edges: [] };
   }
@@ -60,6 +90,9 @@ interface CanvasState {
   selectNode: (id: string | null) => void;
   selectEdge: (id: string | null) => void;
   updateEdgeData: (id: string, data: Partial<EdgeData>) => void;
+  setNodeParent: (nodeId: string, parentId: string | null) => void;
+  getChildren: (nodeId: string) => ComponentNode[];
+  getAncestors: (nodeId: string) => string[];
 
   save: () => void;
   load: () => void;
@@ -93,14 +126,39 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   addNode: (node) => {
-    set({ nodes: [...get().nodes, node] });
+    const nodes = get().nodes;
+    if (node.parentId) {
+      // Insert child right after its parent (React Flow requires parent before child)
+      const parentIdx = nodes.findIndex(n => n.id === node.parentId);
+      if (parentIdx !== -1) {
+        const updated = [...nodes];
+        // Find the last node that is a sibling or descendant of this parent
+        let insertIdx = parentIdx + 1;
+        while (insertIdx < updated.length && updated[insertIdx].parentId) {
+          insertIdx++;
+        }
+        updated.splice(insertIdx, 0, node);
+        set({ nodes: updated });
+        return;
+      }
+    }
+    set({ nodes: [...nodes, node] });
   },
 
   removeNode: (id) => {
+    // Collect all descendants recursively
+    const toRemove = new Set<string>();
+    const collect = (nodeId: string) => {
+      toRemove.add(nodeId);
+      for (const n of get().nodes) {
+        if (n.parentId === nodeId) collect(n.id);
+      }
+    };
+    collect(id);
     set({
-      nodes: get().nodes.filter((n) => n.id !== id),
-      edges: get().edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
+      nodes: get().nodes.filter((n) => !toRemove.has(n.id)),
+      edges: get().edges.filter((e) => !toRemove.has(e.source) && !toRemove.has(e.target)),
+      selectedNodeId: toRemove.has(get().selectedNodeId ?? '') ? null : get().selectedNodeId,
     });
   },
 
@@ -128,6 +186,62 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
   },
 
+  setNodeParent: (nodeId, parentId) => {
+    const nodes = get().nodes;
+    const nodeMap = new Map(nodes.map(nd => [nd.id, nd]));
+
+    const updated = nodes.map((n) => {
+      if (n.id !== nodeId) return n;
+
+      // Compute current absolute position (walk full parent chain)
+      const abs = getAbsolutePosition(n, nodeMap);
+
+      if (parentId === null) {
+        // Detach: use absolute position
+        const { parentId: _p, extent: _e, ...rest } = n as ComponentNode & { extent?: string };
+        void _p; void _e;
+        return { ...rest, position: { x: abs.x, y: abs.y } } as ComponentNode;
+      }
+
+      // Attach: compute position relative to new parent's absolute position
+      const newParent = nodeMap.get(parentId);
+      if (!newParent) return n;
+      const parentAbs = getAbsolutePosition(newParent, nodeMap);
+      const relX = abs.x - parentAbs.x;
+      const relY = abs.y - parentAbs.y;
+      // Clamp inside parent with some padding (35px top for header)
+      const pw = (newParent.style?.width as number) ?? (newParent.width ?? 400);
+      const ph = (newParent.style?.height as number) ?? (newParent.height ?? 300);
+      return {
+        ...n,
+        parentId,
+        extent: 'parent' as const,
+        position: {
+          x: Math.max(10, Math.min(relX, pw - 100)),
+          y: Math.max(35, Math.min(relY, ph - 80)),
+        },
+      };
+    });
+
+    // Re-sort to maintain parent-before-child ordering
+    set({ nodes: sortNodesParentFirst(updated) });
+  },
+
+  getChildren: (nodeId) => {
+    return get().nodes.filter((n) => n.parentId === nodeId);
+  },
+
+  getAncestors: (nodeId) => {
+    const ancestors: string[] = [];
+    const nodeMap = new Map(get().nodes.map(n => [n.id, n]));
+    let current = nodeMap.get(nodeId);
+    while (current?.parentId) {
+      ancestors.push(current.parentId);
+      current = nodeMap.get(current.parentId);
+    }
+    return ancestors;
+  },
+
   save: () => {
     const { nodes, edges } = get();
     const schema: ArchitectureSchema = {
@@ -148,7 +262,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!raw) return;
     try {
       const schema: ArchitectureSchema = JSON.parse(raw);
-      set({ nodes: schema.nodes, edges: schema.edges });
+      set({ nodes: sortNodesParentFirst(schema.nodes), edges: schema.edges });
     } catch {
       // ignore corrupted data
     }

@@ -347,6 +347,69 @@ export const componentDefinitions: ComponentDefinition[] = [
     defaults: { maxRps: 50000, baseLatencyMs: 3, replicas: 1 },
   },
 
+  // --- Infrastructure / Containers ---
+  {
+    type: 'docker_container',
+    label: 'Docker Container',
+    category: 'infrastructure',
+    icon: '🐳',
+    description: 'Docker container runtime. Groups services sharing a network namespace with near-zero internal latency.',
+    params: [
+      { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', default: 0.1, min: 0.01, max: 1 },
+      { key: 'failure_probability', label: 'Failure Probability', type: 'number', default: 0, min: 0, max: 1 },
+    ],
+    defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
+  },
+  {
+    type: 'kubernetes_pod',
+    label: 'Kubernetes Pod',
+    category: 'infrastructure',
+    icon: '☸️',
+    description: 'Kubernetes pod — a group of co-located containers sharing network and storage.',
+    params: [
+      { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', default: 0.1, min: 0.01, max: 1 },
+      { key: 'failure_probability', label: 'Failure Probability', type: 'number', default: 0, min: 0, max: 1 },
+    ],
+    defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
+  },
+  {
+    type: 'vm_instance',
+    label: 'VM Instance',
+    category: 'infrastructure',
+    icon: '🖥️',
+    description: 'Virtual machine instance. Higher internal latency than containers due to hypervisor overhead.',
+    params: [
+      { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', default: 0.2, min: 0.01, max: 1 },
+      { key: 'failure_probability', label: 'Failure Probability', type: 'number', default: 0, min: 0, max: 1 },
+    ],
+    defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
+  },
+  {
+    type: 'rack',
+    label: 'Rack',
+    category: 'infrastructure',
+    icon: '🗄️',
+    description: 'Server rack in a datacenter. Contains compute nodes connected via top-of-rack switch.',
+    params: [
+      { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', default: 1, min: 0.1, max: 10 },
+      { key: 'power_redundancy', label: 'Power Redundancy', type: 'select', default: 'N+1', options: ['N', 'N+1', '2N'] },
+    ],
+    defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
+  },
+  {
+    type: 'datacenter',
+    label: 'Datacenter',
+    category: 'infrastructure',
+    icon: '🏢',
+    description: 'Datacenter (top-level container). Defines inter-rack latency and geographic region.',
+    params: [
+      { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', default: 5, min: 1, max: 50 },
+      { key: 'inter_rack_latency_ms', label: 'Inter-Rack Latency (ms)', type: 'number', default: 5, min: 1, max: 50 },
+      { key: 'region', label: 'Region', type: 'string', default: 'us-east-1' },
+    ],
+    defaults: { maxRps: 0, baseLatencyMs: 0, replicas: 1 },
+  },
+
   // --- Infrastructure / Storage ---
   {
     type: 'local_ssd',
