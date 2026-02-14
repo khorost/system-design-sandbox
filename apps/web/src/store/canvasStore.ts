@@ -12,6 +12,9 @@ import type { ComponentNode, ComponentEdge, ArchitectureSchema, EdgeData, Protoc
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
 import { getAbsolutePosition } from '../utils/networkLatency.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
+import { parseDsl } from '../dsl/parser.ts';
+import { autoLayout } from '../dsl/layout.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -108,6 +111,8 @@ interface CanvasState {
 
   exportSchema: () => string;
   importSchema: (json: string) => { ok: true } | { ok: false; error: string };
+  exportDsl: () => string;
+  importDsl: (text: string) => { ok: true } | { ok: false; error: string };
 
   save: () => void;
   load: () => void;
@@ -367,6 +372,32 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({
       nodes: sortNodesParentFirst(nodes),
       edges: validEdges,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+    });
+
+    return { ok: true as const };
+  },
+
+  exportDsl: () => {
+    const { nodes, edges } = get();
+    return serializeDsl(nodes, edges);
+  },
+
+  importDsl: (text: string) => {
+    const result = parseDsl(text);
+    if ('error' in result) {
+      return { ok: false as const, error: result.error };
+    }
+
+    if (result.warnings.length > 0) {
+      console.warn('[importDsl]', result.warnings.join('\n'));
+    }
+
+    const laid = autoLayout(result.nodes, result.edges);
+    set({
+      nodes: sortNodesParentFirst(laid),
+      edges: result.edges,
       selectedNodeId: null,
       selectedEdgeId: null,
     });

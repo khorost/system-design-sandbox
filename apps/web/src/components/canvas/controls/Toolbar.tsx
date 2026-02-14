@@ -49,10 +49,13 @@ export function Toolbar() {
   const clear = useCanvasStore((s) => s.clear);
   const exportSchema = useCanvasStore((s) => s.exportSchema);
   const importSchema = useCanvasStore((s) => s.importSchema);
+  const exportDsl = useCanvasStore((s) => s.exportDsl);
+  const importDsl = useCanvasStore((s) => s.importDsl);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dslFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
     const json = exportSchema();
@@ -85,6 +88,36 @@ export function Toolbar() {
     e.target.value = '';
   };
 
+  const handleDslExport = () => {
+    const dsl = exportDsl();
+    const blob = new Blob([dsl], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const date = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `architecture-${date}.sds`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDslImport = () => {
+    dslFileInputRef.current?.click();
+  };
+
+  const handleDslFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = importDsl(reader.result as string);
+      if (!result.ok) {
+        window.alert(`DSL import failed: ${result.error}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
       <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
@@ -95,6 +128,10 @@ export function Toolbar() {
       <TbBtn onClick={handleExport} title="Export schema to JSON file" icon={IconExport}>Export</TbBtn>
       <TbBtn onClick={handleImport} title="Import schema from JSON file" icon={IconImport}>Import</TbBtn>
       <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
+      <div className="w-px h-5 bg-[var(--color-border)]" />
+      <TbBtn onClick={handleDslExport} title="Export schema to DSL file (.sds)" icon={IconExport}>DSL&thinsp;&uarr;</TbBtn>
+      <TbBtn onClick={handleDslImport} title="Import schema from DSL file (.sds)" icon={IconImport}>DSL&thinsp;&darr;</TbBtn>
+      <input ref={dslFileInputRef} type="file" accept=".sds,.txt" className="hidden" onChange={handleDslFileChange} />
       <div className="w-px h-5 bg-[var(--color-border)]" />
       <TbBtn onClick={cycleEdgeLabelMode} title={tooltipByMode[edgeLabelMode]} icon={IconTag}>
         {labelByMode[edgeLabelMode]}
