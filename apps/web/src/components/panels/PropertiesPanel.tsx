@@ -7,6 +7,7 @@ import { DISK_COMPONENT_TYPES, NETWORK_PROTOCOLS, DISK_PROTOCOLS } from '../../t
 import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../utils/networkLatency.ts';
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
+import { NumberInput } from '../ui/NumberInput.tsx';
 
 interface TagWeightEntry {
   tag: string;
@@ -24,73 +25,83 @@ function getProtocolOptions(targetComponentType?: string): ProtocolType[] {
   return NETWORK_PROTOCOLS;
 }
 
-const COMPONENT_PARAMS: Record<string, { key: string; label: string; type: 'number' | 'text' | 'select'; options?: string[] }[]> = {
+interface ParamDef {
+  key: string;
+  label: string;
+  type: 'number' | 'text' | 'select';
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+const COMPONENT_PARAMS: Record<string, ParamDef[]> = {
   web_client: [
-    { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number' },
-    { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number' },
-    { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number' },
+    { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', min: 0.001, max: 100000 },
+    { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', min: 0.001, max: 1000 },
+    { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', min: 0.1, max: 102400 },
   ],
   mobile_client: [
-    { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number' },
-    { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number' },
-    { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number' },
+    { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', min: 0.001, max: 100000 },
+    { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', min: 0.001, max: 1000 },
+    { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', min: 0.1, max: 102400 },
   ],
   external_api: [
-    { key: 'concurrent_users_k', label: 'Consumers (K)', type: 'number' },
-    { key: 'requests_per_user', label: 'Requests/Consumer/sec', type: 'number' },
+    { key: 'concurrent_users_k', label: 'Consumers (K)', type: 'number', min: 0.001, max: 100000 },
+    { key: 'requests_per_user', label: 'Requests/Consumer/sec', type: 'number', min: 0.001, max: 1000 },
     { key: 'auth_type', label: 'Auth Type', type: 'select', options: ['api_key', 'oauth2', 'basic'] },
   ],
   service: [
-    { key: 'replicas', label: 'Replicas', type: 'number' },
-    { key: 'cpu_cores', label: 'CPU Cores', type: 'number' },
-    { key: 'memory_gb', label: 'Memory (GB)', type: 'number' },
-    { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number' },
-    { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number' },
+    { key: 'replicas', label: 'Replicas', type: 'number', min: 1, max: 1000 },
+    { key: 'cpu_cores', label: 'CPU Cores', type: 'number', min: 0.1, max: 1024 },
+    { key: 'memory_gb', label: 'Memory (GB)', type: 'number', min: 0.064, max: 1024 },
+    { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', min: 1, max: 10000000 },
+    { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', min: 0, max: 60000 },
     { key: 'language', label: 'Language', type: 'select', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
   ],
   postgresql: [
-    { key: 'replicas', label: 'Replicas', type: 'number' },
-    { key: 'read_replicas', label: 'Read Replicas', type: 'number' },
-    { key: 'max_connections', label: 'Max Connections', type: 'number' },
-    { key: 'storage_gb', label: 'Storage (GB)', type: 'number' },
+    { key: 'replicas', label: 'Replicas', type: 'number', min: 1, max: 1000 },
+    { key: 'read_replicas', label: 'Read Replicas', type: 'number', min: 0, max: 100 },
+    { key: 'max_connections', label: 'Max Connections', type: 'number', min: 1, max: 1000000 },
+    { key: 'storage_gb', label: 'Storage (GB)', type: 'number', min: 1, max: 1000000 },
   ],
   redis: [
     { key: 'mode', label: 'Mode', type: 'select', options: ['standalone', 'cluster', 'sentinel'] },
-    { key: 'memory_gb', label: 'Memory (GB)', type: 'number' },
-    { key: 'max_connections', label: 'Max Connections', type: 'number' },
+    { key: 'memory_gb', label: 'Memory (GB)', type: 'number', min: 0.064, max: 1024 },
+    { key: 'max_connections', label: 'Max Connections', type: 'number', min: 1, max: 1000000 },
   ],
   kafka: [
-    { key: 'brokers', label: 'Brokers', type: 'number' },
-    { key: 'partitions', label: 'Partitions', type: 'number' },
-    { key: 'replication_factor', label: 'Replication Factor', type: 'number' },
+    { key: 'brokers', label: 'Brokers', type: 'number', min: 1, max: 1000 },
+    { key: 'partitions', label: 'Partitions', type: 'number', min: 1, max: 100000 },
+    { key: 'replication_factor', label: 'Replication Factor', type: 'number', min: 1, max: 10 },
   ],
   load_balancer: [
     { key: 'algorithm', label: 'Algorithm', type: 'select', options: ['round_robin', 'least_conn', 'ip_hash'] },
-    { key: 'max_connections', label: 'Max Connections', type: 'number' },
+    { key: 'max_connections', label: 'Max Connections', type: 'number', min: 1, max: 1000000 },
   ],
   api_gateway: [
-    { key: 'max_rps', label: 'Max RPS', type: 'number' },
-    { key: 'rate_limit', label: 'Rate Limit', type: 'number' },
+    { key: 'max_rps', label: 'Max RPS', type: 'number', min: 1, max: 10000000 },
+    { key: 'rate_limit', label: 'Rate Limit', type: 'number', min: 1, max: 100000000 },
   ],
   docker_container: [
-    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
-    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', min: 0, max: 1000 },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number', min: 0, max: 1, step: 0.01 },
   ],
   kubernetes_pod: [
-    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
-    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', min: 0, max: 1000 },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number', min: 0, max: 1, step: 0.01 },
   ],
   vm_instance: [
-    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
-    { key: 'failure_probability', label: 'Failure Probability', type: 'number' },
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', min: 0, max: 1000 },
+    { key: 'failure_probability', label: 'Failure Probability', type: 'number', min: 0, max: 1, step: 0.01 },
   ],
   rack: [
-    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', min: 0, max: 1000 },
     { key: 'power_redundancy', label: 'Power Redundancy', type: 'select', options: ['N', 'N+1', '2N'] },
   ],
   datacenter: [
-    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number' },
-    { key: 'inter_rack_latency_ms', label: 'Inter-Rack Latency (ms)', type: 'number' },
+    { key: 'internal_latency_ms', label: 'Internal Latency (ms)', type: 'number', min: 0, max: 1000 },
+    { key: 'inter_rack_latency_ms', label: 'Inter-Rack Latency (ms)', type: 'number', min: 0, max: 100 },
     { key: 'region', label: 'Region', type: 'text' },
   ],
 };
@@ -156,11 +167,11 @@ function EdgeProperties() {
 
         <div>
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
-          <input
-            type="number"
-            min={0}
+          <NumberInput
             value={data?.latencyMs ?? 1}
-            onChange={(e) => updateEdgeData(edge.id, { latencyMs: Number(e.target.value) })}
+            onChange={(n) => updateEdgeData(edge.id, { latencyMs: n })}
+            min={0}
+            max={60000}
             className={inputClass}
           />
         </div>
@@ -177,22 +188,22 @@ function EdgeProperties() {
 
         <div>
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
-          <input
-            type="number"
-            min={1}
+          <NumberInput
             value={data?.bandwidthMbps ?? 1000}
-            onChange={(e) => updateEdgeData(edge.id, { bandwidthMbps: Number(e.target.value) })}
+            onChange={(n) => updateEdgeData(edge.id, { bandwidthMbps: n })}
+            min={1}
+            max={100000}
             className={inputClass}
           />
         </div>
 
         <div>
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeout (ms)</label>
-          <input
-            type="number"
-            min={0}
+          <NumberInput
             value={data?.timeoutMs ?? 5000}
-            onChange={(e) => updateEdgeData(edge.id, { timeoutMs: Number(e.target.value) })}
+            onChange={(n) => updateEdgeData(edge.id, { timeoutMs: n })}
+            min={100}
+            max={300000}
             className={inputClass}
           />
         </div>
@@ -337,13 +348,15 @@ function NodeProperties() {
 
   const paletteItem = paletteItems.find((i) => i.type === selectedNode.data.componentType);
   const def = getDefinition(selectedNode.data.componentType);
-  const params = COMPONENT_PARAMS[selectedNode.data.componentType]
+  const params: ParamDef[] = COMPONENT_PARAMS[selectedNode.data.componentType]
     ?? def?.params.map(p => ({
       key: p.key,
       label: p.label,
       type: p.type === 'boolean' ? 'select' as const : p.type === 'select' ? 'select' as const : p.type === 'string' ? 'text' as const : 'number' as const,
       ...(p.type === 'select' ? { options: p.options } : {}),
       ...(p.type === 'boolean' ? { options: ['true', 'false'] } : {}),
+      ...(p.min != null ? { min: p.min } : {}),
+      ...(p.max != null ? { max: p.max } : {}),
     }))
     ?? [];
   const config = selectedNode.data.config;
@@ -431,15 +444,20 @@ function NodeProperties() {
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+            ) : param.type === 'number' ? (
+              <NumberInput
+                value={(configVal(param.key) as number) ?? 0}
+                onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
+                min={param.min}
+                max={param.max}
+                step={param.step}
+                className={inputClass}
+              />
             ) : (
               <input
                 type={param.type}
-                value={(configVal(param.key) as string | number) ?? ''}
-                onChange={(e) =>
-                  updateNodeConfig(selectedNode.id, {
-                    [param.key]: param.type === 'number' ? Number(e.target.value) : e.target.value,
-                  })
-                }
+                value={(configVal(param.key) as string) ?? ''}
+                onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
                 className={inputClass}
               />
             )}
