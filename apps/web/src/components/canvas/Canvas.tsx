@@ -153,10 +153,13 @@ function CanvasInner() {
     [selectEdge],
   );
 
+  const onNodeDragStart = useCallback(() => {
+    useCanvasStore.getState().pushSnapshot();
+  }, []);
+
   const onNodeDragStop = useCallback(
     (_event: React.MouseEvent, draggedNode: ComponentNode) => {
-      const { setNodeParent, pushSnapshot } = useCanvasStore.getState();
-      pushSnapshot();
+      const { setNodeParent } = useCanvasStore.getState();
       const intersecting = getIntersectingNodes(draggedNode);
 
       const validContainers = intersecting.filter((n) => {
@@ -295,6 +298,7 @@ function CanvasInner() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onDrop={onDrop}
         onDragOver={onDragOver}
