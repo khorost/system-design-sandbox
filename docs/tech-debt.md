@@ -3,7 +3,7 @@
 | # | Название | Приоритет |
 |---|----------|-----------|
 | [TD-001](#td-001-экспорт-метрик-симуляции-в-prometheusgrafana) | Экспорт метрик симуляции в Prometheus/Grafana | Medium |
-| [TD-002](#td-002-экспортимпорт-схемы-в-текстовый-файл) | Экспорт/импорт схемы в текстовый файл | High |
+| [TD-002](#td-002-экспортимпорт-схемы-в-текстовый-файл) | ~~Экспорт/импорт схемы в текстовый файл~~ | ✅ Done |
 | [TD-003](#td-003-экспорт-схемы-в-c4-model-context-container-component) | Экспорт схемы в C4 Model | Medium |
 | [TD-004](#td-004-каталог-схем-с-шарингом-и-og-превью) | Каталог схем с шарингом и OG-превью | High |
 | [TD-005](#td-005-совместное-редактирование-схемы-real-time-collaboration) | Совместное редактирование (Real-time Collaboration) | Medium |
@@ -103,13 +103,13 @@ Browser (SimulationStore) --POST /api/metrics--> Go backend --GET /metrics--> Pr
 
 ### Задачи
 
-- [ ] Определить JSON-схему формата (version, nodes, edges, мета)
-- [ ] `exportSchema()` в `canvasStore` — сериализация текущего состояния в JSON-строку
-- [ ] `importSchema(json)` в `canvasStore` — парсинг, валидация, загрузка в стор
-- [ ] Валидация при импорте: проверка version, наличие обязательных полей, существование componentType в библиотеке
-- [ ] UI: кнопка "Export" — скачивание `.json` файла через `URL.createObjectURL` / `<a download>`
-- [ ] UI: кнопка "Import" — `<input type="file">` с чтением через `FileReader`
-- [ ] Обработка ошибок: невалидный JSON, несовместимая версия, битые ссылки edge→node
+- [x] Определить JSON-схему формата (version, nodes, edges, мета)
+- [x] `exportSchema()` в `canvasStore` — сериализация текущего состояния в JSON-строку
+- [x] `importSchema(json)` в `canvasStore` — парсинг, валидация, загрузка в стор
+- [x] Валидация при импорте: проверка version, наличие обязательных полей, существование componentType в библиотеке
+- [x] UI: кнопка "Export" — скачивание `.json` файла через `URL.createObjectURL` / `<a download>`
+- [x] UI: кнопка "Import" — `<input type="file">` с чтением через `FileReader`
+- [x] Обработка ошибок: невалидный JSON, несовместимая версия, битые ссылки edge→node
 
 ---
 
