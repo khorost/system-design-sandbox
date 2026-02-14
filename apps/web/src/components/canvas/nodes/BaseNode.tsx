@@ -1,9 +1,11 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { ComponentNode } from '../../../types/index.ts';
+import type { ComponentNode, ComponentType } from '../../../types/index.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { NodeEma } from '../../../store/simulationStore.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { CLIENT_TYPES } from '../../../constants/componentTypes.ts';
+import { LANGUAGE_ICONS, LANGUAGE_COLORS } from '../../../constants/colors.ts';
 
 interface BaseNodeProps {
   nodeProps: NodeProps<ComponentNode>;
@@ -32,43 +34,12 @@ function fmtK(n: number): string {
   return String(n);
 }
 
-const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
-
-const LANGUAGE_ICONS: Record<string, string> = {
-  go: 'Go',
-  java: 'Jv',
-  python: 'Py',
-  rust: 'Rs',
-  typescript: 'TS',
-  csharp: 'C#',
-  kotlin: 'Kt',
-  ruby: 'Rb',
-  php: 'php',
-  cpp: 'C++',
-  scala: 'Sc',
-  elixir: 'Ex',
-};
-
-const LANGUAGE_COLORS: Record<string, string> = {
-  go: '#00ADD8',
-  java: '#ED8B00',
-  python: '#3776AB',
-  rust: '#DEA584',
-  typescript: '#3178C6',
-  csharp: '#512BD4',
-  kotlin: '#7F52FF',
-  ruby: '#CC342D',
-  php: '#777BB4',
-  cpp: '#00599C',
-  scala: '#DC322F',
-  elixir: '#6E4A7E',
-};
 
 function getNodeSummary(componentType: string, config: Record<string, unknown>): string[] {
   const def = getDefinition(componentType as Parameters<typeof getDefinition>[0]);
   const v = (key: string): unknown => config[key] ?? def?.params.find(p => p.key === key)?.default;
 
-  if (CLIENT_TYPES.has(componentType)) {
+  if (CLIENT_TYPES.has(componentType as ComponentType)) {
     const usersK = (v('concurrent_users_k') as number) ?? 1;
     const rpu = (v('requests_per_user') as number) ?? 0.1;
     const rps = usersK * 1000 * rpu;

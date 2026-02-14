@@ -2,8 +2,7 @@ import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentT
 import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ComponentNode, ComponentEdge, EdgeRoutingRule } from '../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
-
-const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
+import { CLIENT_TYPES } from '../constants/componentTypes.ts';
 
 export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, ComponentModel> {
   const components = new Map<string, ComponentModel>();

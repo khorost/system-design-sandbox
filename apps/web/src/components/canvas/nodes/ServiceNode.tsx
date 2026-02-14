@@ -1,8 +1,7 @@
 import type { NodeProps } from '@xyflow/react';
 import type { ComponentNode } from '../../../types/index.ts';
 import { BaseNode } from './BaseNode.tsx';
-
-const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
+import { CLIENT_TYPES } from '../../../constants/componentTypes.ts';
 
 export function ServiceNode(props: NodeProps<ComponentNode>) {
   const isClient = CLIENT_TYPES.has(props.data.componentType);

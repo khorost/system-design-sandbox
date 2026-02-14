@@ -1,4 +1,5 @@
 import type { ComponentNode, ComponentType } from '../types/index.ts';
+import { CLIENT_TYPES } from '../constants/componentTypes.ts';
 
 /** Container types ordered by nesting level (innermost → outermost) */
 export const CONTAINER_TYPES = new Set<ComponentType>([
@@ -92,8 +93,6 @@ export const INTER_DATACENTER_LATENCY_MS = 50;
 
 /** Default client-to-datacenter latency (ms) */
 export const CLIENT_TO_DATACENTER_LATENCY_MS = 100;
-
-const CLIENT_TYPES = new Set<ComponentType>(['web_client', 'mobile_client', 'external_api']);
 
 /**
  * Returns the ancestor chain for a node: [nodeId, parentId, grandparentId, ...]

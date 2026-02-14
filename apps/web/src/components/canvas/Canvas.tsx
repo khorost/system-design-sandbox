@@ -17,6 +17,8 @@ import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ComponentNode, ComponentEdge, ComponentNodeData, ComponentCategory, ComponentType } from '../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../types/index.ts';
+import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../constants/colors.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
 import { CONTAINER_TYPES, CONTAINER_Z_INDEX, isValidNesting, getAbsolutePosition, getNestingDepth } from '../../utils/networkLatency.ts';
 import { ServiceNode } from './nodes/ServiceNode.tsx';
@@ -44,24 +46,6 @@ const edgeTypes: EdgeTypes = {
   flow: FlowEdge,
 };
 
-const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
-
-const NODE_TYPE_COLORS: Record<string, string> = {
-  serviceNode: '#475569',
-  databaseNode: '#854d0e',
-  cacheNode: '#dc2626',
-  queueNode: '#7c3aed',
-  gatewayNode: '#059669',
-  loadBalancerNode: '#0891b2',
-};
-
-const CONTAINER_COLORS: Record<string, string> = {
-  docker_container: '#3b82f6',
-  kubernetes_pod: '#8b5cf6',
-  vm_instance: '#64748b',
-  rack: '#22c55e',
-  datacenter: '#f97316',
-};
 
 function getMiniMapNodeColor(node: ComponentNode): string {
   const custom = node.data.config.color as string | undefined;

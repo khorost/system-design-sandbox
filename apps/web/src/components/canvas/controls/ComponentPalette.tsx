@@ -2,24 +2,7 @@ import { useState, type DragEvent } from 'react';
 import { paletteCategories, paletteItems, type PaletteItem } from './paletteData.ts';
 import type { ComponentCategory } from '../../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../../types/index.ts';
-
-const NODE_TYPE_COLORS: Record<string, string> = {
-  serviceNode: '#475569',
-  databaseNode: '#854d0e',
-  cacheNode: '#dc2626',
-  queueNode: '#7c3aed',
-  gatewayNode: '#059669',
-  loadBalancerNode: '#0891b2',
-  containerNode: '#3b82f6',
-};
-
-const CONTAINER_COLORS: Record<string, string> = {
-  docker_container: '#3b82f6',
-  kubernetes_pod: '#8b5cf6',
-  vm_instance: '#64748b',
-  rack: '#22c55e',
-  datacenter: '#f97316',
-};
+import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../../constants/colors.ts';
 
 function getItemColor(type: string): string {
   return CONTAINER_COLORS[type] ?? NODE_TYPE_COLORS[NODE_TYPE_MAP[type] ?? ''] ?? '#475569';

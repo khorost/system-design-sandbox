@@ -5,28 +5,13 @@ import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ProtocolType, EdgeRoutingRule } from '../../types/index.ts';
 import { DISK_COMPONENT_TYPES, NETWORK_PROTOCOLS, DISK_PROTOCOLS } from '../../types/index.ts';
 import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../utils/networkLatency.ts';
+import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
 
 interface TagWeightEntry {
   tag: string;
   weight: number;
 }
-
-const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
-
-const DEFAULT_BORDER_COLORS: Record<string, string> = {
-  serviceNode: '#475569',
-  databaseNode: '#854d0e',
-  cacheNode: '#dc2626',
-  queueNode: '#7c3aed',
-  gatewayNode: '#059669',
-  loadBalancerNode: '#0891b2',
-  // containers
-  docker_container: '#3b82f6',
-  kubernetes_pod: '#8b5cf6',
-  vm_instance: '#64748b',
-  rack: '#22c55e',
-  datacenter: '#f97316',
-};
 
 function getDefaultColor(componentType: string, nodeType?: string): string {
   return DEFAULT_BORDER_COLORS[componentType] ?? DEFAULT_BORDER_COLORS[nodeType ?? ''] ?? '#475569';
