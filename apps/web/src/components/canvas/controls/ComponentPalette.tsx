@@ -27,6 +27,7 @@ function getItemColor(type: string): string {
 
 export function ComponentPalette() {
   const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('infrastructure');
+  const [search, setSearch] = useState('');
 
   const onDragStart = (event: DragEvent, item: PaletteItem) => {
     event.dataTransfer.setData('application/reactflow-type', item.type);
@@ -41,11 +42,35 @@ export function ComponentPalette() {
       <div className="px-3 py-3 border-b border-[var(--color-border)]">
         <h2 className="text-base font-bold text-slate-200">Components</h2>
         <p className="text-xs text-slate-400 mt-0.5">Drag to canvas</p>
+        <div className="relative mt-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search..."
+            className="w-full px-3 py-1.5 pl-8 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded-md text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+          />
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {paletteCategories.map((cat) => {
-          const items = paletteItems.filter((i) => i.category === cat.key);
-          const isExpanded = expandedCategory === cat.key;
+          const query = search.toLowerCase();
+          const items = paletteItems.filter((i) => i.category === cat.key && (!query || i.label.toLowerCase().includes(query) || i.type.toLowerCase().includes(query)));
+          if (query && items.length === 0) return null;
+          const isExpanded = query ? true : expandedCategory === cat.key;
           const isClients = cat.key === 'clients';
           return (
             <div key={cat.key} className={isClients ? 'border-b border-amber-500/20' : ''}>
