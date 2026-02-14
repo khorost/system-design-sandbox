@@ -92,9 +92,11 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   const ema = useSimulationStore((s) => s.nodeEma[id]);
   const isRunning = useSimulationStore((s) => s.isRunning);
 
+  const customColor = data.config.color as string | undefined;
+  const customTextColor = data.config.textColor as string | undefined;
   const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
   const utilColor = isRunning ? getUtilColor(maxEma) : '';
-  const activeBorder = selected ? '#3b82f6' : utilColor || borderColor;
+  const activeBorder = selected ? '#3b82f6' : utilColor || customColor || borderColor;
   const summaryLines = getNodeSummary(data.componentType, data.config);
 
   return (
@@ -135,7 +137,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
       <div className="p-4">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">{data.icon}</span>
-          <span className="text-sm font-semibold text-slate-200 truncate max-w-[120px]">
+          <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#e2e8f0' }}>
             {data.label}
           </span>
         </div>

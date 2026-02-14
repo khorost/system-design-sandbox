@@ -92,6 +92,7 @@ interface CanvasState {
   edges: ComponentEdge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  focusNodeId: string | null;
   edgeLabelMode: EdgeLabelMode;
 
   onNodesChange: OnNodesChange<ComponentNode>;
@@ -102,6 +103,8 @@ interface CanvasState {
   removeNode: (id: string) => void;
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
   selectNode: (id: string | null) => void;
+  focusNode: (id: string) => void;
+  clearFocus: () => void;
   selectEdge: (id: string | null) => void;
   updateEdgeData: (id: string, data: Partial<EdgeData>) => void;
   setNodeParent: (nodeId: string, parentId: string | null) => void;
@@ -124,6 +127,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: initial.edges,
   selectedNodeId: null,
   selectedEdgeId: null,
+  focusNodeId: null,
   edgeLabelMode: 'auto',
 
   onNodesChange: (changes) => {
@@ -199,6 +203,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   selectNode: (id) => {
     set({ selectedNodeId: id, selectedEdgeId: null });
+  },
+
+  focusNode: (id) => {
+    set({
+      selectedNodeId: id,
+      selectedEdgeId: null,
+      focusNodeId: id,
+      nodes: get().nodes.map(n => ({ ...n, selected: n.id === id })),
+    });
+  },
+
+  clearFocus: () => {
+    set({ focusNodeId: null });
   },
 
   selectEdge: (id) => {

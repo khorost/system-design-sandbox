@@ -10,11 +10,19 @@ const CONTAINER_STYLES: Record<string, { border: string; bg: string; headerBg: s
   datacenter: { border: '#f97316', bg: 'rgba(249,115,22,0.06)', headerBg: 'rgba(249,115,22,0.15)' },
 };
 
+function hexToStyle(hex: string): { border: string; bg: string; headerBg: string } {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { border: hex, bg: `rgba(${r},${g},${b},0.06)`, headerBg: `rgba(${r},${g},${b},0.15)` };
+}
+
 export function ContainerNode(props: NodeProps<ComponentNode>) {
   const { id, data, selected } = props;
   const selectNode = useCanvasStore((s) => s.selectNode);
 
-  const style = CONTAINER_STYLES[data.componentType] ?? CONTAINER_STYLES.docker_container;
+  const customColor = data.config.color as string | undefined;
+  const style = customColor ? hexToStyle(customColor) : (CONTAINER_STYLES[data.componentType] ?? CONTAINER_STYLES.docker_container);
   const latencyMs = (data.config.internal_latency_ms as number) ?? 0.1;
 
   return (
@@ -46,7 +54,7 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
         style={{ background: style.headerBg }}
       >
         <span className="text-base">{data.icon}</span>
-        <span className="text-xs font-semibold text-slate-200 truncate">{data.label}</span>
+        <span className="text-xs font-semibold truncate" style={{ color: (data.config.textColor as string) || '#e2e8f0' }}>{data.label}</span>
         <span
           className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded"
           style={{ background: style.border + '30', color: style.border }}

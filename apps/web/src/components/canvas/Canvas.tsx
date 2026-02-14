@@ -1,4 +1,4 @@
-import { useCallback, useRef, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, type DragEvent } from 'react';
 import {
   ReactFlow,
   Background,
@@ -46,6 +46,31 @@ const edgeTypes: EdgeTypes = {
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
+const NODE_TYPE_COLORS: Record<string, string> = {
+  serviceNode: '#475569',
+  databaseNode: '#854d0e',
+  cacheNode: '#dc2626',
+  queueNode: '#7c3aed',
+  gatewayNode: '#059669',
+  loadBalancerNode: '#0891b2',
+};
+
+const CONTAINER_COLORS: Record<string, string> = {
+  docker_container: '#3b82f6',
+  kubernetes_pod: '#8b5cf6',
+  vm_instance: '#64748b',
+  rack: '#22c55e',
+  datacenter: '#f97316',
+};
+
+function getMiniMapNodeColor(node: ComponentNode): string {
+  const custom = node.data.config.color as string | undefined;
+  if (custom) return custom;
+  return CONTAINER_COLORS[node.data.componentType]
+    ?? NODE_TYPE_COLORS[NODE_TYPE_MAP[node.data.componentType] ?? '']
+    ?? '#475569';
+}
+
 let nodeId = 0;
 function getNextId() {
   return `node-${++nodeId}-${Date.now()}`;
@@ -70,7 +95,7 @@ function pickInnermostContainer(containers: ComponentNode[]): ComponentNode {
 
 function CanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, getIntersectingNodes } = useReactFlow();
+  const { screenToFlowPosition, getIntersectingNodes, setCenter, getZoom } = useReactFlow();
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -80,6 +105,20 @@ function CanvasInner() {
   const addNode = useCanvasStore((s) => s.addNode);
   const selectNode = useCanvasStore((s) => s.selectNode);
   const selectEdge = useCanvasStore((s) => s.selectEdge);
+  const focusNodeId = useCanvasStore((s) => s.focusNodeId);
+  const clearFocus = useCanvasStore((s) => s.clearFocus);
+
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const node = nodes.find((n) => n.id === focusNodeId);
+    clearFocus();
+    if (!node) return;
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const abs = getAbsolutePosition(node, nodeMap);
+    const w = (node.style?.width as number) ?? node.width ?? 200;
+    const h = (node.style?.height as number) ?? node.height ?? 60;
+    setCenter(abs.x + w / 2, abs.y + h / 2, { zoom: getZoom(), duration: 300 });
+  }, [focusNodeId, nodes, clearFocus, setCenter, getZoom]);
 
   const edgeReconnectSuccessful = useRef(true);
 
@@ -280,7 +319,7 @@ function CanvasInner() {
         <Controls className="!bg-[var(--color-surface)] !border-[var(--color-border)] !rounded-lg [&>button]:!bg-[var(--color-surface)] [&>button]:!border-[var(--color-border)] [&>button]:!text-slate-300 [&>button:hover]:!bg-[var(--color-surface-hover)]" />
         <MiniMap
           className="!bg-[var(--color-surface)] !border-[var(--color-border)] !rounded-lg"
-          nodeColor="#3b82f6"
+          nodeColor={(node) => getMiniMapNodeColor(node as ComponentNode)}
           maskColor="rgba(15,23,42,0.8)"
         />
       </ReactFlow>

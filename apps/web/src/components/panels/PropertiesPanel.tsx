@@ -13,6 +13,25 @@ interface TagWeightEntry {
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
+const DEFAULT_BORDER_COLORS: Record<string, string> = {
+  serviceNode: '#475569',
+  databaseNode: '#854d0e',
+  cacheNode: '#dc2626',
+  queueNode: '#7c3aed',
+  gatewayNode: '#059669',
+  loadBalancerNode: '#0891b2',
+  // containers
+  docker_container: '#3b82f6',
+  kubernetes_pod: '#8b5cf6',
+  vm_instance: '#64748b',
+  rack: '#22c55e',
+  datacenter: '#f97316',
+};
+
+function getDefaultColor(componentType: string, nodeType?: string): string {
+  return DEFAULT_BORDER_COLORS[componentType] ?? DEFAULT_BORDER_COLORS[nodeType ?? ''] ?? '#475569';
+}
+
 function getProtocolOptions(targetComponentType?: string): ProtocolType[] {
   if (targetComponentType && DISK_COMPONENT_TYPES.has(targetComponentType)) {
     return DISK_PROTOCOLS;
@@ -309,12 +328,23 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
   );
 }
 
+function NodeLink({ node, onClick }: { node: { data: { icon: string; label: string } }; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
+      <span>{node.data.icon}</span>
+      <span className="flex-1 text-left truncate">{node.data.label}</span>
+      <span className="text-slate-500">&rarr;</span>
+    </button>
+  );
+}
+
 function NodeProperties() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
   const updateNodeConfig = useCanvasStore((s) => s.updateNodeConfig);
   const removeNode = useCanvasStore((s) => s.removeNode);
   const setNodeParent = useCanvasStore((s) => s.setNodeParent);
+  const focusNode = useCanvasStore((s) => s.focusNode);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   if (!selectedNode) return null;
@@ -352,6 +382,46 @@ function NodeProperties() {
           />
         </div>
 
+        {(() => {
+          const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
+          const defaultTextColor = '#e2e8f0';
+          return (
+            <div>
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Colors</label>
+              <div className="flex items-center gap-3 mt-1">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="color"
+                    value={(config.color as string) || defaultColor}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
+                    title="Border color"
+                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
+                  />
+                  <span className="text-[10px] text-slate-500">Border</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="color"
+                    value={(config.textColor as string) || defaultTextColor}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
+                    title="Text color"
+                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
+                  />
+                  <span className="text-[10px] text-slate-500">Text</span>
+                </div>
+                {(config.color != null || config.textColor != null) && (
+                  <button
+                    onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
+                    className="ml-auto text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {params.map((param) => (
           <div key={param.key}>
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -382,13 +452,22 @@ function NodeProperties() {
           </div>
         ))}
 
-        {/* Container children count */}
+        {/* Container children list */}
         {CONTAINER_TYPES.has(selectedNode.data.componentType) && (() => {
           const children = nodes.filter(n => n.parentId === selectedNode.id);
           return (
-            <div className="flex items-center justify-between px-3 py-2 bg-purple-500/10 rounded border border-purple-500/20">
-              <span className="text-xs font-semibold text-slate-300">Children</span>
-              <span className="text-sm font-mono font-bold text-purple-400">{children.length}</span>
+            <div className="rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs font-semibold text-slate-300">Children</span>
+                <span className="text-sm font-mono font-bold text-purple-400">{children.length}</span>
+              </div>
+              {children.length > 0 && (
+                <div className="border-t border-purple-500/20">
+                  {children.map(child => (
+                    <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -400,9 +479,15 @@ function NodeProperties() {
             n.id !== selectedNode.id &&
             isValidNesting(selectedNode.data.componentType, n.data.componentType)
           );
+          const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
           return validParents.length > 0 ? (
             <div>
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
+              {parentNode && (
+                <div className="mt-1 mb-1 rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
+                  <NodeLink node={parentNode} onClick={() => focusNode(parentNode.id)} />
+                </div>
+              )}
               <select
                 value={selectedNode.parentId ?? ''}
                 onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}

@@ -1,6 +1,29 @@
 import { useState, type DragEvent } from 'react';
 import { paletteCategories, paletteItems, type PaletteItem } from './paletteData.ts';
 import type { ComponentCategory } from '../../../types/index.ts';
+import { NODE_TYPE_MAP } from '../../../types/index.ts';
+
+const NODE_TYPE_COLORS: Record<string, string> = {
+  serviceNode: '#475569',
+  databaseNode: '#854d0e',
+  cacheNode: '#dc2626',
+  queueNode: '#7c3aed',
+  gatewayNode: '#059669',
+  loadBalancerNode: '#0891b2',
+  containerNode: '#3b82f6',
+};
+
+const CONTAINER_COLORS: Record<string, string> = {
+  docker_container: '#3b82f6',
+  kubernetes_pod: '#8b5cf6',
+  vm_instance: '#64748b',
+  rack: '#22c55e',
+  datacenter: '#f97316',
+};
+
+function getItemColor(type: string): string {
+  return CONTAINER_COLORS[type] ?? NODE_TYPE_COLORS[NODE_TYPE_MAP[type] ?? ''] ?? '#475569';
+}
 
 export function ComponentPalette() {
   const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('infrastructure');
@@ -47,17 +70,21 @@ export function ComponentPalette() {
               </button>
               {isExpanded && (
                 <div className="px-2 pb-2 space-y-1">
-                  {items.map((item) => (
-                    <div
-                      key={item.type}
-                      draggable
-                      onDragStart={(e) => onDragStart(e, item)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-md cursor-grab active:cursor-grabbing hover:bg-[var(--color-surface-hover)] transition-colors border border-transparent hover:border-[var(--color-border)]"
-                    >
-                      <span className="text-lg">{item.icon}</span>
-                      <span className="text-sm text-slate-300">{item.label}</span>
-                    </div>
-                  ))}
+                  {items.map((item) => {
+                    const color = getItemColor(item.type);
+                    return (
+                      <div
+                        key={item.type}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, item)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-md cursor-grab active:cursor-grabbing hover:bg-[var(--color-surface-hover)] transition-colors border border-transparent hover:border-[var(--color-border)]"
+                        style={{ borderLeftColor: color, borderLeftWidth: 2, borderLeftStyle: 'solid' }}
+                      >
+                        <span className="text-lg">{item.icon}</span>
+                        <span className="text-sm text-slate-300">{item.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
