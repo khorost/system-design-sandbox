@@ -274,6 +274,30 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   exportSchema: () => {
     const { nodes, edges } = get();
     const now = new Date().toISOString();
+
+    // Strip React Flow runtime state from nodes, keep schema-relevant fields
+    const cleanNodes = nodes.map(({ id, type, position, data, parentId, extent, style, width, height, dragHandle, zIndex }) => {
+      const node: Record<string, unknown> = { id, type, position, data };
+      if (parentId) { node.parentId = parentId; node.extent = extent; }
+      if (style) node.style = style;
+      if (width != null) node.width = width;
+      if (height != null) node.height = height;
+      if (dragHandle) node.dragHandle = dragHandle;
+      if (zIndex != null) node.zIndex = zIndex;
+      return node;
+    });
+
+    // Strip React Flow runtime state from edges
+    const cleanEdges = edges.map(({ id, type, source, target, sourceHandle, targetHandle, data, style }) => {
+      const edge: Record<string, unknown> = { id, source, target };
+      if (type) edge.type = type;
+      if (sourceHandle) edge.sourceHandle = sourceHandle;
+      if (targetHandle) edge.targetHandle = targetHandle;
+      if (data) edge.data = data;
+      if (style) edge.style = style;
+      return edge;
+    });
+
     const schema = {
       version: '1.0',
       metadata: {
@@ -282,8 +306,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         updatedAt: now,
         exportedAt: now,
       },
-      nodes,
-      edges,
+      nodes: cleanNodes,
+      edges: cleanEdges,
     };
     return JSON.stringify(schema, null, 2);
   },
