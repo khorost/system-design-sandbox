@@ -17,7 +17,7 @@
 |      | [TD-013](#td-013-пользовательские-компоненты-со-скриптовой-логикой) | Пользовательские компоненты со скриптовой логикой | Medium |
 |  ✅  | [TD-014](#td-014-дедупликация-констант-цвета-типы-маппинги-) | ~~Дедупликация констант (цвета, типы, маппинги)~~ | High |
 |  ✅  | [TD-015](#td-015-unit-тесты-для-ядра) | ~~Unit-тесты для ядра~~ | High |
-|      | [TD-016](#td-016-toast-уведомления-об-ошибках-импортаэкспорта) | Toast-уведомления об ошибках импорта/экспорта | High |
+|  ✅  | [TD-016](#td-016-toast-уведомления-об-ошибках-импортаэкспорта) | ~~Toast-уведомления об ошибках импорта/экспорта~~ | High |
 |      | [TD-017](#td-017-валидация-ввода-в-properties-panel) | Валидация ввода в Properties Panel | High |
 |      | [TD-018](#td-018-санитизация-пользовательского-ввода) | Санитизация пользовательского ввода | Medium |
 |      | [TD-019](#td-019-ужесточение-eslint-конфигурации) | Ужесточение ESLint-конфигурации | Medium |
@@ -1656,11 +1656,15 @@ CREATE TABLE component_templates (
 
 ### Задачи
 
-- [ ] Выбрать подход: toast-библиотека (react-hot-toast / sonner) или собственный компонент
-- [ ] Создать `apps/web/src/utils/notifications.ts` — API: `notify.success()`, `notify.warn()`, `notify.error()`
-- [ ] Заменить `console.warn` в `importSchema` / `importDsl` на `notify.warn()`
-- [ ] Показывать ошибки worker-а через `notify.error()`
-- [ ] Toast-контейнер в `App.tsx`
+- [x] Выбрать подход: собственный компонент на Zustand + Framer Motion (без внешних библиотек)
+- [x] Создать `apps/web/src/store/toastStore.ts` — Zustand-стор (auto-dismiss 5/8/10s, FIFO max 5)
+- [x] Создать `apps/web/src/utils/notifications.ts` — API: `notify.success()`, `notify.warn()`, `notify.error()`
+- [x] Создать `apps/web/src/components/ui/ToastContainer.tsx` — Framer Motion анимации, цветовые CSS-переменные
+- [x] Заменить `console.warn` в `importSchema` / `importDsl` на `notify.warn()`
+- [x] Заменить `window.alert` в `Toolbar.tsx` на `notify.error()`
+- [x] Показывать ошибки worker-а через `notify.error()`
+- [x] Toast-контейнер в `App.tsx`
+- [x] Unit-тесты для toastStore (6 тестов)
 
 ---
 

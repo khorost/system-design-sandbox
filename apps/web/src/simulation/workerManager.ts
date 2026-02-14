@@ -1,5 +1,6 @@
 import type { ComponentModel, ConnectionModel, LoadProfile, SimulationMetrics, FailureReport } from '@system-design-sandbox/simulation-engine';
 import type { WorkerCommand, WorkerEvent } from './protocol.ts';
+import { notify } from '../utils/notifications.ts';
 
 type TickCallback = (metrics: SimulationMetrics) => void;
 type FailureCallback = (report: FailureReport) => void;
@@ -32,7 +33,7 @@ class WorkerManager {
           for (const cb of this.failureCallbacks) cb(msg.report);
           break;
         case 'ERROR':
-          console.error('[SimWorker]', msg.message);
+          notify.error(msg.message);
           break;
       }
     };

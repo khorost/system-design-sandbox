@@ -15,6 +15,7 @@ import { getDefinition } from '@system-design-sandbox/component-library';
 import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import { parseDsl } from '../dsl/parser.ts';
 import { autoLayout } from '../dsl/layout.ts';
+import { notify } from '../utils/notifications.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -408,7 +409,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
 
     if (warnings.length > 0) {
-      console.warn('[importSchema]', warnings.join('\n'));
+      notify.warn(warnings.join('\n'));
     }
 
     set({
@@ -434,7 +435,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
 
     if (result.warnings.length > 0) {
-      console.warn('[importDsl]', result.warnings.join('\n'));
+      notify.warn(result.warnings.join('\n'));
     }
 
     const laid = autoLayout(result.nodes, result.edges);

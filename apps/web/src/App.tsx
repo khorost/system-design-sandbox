@@ -9,6 +9,7 @@ import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
 import { InventoryTable } from './components/inventory/InventoryTable.tsx';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
 import { useCanvasStore } from './store/canvasStore.ts';
+import { ToastContainer } from './components/ui/ToastContainer.tsx';
 
 type ViewMode = 'canvas' | 'table';
 
@@ -173,6 +174,7 @@ export default function App() {
           <InventoryTable onNavigateToNode={handleNavigateToNode} />
         </div>
       )}
+      <ToastContainer />
     </div>
   );
 }

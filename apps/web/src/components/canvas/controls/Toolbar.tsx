@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
+import { notify } from '../../../utils/notifications.ts';
 
 /* ── tiny inline SVG icons (stroke-based) ── */
 const s = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -151,7 +152,7 @@ export function Toolbar() {
     reader.onload = () => {
       const result = importSchema(reader.result as string);
       if (!result.ok) {
-        window.alert(`Import failed: ${result.error}`);
+        notify.error(`Import failed: ${result.error}`);
       }
     };
     reader.readAsText(file);
@@ -182,7 +183,7 @@ export function Toolbar() {
     reader.onload = () => {
       const result = importDsl(reader.result as string);
       if (!result.ok) {
-        window.alert(`DSL import failed: ${result.error}`);
+        notify.error(`DSL import failed: ${result.error}`);
       }
     };
     reader.readAsText(file);
