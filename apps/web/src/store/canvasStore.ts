@@ -16,6 +16,7 @@ import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import { parseDsl } from '../dsl/parser.ts';
 import { autoLayout } from '../dsl/layout.ts';
 import { notify } from '../utils/notifications.ts';
+import { sanitizeLabel, sanitizeConfig } from '../utils/sanitize.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -388,10 +389,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const nodes = schema.nodes as ComponentNode[];
     const edges = schema.edges as ComponentEdge[];
 
-    // Validate nodes
+    // Validate and sanitize nodes
     for (const node of nodes) {
       if (!node.id || !node.position || !node.data?.componentType || !node.data?.label) {
         return { ok: false as const, error: `Node "${node.id ?? '?'}" missing required fields (id, position, data.componentType, data.label).` };
+      }
+      node.data.label = sanitizeLabel(node.data.label);
+      if (node.data.config) {
+        node.data.config = sanitizeConfig(node.data.config);
       }
       if (!getDefinition(node.data.componentType)) {
         warnings.push(`Unknown componentType "${node.data.componentType}" on node "${node.id}".`);

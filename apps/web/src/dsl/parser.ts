@@ -2,6 +2,7 @@ import type { ComponentNode, ComponentEdge, EdgeData, EdgeRoutingRule, Component
 import { DEFAULT_EDGE_DATA, NODE_TYPE_MAP } from '../types/index.ts';
 import { CONTAINER_TYPES, CONTAINER_Z_INDEX } from '../utils/networkLatency.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { sanitizeLabel, sanitizeString } from '../utils/sanitize.ts';
 
 interface ParseResult {
   nodes: ComponentNode[];
@@ -58,9 +59,9 @@ function parseValue(s: string): unknown {
   if (!isNaN(num) && stripped !== '') return num;
   // Unquote if quoted
   if (s.startsWith('"') && s.endsWith('"')) {
-    return s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    return sanitizeString(s.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
   }
-  return s;
+  return sanitizeString(s);
 }
 
 /** Match node declaration: componentType "Label" as alias { */
@@ -123,10 +124,12 @@ function buildNodeData(
 ): ComponentNode['data'] {
   const def = getDefinition(componentType as ComponentType);
 
+  const cleanLabel = sanitizeLabel(label);
+
   if (!def) {
     warnings.push(`Line ${lineNum}: Unknown componentType "${componentType}".`);
     return {
-      label,
+      label: cleanLabel,
       componentType: componentType as ComponentType,
       category: 'compute',
       icon: '❓',
@@ -144,7 +147,7 @@ function buildNodeData(
   }
 
   return {
-    label,
+    label: cleanLabel,
     componentType: componentType as ComponentType,
     category: def.category,
     icon: def.icon,

@@ -385,6 +385,7 @@ function NodeProperties() {
             type="text"
             value={(config.name as string) || selectedNode.data.label}
             onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
+            maxLength={100}
             className={inputClass}
           />
         </div>
@@ -458,6 +459,7 @@ function NodeProperties() {
                 type={param.type}
                 value={(configVal(param.key) as string) ?? ''}
                 onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
+                maxLength={500}
                 className={inputClass}
               />
             )}

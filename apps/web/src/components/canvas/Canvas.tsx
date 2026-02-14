@@ -20,6 +20,7 @@ import { NODE_TYPE_MAP } from '../../types/index.ts';
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../constants/colors.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { sanitizeLabel } from '../../utils/sanitize.ts';
 import { CONTAINER_TYPES, CONTAINER_Z_INDEX, isValidNesting, getAbsolutePosition, getNestingDepth } from '../../utils/networkLatency.ts';
 import { ServiceNode } from './nodes/ServiceNode.tsx';
 import { DatabaseNode } from './nodes/DatabaseNode.tsx';
@@ -236,7 +237,7 @@ function CanvasInner() {
         type: nodeType,
         position: adjustedPosition,
         data: {
-          label,
+          label: sanitizeLabel(label),
           componentType,
           category,
           icon,
