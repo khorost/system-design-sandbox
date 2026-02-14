@@ -1,4 +1,4 @@
-import { Component, useState, type ReactNode, type ErrorInfo } from 'react';
+import { Component, useState, useCallback, type ReactNode, type ErrorInfo } from 'react';
 import { Canvas } from './components/canvas/Canvas.tsx';
 import { ComponentPalette } from './components/canvas/controls/ComponentPalette.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
@@ -6,7 +6,11 @@ import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
 import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { CostPanel } from './components/panels/CostPanel.tsx';
 import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
+import { InventoryTable } from './components/inventory/InventoryTable.tsx';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
+import { useCanvasStore } from './store/canvasStore.ts';
+
+type ViewMode = 'canvas' | 'table';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -93,17 +97,62 @@ function RightPanel() {
 
 export default function App() {
   useWhatIfMode();
+  const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+  const selectNode = useCanvasStore((s) => s.selectNode);
+
+  const handleNavigateToNode = useCallback(
+    (nodeId: string) => {
+      selectNode(nodeId);
+      setViewMode('canvas');
+    },
+    [selectNode],
+  );
 
   return (
-    <div
-      className="h-screen overflow-hidden bg-[var(--color-bg)]"
-      style={{ display: 'grid', gridTemplateColumns: '16rem 1fr 20rem' }}
-    >
-      <ComponentPalette />
-      <div className="min-w-0 min-h-0 overflow-hidden">
-        <Canvas />
+    <div className="h-screen overflow-hidden bg-[var(--color-bg)] flex flex-col">
+      {/* Top navigation bar */}
+      <div className="h-12 flex items-center px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
+        <div className="flex items-center gap-1 bg-[var(--color-bg)] rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('canvas')}
+            className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
+              viewMode === 'canvas'
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Designer
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
+              viewMode === 'table'
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Inventory
+          </button>
+        </div>
       </div>
-      <RightPanel />
+
+      {/* Content area */}
+      {viewMode === 'canvas' ? (
+        <div
+          className="flex-1 min-h-0 overflow-hidden"
+          style={{ display: 'grid', gridTemplateColumns: '16rem 1fr 20rem' }}
+        >
+          <ComponentPalette />
+          <div className="min-w-0 min-h-0 overflow-hidden">
+            <Canvas />
+          </div>
+          <RightPanel />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <InventoryTable onNavigateToNode={handleNavigateToNode} />
+        </div>
+      )}
     </div>
   );
 }
