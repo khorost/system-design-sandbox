@@ -111,7 +111,7 @@ export default function App() {
   return (
     <div className="h-screen overflow-hidden bg-[var(--color-bg)] flex flex-col">
       {/* Top navigation bar */}
-      <div className="h-12 flex items-center px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
+      <div className="h-12 flex items-center justify-between px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
         <div className="flex items-center gap-1 bg-[var(--color-bg)] rounded-lg p-1">
           <button
             onClick={() => setViewMode('canvas')}
@@ -133,6 +133,11 @@ export default function App() {
           >
             Inventory
           </button>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+          <span>v0.1.0</span>
+          <span>&middot;</span>
+          <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
         </div>
       </div>
 
