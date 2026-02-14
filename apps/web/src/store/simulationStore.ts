@@ -3,6 +3,7 @@ import type { SimulationMetrics, LoadProfile, NodeTagTraffic, EdgeTagTraffic } f
 import { useCanvasStore } from './canvasStore.ts';
 import { convertNodesToComponents, convertEdgesToConnections, buildEdgeKeyToIdMap } from '../simulation/converter.ts';
 import { workerManager } from '../simulation/workerManager.ts';
+import { CONFIG } from '../config/constants.ts';
 
 /** Lightweight chart point — only the 5 numbers needed for graphs */
 export interface ChartPoint {
@@ -13,12 +14,12 @@ export interface ChartPoint {
   errorRate: number;
 }
 
-const MAX_HISTORY = 3000; // 300s at 0.1s tick
+const MAX_HISTORY = CONFIG.SIMULATION.MAX_CHART_POINTS;
 
-// EMA alphas for tick interval = 0.1s
-const EMA_ALPHA_1S = 1 - Math.exp(-0.1 / 1);   // ≈ 0.095
-const EMA_ALPHA_5S = 1 - Math.exp(-0.1 / 5);   // ≈ 0.020
-const EMA_ALPHA_30S = 1 - Math.exp(-0.1 / 30); // ≈ 0.003
+const TICK = CONFIG.SIMULATION.TICK_INTERVAL_SEC;
+const EMA_ALPHA_1S = 1 - Math.exp(-TICK / 1);   // ≈ 0.095
+const EMA_ALPHA_5S = 1 - Math.exp(-TICK / 5);   // ≈ 0.020
+const EMA_ALPHA_30S = 1 - Math.exp(-TICK / 30); // ≈ 0.003
 
 /** Module-level unsub for tick listener */
 let tickUnsub: (() => void) | null = null;
@@ -74,7 +75,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     set({ loadType: type });
     const { isRunning } = get();
     if (isRunning) {
-      workerManager.updateProfile({ type, rps: 0, durationSec: 300 });
+      workerManager.updateProfile({ type, rps: 0, durationSec: CONFIG.SIMULATION.DEFAULT_DURATION_SEC });
     }
   },
 
@@ -95,7 +96,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     const profile: LoadProfile = {
       type: loadType,
       rps: 0,
-      durationSec: 300,
+      durationSec: CONFIG.SIMULATION.DEFAULT_DURATION_SEC,
     };
 
     // Reset buffer and set isRunning BEFORE starting worker
@@ -137,8 +138,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     }
     historyVersion++;
 
-    // Snapshot for React every 5 ticks (0.5s), immediate for first 10
-    const snapshot = historyVersion % 5 === 0 || historyBuf.length <= 10
+    // Snapshot for React every N ticks, immediate for first 10
+    const snapshot = historyVersion % CONFIG.SIMULATION.SNAPSHOT_EVERY_N_TICKS === 0 || historyBuf.length <= 10
       ? historyBuf.slice()
       : get().metricsHistory;
 
@@ -224,7 +225,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     const profile: LoadProfile = {
       type: loadType,
       rps: 0,
-      durationSec: 300,
+      durationSec: CONFIG.SIMULATION.DEFAULT_DURATION_SEC,
     };
     workerManager.start(profile);
   },

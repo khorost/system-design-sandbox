@@ -21,6 +21,7 @@ import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../constants/colors.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
 import { sanitizeLabel } from '../../utils/sanitize.ts';
+import { CONFIG } from '../../config/constants.ts';
 import { CONTAINER_TYPES, CONTAINER_Z_INDEX, isValidNesting, getAbsolutePosition, getNestingDepth } from '../../utils/networkLatency.ts';
 import { ServiceNode } from './nodes/ServiceNode.tsx';
 import { DatabaseNode } from './nodes/DatabaseNode.tsx';
@@ -72,8 +73,8 @@ function pickInnermostContainer(containers: ComponentNode[]): ComponentNode {
     const currDepth = getNestingDepth(currNode, nodeMap);
     if (currDepth !== bestDepth) return currDepth > bestDepth ? curr : best;
     // Tiebreaker: smaller area
-    const ba = ((best.style?.width as number) ?? 400) * ((best.style?.height as number) ?? 300);
-    const ca = ((curr.style?.width as number) ?? 400) * ((curr.style?.height as number) ?? 300);
+    const ba = ((best.style?.width as number) ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH) * ((best.style?.height as number) ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT);
+    const ca = ((curr.style?.width as number) ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH) * ((curr.style?.height as number) ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT);
     return ca < ba ? curr : best;
   });
 }
@@ -213,8 +214,8 @@ function CanvasInner() {
         if (!CONTAINER_TYPES.has(n.data.componentType)) return false;
         if (!isValidNesting(componentType, n.data.componentType)) return false;
         const abs = getAbsolutePosition(n, nodeMap);
-        const w = (n.style?.width as number) ?? n.width ?? 400;
-        const h = (n.style?.height as number) ?? n.height ?? 300;
+        const w = (n.style?.width as number) ?? n.width ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH;
+        const h = (n.style?.height as number) ?? n.height ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT;
         return position.x >= abs.x && position.x <= abs.x + w &&
                position.y >= abs.y && position.y <= abs.y + h;
       });
@@ -227,8 +228,8 @@ function CanvasInner() {
         parentId = target.id;
         const parentAbs = getAbsolutePosition(target, nodeMap);
         adjustedPosition = {
-          x: Math.max(10, position.x - parentAbs.x),
-          y: Math.max(35, position.y - parentAbs.y),
+          x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, position.x - parentAbs.x),
+          y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, position.y - parentAbs.y),
         };
       }
 
@@ -243,7 +244,7 @@ function CanvasInner() {
           icon,
           config: defaultConfig,
         } satisfies ComponentNodeData,
-        ...(isContainer ? { style: { width: 400, height: 300 }, dragHandle: '.container-drag-handle', zIndex: CONTAINER_Z_INDEX[componentType] ?? -1 } : {}),
+        ...(isContainer ? { style: { width: CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH, height: CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT }, dragHandle: '.container-drag-handle', zIndex: CONTAINER_Z_INDEX[componentType] ?? -1 } : {}),
         ...(parentId ? { parentId, extent: 'parent' as const } : {}),
       };
 
@@ -298,10 +299,10 @@ function CanvasInner() {
         edgeTypes={edgeTypes}
         fitView
         snapToGrid
-        snapGrid={[15, 15]}
+        snapGrid={[CONFIG.CANVAS.SNAP_GRID, CONFIG.CANVAS.SNAP_GRID]}
         defaultEdgeOptions={{
           type: 'flow',
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
+          style: { stroke: '#3b82f6', strokeWidth: CONFIG.CANVAS.DEFAULT_EDGE_STROKE_WIDTH },
         }}
         proOptions={{ hideAttribution: true }}
       >

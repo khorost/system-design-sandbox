@@ -8,6 +8,7 @@ import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
 import { NumberInput } from '../ui/NumberInput.tsx';
+import { CONFIG } from '../../config/constants.ts';
 
 interface TagWeightEntry {
   tag: string;
@@ -385,7 +386,7 @@ function NodeProperties() {
             type="text"
             value={(config.name as string) || selectedNode.data.label}
             onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
-            maxLength={100}
+            maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
             className={inputClass}
           />
         </div>
@@ -459,7 +460,7 @@ function NodeProperties() {
                 type={param.type}
                 value={(configVal(param.key) as string) ?? ''}
                 onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
-                maxLength={500}
+                maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
                 className={inputClass}
               />
             )}

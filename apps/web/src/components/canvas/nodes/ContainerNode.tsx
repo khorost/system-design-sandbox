@@ -1,6 +1,7 @@
 import { NodeResizer, type NodeProps } from '@xyflow/react';
 import type { ComponentNode } from '../../../types/index.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
+import { CONFIG } from '../../../config/constants.ts';
 
 const CONTAINER_STYLES: Record<string, { border: string; bg: string; headerBg: string }> = {
   docker_container: { border: '#3b82f6', bg: 'rgba(59,130,246,0.06)', headerBg: 'rgba(59,130,246,0.15)' },
@@ -32,13 +33,13 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
         background: style.bg,
         border: `2px ${selected ? 'solid' : 'dashed'} ${selected ? '#3b82f6' : style.border}`,
         boxShadow: selected ? '0 0 0 2px rgba(59,130,246,0.5)' : undefined,
-        minWidth: 300,
-        minHeight: 200,
+        minWidth: CONFIG.CANVAS.CONTAINER_MIN_WIDTH,
+        minHeight: CONFIG.CANVAS.CONTAINER_MIN_HEIGHT,
       }}
     >
       <NodeResizer
-        minWidth={300}
-        minHeight={200}
+        minWidth={CONFIG.CANVAS.CONTAINER_MIN_WIDTH}
+        minHeight={CONFIG.CANVAS.CONTAINER_MIN_HEIGHT}
         isVisible={selected}
         lineClassName="!border-blue-500"
         handleClassName="!w-2.5 !h-2.5 !bg-blue-500 !border-blue-600"

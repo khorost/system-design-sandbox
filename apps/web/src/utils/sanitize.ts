@@ -1,15 +1,17 @@
+import { CONFIG } from '../config/constants.ts';
+
 /** Strip HTML tags from a string */
 export function stripHtml(s: string): string {
   return s.replace(/<[^>]*>/g, '');
 }
 
-/** Sanitize a label: strip HTML, trim, truncate to 100 chars */
+/** Sanitize a label: strip HTML, trim, truncate to LABEL_MAX_LENGTH */
 export function sanitizeLabel(label: string): string {
-  return stripHtml(label).trim().slice(0, 100);
+  return stripHtml(label).trim().slice(0, CONFIG.UI.LABEL_MAX_LENGTH);
 }
 
 /** Sanitize a string value: strip HTML, trim, truncate to maxLength */
-export function sanitizeString(value: string, maxLength = 500): string {
+export function sanitizeString(value: string, maxLength: number = CONFIG.UI.CONFIG_VALUE_MAX_LENGTH): string {
   return stripHtml(value).trim().slice(0, maxLength);
 }
 

@@ -1,8 +1,10 @@
+const POISSON_NORMAL_APPROX_THRESHOLD = 30;
+
 export function poissonSample(lambdaPerTick: number): number {
   if (lambdaPerTick <= 0) return 0;
 
   // Normal approximation for large lambda
-  if (lambdaPerTick > 30) {
+  if (lambdaPerTick > POISSON_NORMAL_APPROX_THRESHOLD) {
     const normal = Math.sqrt(lambdaPerTick) * boxMullerRandom() + lambdaPerTick;
     return Math.max(0, Math.round(normal));
   }

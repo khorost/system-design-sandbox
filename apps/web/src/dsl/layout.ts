@@ -1,13 +1,14 @@
 import type { ComponentNode, ComponentEdge } from '../types/index.ts';
 import { CONTAINER_TYPES } from '../utils/networkLatency.ts';
+import { CONFIG } from '../config/constants.ts';
 
 // Must match or exceed actual rendered sizes:
 // - BaseNode has min-w-[170px] + padding → ~200px
-// - ContainerNode has minWidth: 300, minHeight: 200
+// - ContainerNode uses CONFIG.CANVAS.CONTAINER_MIN_WIDTH/HEIGHT
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 80;
-const CONTAINER_MIN_WIDTH = 300;
-const CONTAINER_MIN_HEIGHT = 200;
+const CONTAINER_MIN_WIDTH = CONFIG.CANVAS.CONTAINER_MIN_WIDTH;
+const CONTAINER_MIN_HEIGHT = CONFIG.CANVAS.CONTAINER_MIN_HEIGHT;
 const GAP_X = 40;
 const GAP_Y = 40;
 const CONTAINER_PAD_LEFT = 15;

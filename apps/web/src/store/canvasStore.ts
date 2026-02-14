@@ -17,6 +17,7 @@ import { parseDsl } from '../dsl/parser.ts';
 import { autoLayout } from '../dsl/layout.ts';
 import { notify } from '../utils/notifications.ts';
 import { sanitizeLabel, sanitizeConfig } from '../utils/sanitize.ts';
+import { CONFIG } from '../config/constants.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -26,7 +27,7 @@ const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
 };
 
 const STORAGE_KEY = 'sds-architecture';
-const MAX_HISTORY = 100;
+const MAX_HISTORY = CONFIG.HISTORY.MAX_UNDO_ENTRIES;
 
 type Snapshot = { nodes: ComponentNode[]; edges: ComponentEdge[] };
 
@@ -94,7 +95,7 @@ function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[]) {
       edges,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(schema));
-  }, 500);
+  }, CONFIG.UI.DEBOUNCE_SAVE_MS);
 }
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
@@ -281,15 +282,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const relX = abs.x - parentAbs.x;
       const relY = abs.y - parentAbs.y;
       // Clamp inside parent with some padding (35px top for header)
-      const pw = (newParent.style?.width as number) ?? (newParent.width ?? 400);
-      const ph = (newParent.style?.height as number) ?? (newParent.height ?? 300);
+      const pw = (newParent.style?.width as number) ?? (newParent.width ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH);
+      const ph = (newParent.style?.height as number) ?? (newParent.height ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT);
       return {
         ...n,
         parentId,
         extent: 'parent' as const,
         position: {
-          x: Math.max(10, Math.min(relX, pw - 100)),
-          y: Math.max(35, Math.min(relY, ph - 80)),
+          x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, Math.min(relX, pw - 100)),
+          y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, Math.min(relY, ph - 80)),
         },
       };
     });

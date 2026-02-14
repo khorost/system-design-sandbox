@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { stripHtml, sanitizeLabel, sanitizeString, sanitizeConfig } from '../sanitize.ts';
+import { CONFIG } from '../../config/constants.ts';
 
 describe('stripHtml', () => {
   it('removes <script> tags', () => {
@@ -32,9 +33,9 @@ describe('sanitizeLabel', () => {
     expect(sanitizeLabel('  <b>My Service</b>  ')).toBe('My Service');
   });
 
-  it('truncates to 100 characters', () => {
-    const long = 'A'.repeat(150);
-    expect(sanitizeLabel(long)).toBe('A'.repeat(100));
+  it('truncates to CONFIG.UI.LABEL_MAX_LENGTH characters', () => {
+    const long = 'A'.repeat(CONFIG.UI.LABEL_MAX_LENGTH + 50);
+    expect(sanitizeLabel(long)).toBe('A'.repeat(CONFIG.UI.LABEL_MAX_LENGTH));
   });
 
   it('handles label with script injection', () => {
@@ -47,9 +48,9 @@ describe('sanitizeString', () => {
     expect(sanitizeString('  <i>value</i>  ')).toBe('value');
   });
 
-  it('truncates to default 500 characters', () => {
-    const long = 'B'.repeat(600);
-    expect(sanitizeString(long)).toBe('B'.repeat(500));
+  it('truncates to CONFIG.UI.CONFIG_VALUE_MAX_LENGTH characters', () => {
+    const long = 'B'.repeat(CONFIG.UI.CONFIG_VALUE_MAX_LENGTH + 100);
+    expect(sanitizeString(long)).toBe('B'.repeat(CONFIG.UI.CONFIG_VALUE_MAX_LENGTH));
   });
 
   it('supports custom maxLength', () => {

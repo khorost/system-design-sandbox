@@ -10,8 +10,9 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
+import { CONFIG } from '../../config/constants.ts';
 
-const TICK_SEC = 0.1;
+const TICK_SEC = CONFIG.SIMULATION.TICK_INTERVAL_SEC;
 const WINDOWS = [
   { label: '30s', sec: 30, ticks: 300 },
   { label: '60s', sec: 60, ticks: 600 },

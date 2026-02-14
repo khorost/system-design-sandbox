@@ -58,6 +58,12 @@ export interface SimulationEngine {
 
 const TICK_DURATION_SEC = 0.1;
 
+const SPIKE_CYCLE_SEC = 10;
+const SPIKE_NORMAL_PHASE_SEC = 5;
+const SPIKE_MULTIPLIER = 3;
+const DEFAULT_PAYLOAD_SIZE_KB = 10;
+const DEFAULT_RESPONSE_FALLBACK_KB = 2;
+
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
 function isClientType(type: string): boolean {
@@ -140,8 +146,8 @@ export function createSimulationEngine(
       if (profile.type === 'ramp') {
         multiplier = Math.min(elapsed / Math.max(profile.durationSec, 1), 1);
       } else if (profile.type === 'spike') {
-        const cycle = elapsed % 10;
-        multiplier = cycle < 5 ? 1 : 3;
+        const cycle = elapsed % SPIKE_CYCLE_SEC;
+        multiplier = cycle < SPIKE_NORMAL_PHASE_SEC ? 1 : SPIKE_MULTIPLIER;
       }
 
       // 1. Generate requests per entry node based on each node's generatedRps
@@ -163,7 +169,7 @@ export function createSimulationEngine(
             visited: [entryId],
             totalLatencyMs: 0,
             failed: false,
-            payloadSizeKb: comp.payloadSizeKb || 10,
+            payloadSizeKb: comp.payloadSizeKb || DEFAULT_PAYLOAD_SIZE_KB,
           });
         }
         generated += newCount;
@@ -319,7 +325,7 @@ export function createSimulationEngine(
         const leafComp = components.get(visited[visited.length - 1]);
         const respKb = leafComp?.responseSizeKb
           || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
-          || 2;
+          || DEFAULT_RESPONSE_FALLBACK_KB;
         const tag = req.tag;
 
         for (let i = visited.length - 1; i > 0; i--) {
