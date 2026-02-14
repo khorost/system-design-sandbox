@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
 
@@ -9,6 +9,8 @@ const IconSave = <svg {...s}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l
 const IconLoad = <svg {...s}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
 const IconTrash = <svg {...s}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
 const IconTag = <svg {...s}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
+const IconExport = <svg {...s}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+const IconImport = <svg {...s}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
 
 const labelByMode: Record<EdgeLabelMode, string> = {
   auto: 'Auto',
@@ -45,8 +47,43 @@ export function Toolbar() {
   const save = useCanvasStore((s) => s.save);
   const load = useCanvasStore((s) => s.load);
   const clear = useCanvasStore((s) => s.clear);
+  const exportSchema = useCanvasStore((s) => s.exportSchema);
+  const importSchema = useCanvasStore((s) => s.importSchema);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = () => {
+    const json = exportSchema();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const date = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `architecture-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = importSchema(reader.result as string);
+      if (!result.ok) {
+        window.alert(`Import failed: ${result.error}`);
+      }
+    };
+    reader.readAsText(file);
+    // Reset so the same file can be re-imported
+    e.target.value = '';
+  };
 
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
@@ -54,6 +91,10 @@ export function Toolbar() {
       <div className="w-px h-5 bg-[var(--color-border)]" />
       <TbBtn onClick={save} title="Save to localStorage" icon={IconSave}>Save</TbBtn>
       <TbBtn onClick={load} title="Load from localStorage" icon={IconLoad}>Load</TbBtn>
+      <div className="w-px h-5 bg-[var(--color-border)]" />
+      <TbBtn onClick={handleExport} title="Export schema to JSON file" icon={IconExport}>Export</TbBtn>
+      <TbBtn onClick={handleImport} title="Import schema from JSON file" icon={IconImport}>Import</TbBtn>
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
       <div className="w-px h-5 bg-[var(--color-border)]" />
       <TbBtn onClick={cycleEdgeLabelMode} title={tooltipByMode[edgeLabelMode]} icon={IconTag}>
         {labelByMode[edgeLabelMode]}

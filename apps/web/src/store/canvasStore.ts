@@ -11,6 +11,7 @@ import {
 import type { ComponentNode, ComponentEdge, ArchitectureSchema, EdgeData, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
 import { getAbsolutePosition } from '../utils/networkLatency.ts';
+import { getDefinition } from '@system-design-sandbox/component-library';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -104,6 +105,9 @@ interface CanvasState {
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
   cycleEdgeLabelMode: () => void;
+
+  exportSchema: () => string;
+  importSchema: (json: string) => { ok: true } | { ok: false; error: string };
 
   save: () => void;
   load: () => void;
@@ -265,6 +269,85 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const cur = get().edgeLabelMode;
     const next = order[(order.indexOf(cur) + 1) % order.length];
     set({ edgeLabelMode: next });
+  },
+
+  exportSchema: () => {
+    const { nodes, edges } = get();
+    const now = new Date().toISOString();
+    const schema = {
+      version: '1.0',
+      metadata: {
+        name: 'My Architecture',
+        createdAt: now,
+        updatedAt: now,
+        exportedAt: now,
+      },
+      nodes,
+      edges,
+    };
+    return JSON.stringify(schema, null, 2);
+  },
+
+  importSchema: (json: string) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return { ok: false as const, error: 'Invalid JSON format.' };
+    }
+
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { ok: false as const, error: 'JSON must be an object.' };
+    }
+
+    const schema = parsed as Record<string, unknown>;
+
+    if (!schema.version) {
+      return { ok: false as const, error: 'Missing "version" field.' };
+    }
+    if (!Array.isArray(schema.nodes)) {
+      return { ok: false as const, error: '"nodes" must be an array.' };
+    }
+    if (!Array.isArray(schema.edges)) {
+      return { ok: false as const, error: '"edges" must be an array.' };
+    }
+
+    const warnings: string[] = [];
+    const nodes = schema.nodes as ComponentNode[];
+    const edges = schema.edges as ComponentEdge[];
+
+    // Validate nodes
+    for (const node of nodes) {
+      if (!node.id || !node.position || !node.data?.componentType || !node.data?.label) {
+        return { ok: false as const, error: `Node "${node.id ?? '?'}" missing required fields (id, position, data.componentType, data.label).` };
+      }
+      if (!getDefinition(node.data.componentType)) {
+        warnings.push(`Unknown componentType "${node.data.componentType}" on node "${node.id}".`);
+      }
+    }
+
+    // Validate edges — drop broken references
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const validEdges = edges.filter(e => {
+      if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) {
+        warnings.push(`Dropped edge "${e.id}" — source or target node not found.`);
+        return false;
+      }
+      return true;
+    });
+
+    if (warnings.length > 0) {
+      console.warn('[importSchema]', warnings.join('\n'));
+    }
+
+    set({
+      nodes: sortNodesParentFirst(nodes),
+      edges: validEdges,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+    });
+
+    return { ok: true as const };
   },
 
   save: () => {
