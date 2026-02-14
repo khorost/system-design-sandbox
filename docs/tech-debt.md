@@ -16,7 +16,7 @@
 |      | [TD-012](#td-012-мультиязычность-i18n) | Мультиязычность (i18n) | Medium |
 |      | [TD-013](#td-013-пользовательские-компоненты-со-скриптовой-логикой) | Пользовательские компоненты со скриптовой логикой | Medium |
 |  ✅  | [TD-014](#td-014-дедупликация-констант-цвета-типы-маппинги-) | ~~Дедупликация констант (цвета, типы, маппинги)~~ | High |
-|      | [TD-015](#td-015-unit-тесты-для-ядра) | Unit-тесты для ядра | High |
+|  ✅  | [TD-015](#td-015-unit-тесты-для-ядра) | ~~Unit-тесты для ядра~~ | High |
 |      | [TD-016](#td-016-toast-уведомления-об-ошибках-импортаэкспорта) | Toast-уведомления об ошибках импорта/экспорта | High |
 |      | [TD-017](#td-017-валидация-ввода-в-properties-panel) | Валидация ввода в Properties Panel | High |
 |      | [TD-018](#td-018-санитизация-пользовательского-ввода) | Санитизация пользовательского ввода | Medium |
@@ -1629,12 +1629,12 @@ CREATE TABLE component_templates (
 
 ### Задачи
 
-- [ ] Настроить Vitest (совместим с Vite, zero-config)
-- [ ] Добавить скрипт `pnpm test` в корневой `package.json` и workspace-пакеты
-- [ ] Тесты `canvasStore`: addNode/removeNode, undo/redo, import/export, pushHistory
-- [ ] Тесты `converter`: convertNodesToComponents, convertEdgesToConnections, edge cases
-- [ ] Тесты `networkLatency`: getAbsolutePosition, getNestingDepth, sortNodesParentFirst
-- [ ] Тесты `simulation-engine`: engine tick, latency model, queue overflow, cascade failure
+- [x] Настроить Vitest (совместим с Vite, zero-config)
+- [x] Добавить скрипт `pnpm test` в корневой `package.json` и workspace-пакеты
+- [x] Тесты `canvasStore`: addNode/removeNode, undo/redo, import/export, pushHistory
+- [x] Тесты `converter`: convertNodesToComponents, convertEdgesToConnections, edge cases
+- [x] Тесты `networkLatency`: getAbsolutePosition, getNestingDepth, sortNodesParentFirst
+- [x] Тесты `simulation-engine`: engine tick, latency model, queue overflow, cascade failure
 - [ ] Добавить `pnpm test` в CI pipeline
 
 ---
