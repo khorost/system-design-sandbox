@@ -53,7 +53,7 @@ defaults {
 }
 ```
 
-- **componentType** — тип компонента (`service`, `postgresql`, `redis_cache`, `kafka` и др.)
+- **componentType** — тип компонента (`service`, `postgresql`, `redis`, `kafka` и др.)
 - **Label** — отображаемое имя (в кавычках)
 - **alias** — короткое имя для ссылок в связях (латиница, цифры, `_`)
 - Внутри блока — пары `ключ значение` для настроек компонента
@@ -72,7 +72,7 @@ postgresql "Users DB" as users_db {
   maxConnections 200
 }
 
-redis_cache "Session Cache" as session_cache {
+redis "Session Cache" as session_cache {
   memory 512
   ttl 3600
 }
@@ -90,7 +90,7 @@ kubernetes_pod "Backend Pod" as backend_pod {
     cpu 1000
   }
 
-  redis_cache "Local Cache" as local_cache {
+  redis "Local Cache" as local_cache {
     memory 256
   }
 }
@@ -181,7 +181,7 @@ postgresql "Orders DB" as orders_db {
   storage 500
 }
 
-redis_cache "Session Cache" as session_cache {
+redis "Session Cache" as session_cache {
   memory 512
   ttl 3600
 }
@@ -214,7 +214,7 @@ gateway -> order_service  8ms  [primary *0.7 -> secondary, canary *0.3]
 
 - Файл парсится построчно, пустые строки и комментарии игнорируются.
 - Компоненты автоматически раскладываются на канвасе (auto-layout по топологии связей).
-- Неизвестные `componentType` — предупреждение, не ошибка.
+- **Forward compatibility:** Неизвестные `componentType` — предупреждение в консоли, не ошибка. Узел импортируется и отрисовывается как `serviceNode`, параметры из блока `{}` сохраняются в `config`. При повторном экспорте оригинальный `componentType` сохраняется.
 - Импорт **заменяет** текущую схему целиком.
 - Значения конфигурации — числа, строки, булевы (`true`/`false`).
 - Суффиксы `ms` и `mbps` в значениях задержки/bandwidth автоматически убираются при парсинге.

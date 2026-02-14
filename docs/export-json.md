@@ -82,25 +82,29 @@ System Design Sandbox экспортирует архитектурные схе
 
 ### Типы компонентов (componentType)
 
-**Network:** `web_client`, `mobile_client`, `external_api`, `api_gateway`, `load_balancer`, `cdn`, `dns`, `waf`
+**Clients:** `web_client`, `mobile_client`, `external_api`
+
+**Network:** `external_service`, `api_gateway`, `load_balancer`, `cdn`, `dns`, `waf`
 
 **Compute:** `service`, `serverless_function`, `worker`, `cron_job`
 
-**Database:** `postgresql`, `mysql`, `mongodb`, `redis_db`, `cassandra`, `elasticsearch`, `dynamodb`, `clickhouse`, `neo4j`
+**Database:** `postgresql`, `mysql`, `mongodb`, `cassandra`, `clickhouse`, `s3`, `etcd`, `elasticsearch`
 
-**Cache:** `redis_cache`, `memcached`, `varnish`, `local_cache`
+**Cache:** `redis`, `memcached`
 
-**Queue:** `kafka`, `rabbitmq`, `sqs`, `nats`, `pulsar`, `celery`
+**Messaging:** `kafka`, `rabbitmq`, `event_bus`, `nats`
 
-**Storage:** `s3`, `block_storage`, `nfs_storage`
+**Storage:** `local_ssd`, `nvme`, `network_disk`, `nfs`
 
-**Observability:** `prometheus`, `grafana`, `elk_stack`, `jaeger`, `sentry`, `datadog`
+**Reliability:** `circuit_breaker`, `rate_limiter`, `retry_policy`, `health_check`, `failover_controller`
 
-**Infrastructure:** `kubernetes_cluster`, `docker_host`, `nginx`, `envoy`, `consul`, `vault`, `terraform`
+**Security:** `auth_service`, `tls_terminator`, `secret_manager`
 
-**Containers:** `kubernetes_pod`, `kubernetes_namespace`, `docker_compose_group`, `availability_zone`, `region`, `vpc`, `generic_group`
+**Observability:** `logging`, `metrics_collector`, `tracing`, `alerting`
 
-> Неизвестные `componentType` при импорте вызывают предупреждение, но не ошибку — для прямой совместимости.
+**Infrastructure:** `datacenter`, `rack`, `docker_container`, `kubernetes_pod`, `vm_instance`, `region`, `availability_zone`, `vpc`
+
+> **Forward compatibility:** Неизвестные `componentType` при импорте вызывают предупреждение в консоли, но **не ошибку**. Такой узел отрисовывается как `serviceNode` (базовый прямоугольник), панель свойств не показывает настраиваемых параметров. При этом `componentType` сохраняется в данных узла — при повторном экспорте он будет записан как есть. Это позволяет обмениваться схемами между версиями приложения с разным набором компонентов без потери данных.
 
 ## Edges (связи)
 
@@ -203,9 +207,9 @@ System Design Sandbox экспортирует архитектурные схе
       "position": { "x": 500, "y": 250 },
       "data": {
         "label": "Session Cache",
-        "componentType": "redis_cache",
+        "componentType": "redis",
         "category": "cache",
-        "icon": "⚡",
+        "icon": "🔴",
         "config": { "memory": 512, "ttl": 3600 }
       }
     }
