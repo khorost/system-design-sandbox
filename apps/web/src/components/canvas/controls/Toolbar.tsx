@@ -107,6 +107,9 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
   );
 }
 
+const IconUndo = <svg {...s}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>;
+const IconRedo = <svg {...s}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>;
+
 export function Toolbar() {
   const save = useCanvasStore((s) => s.save);
   const load = useCanvasStore((s) => s.load);
@@ -117,6 +120,10 @@ export function Toolbar() {
   const importDsl = useCanvasStore((s) => s.importDsl);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
+  const undo = useCanvasStore((s) => s.undo);
+  const redo = useCanvasStore((s) => s.redo);
+  const canUndo = useCanvasStore((s) => s._history.past.length > 0);
+  const canRedo = useCanvasStore((s) => s._history.future.length > 0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dslFileInputRef = useRef<HTMLInputElement>(null);
@@ -183,7 +190,7 @@ export function Toolbar() {
   };
 
   const handleClear = () => {
-    if (window.confirm('Clear canvas? This cannot be undone.')) {
+    if (window.confirm('Clear canvas? You can undo with Ctrl+Z.')) {
       clear();
     }
   };
@@ -211,6 +218,23 @@ export function Toolbar() {
       <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
       <div className="w-px h-5 bg-[var(--color-border)]" />
       <FileMenu items={menuItems} />
+      <div className="w-px h-5 bg-[var(--color-border)]" />
+      <button
+        onClick={undo}
+        disabled={!canUndo}
+        title="Undo (Ctrl+Z)"
+        className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        {IconUndo}
+      </button>
+      <button
+        onClick={redo}
+        disabled={!canRedo}
+        title="Redo (Ctrl+Shift+Z)"
+        className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        {IconRedo}
+      </button>
       <div className="w-px h-5 bg-[var(--color-border)]" />
       <button
         onClick={cycleEdgeLabelMode}

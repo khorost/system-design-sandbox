@@ -1,4 +1,4 @@
-import { Component, useState, useCallback, type ReactNode, type ErrorInfo } from 'react';
+import { Component, useState, useCallback, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import { Canvas } from './components/canvas/Canvas.tsx';
 import { ComponentPalette } from './components/canvas/controls/ComponentPalette.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
@@ -99,6 +99,21 @@ export default function App() {
   useWhatIfMode();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const selectNode = useCanvasStore((s) => s.selectNode);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.key.toLowerCase() !== 'z') return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        useCanvasStore.getState().redo();
+      } else {
+        useCanvasStore.getState().undo();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   const handleNavigateToNode = useCallback(
     (nodeId: string) => {

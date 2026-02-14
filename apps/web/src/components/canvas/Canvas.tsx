@@ -155,7 +155,8 @@ function CanvasInner() {
 
   const onNodeDragStop = useCallback(
     (_event: React.MouseEvent, draggedNode: ComponentNode) => {
-      const { setNodeParent } = useCanvasStore.getState();
+      const { setNodeParent, pushSnapshot } = useCanvasStore.getState();
+      pushSnapshot();
       const intersecting = getIntersectingNodes(draggedNode);
 
       const validContainers = intersecting.filter((n) => {

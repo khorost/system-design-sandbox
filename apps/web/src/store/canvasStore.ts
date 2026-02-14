@@ -24,6 +24,16 @@ const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
 };
 
 const STORAGE_KEY = 'sds-architecture';
+const MAX_HISTORY = 100;
+
+type Snapshot = { nodes: ComponentNode[]; edges: ComponentEdge[] };
+
+function pushHistory(get: () => CanvasState): Partial<CanvasState> {
+  const { nodes, edges, _history } = get();
+  const past = [..._history.past, { nodes, edges }];
+  if (past.length > MAX_HISTORY) past.shift();
+  return { _history: { past, future: [] } };
+}
 
 /**
  * Topological sort: parents always before children.
@@ -94,6 +104,8 @@ interface CanvasState {
   selectedEdgeId: string | null;
   focusNodeId: string | null;
   edgeLabelMode: EdgeLabelMode;
+  _history: { past: Snapshot[]; future: Snapshot[] };
+  _skipAutoSave: boolean;
 
   onNodesChange: OnNodesChange<ComponentNode>;
   onEdgesChange: OnEdgesChange;
@@ -117,6 +129,10 @@ interface CanvasState {
   exportDsl: () => string;
   importDsl: (text: string) => { ok: true } | { ok: false; error: string };
 
+  pushSnapshot: () => void;
+  undo: () => void;
+  redo: () => void;
+
   save: () => void;
   load: () => void;
   clear: () => void;
@@ -129,12 +145,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedEdgeId: null,
   focusNodeId: null,
   edgeLabelMode: 'auto',
+  _history: { past: [], future: [] },
+  _skipAutoSave: false,
 
   onNodesChange: (changes) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) });
   },
 
   onEdgesChange: (changes) => {
+    const hasRemoval = changes.some(c => c.type === 'remove');
+    if (hasRemoval) set({ ...pushHistory(get) });
     set({ edges: applyEdgeChanges(changes, get().edges) as ComponentEdge[] });
   },
 
@@ -153,10 +173,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       style: { stroke: '#3b82f6', strokeWidth: 2 },
       data: { ...DEFAULT_EDGE_DATA, protocol },
     };
-    set({ edges: addEdge(edge, get().edges) as ComponentEdge[] });
+    set({ ...pushHistory(get), edges: addEdge(edge, get().edges) as ComponentEdge[] });
   },
 
   addNode: (node) => {
+    const hist = pushHistory(get);
     const nodes = get().nodes;
     if (node.parentId) {
       // Insert child right after its parent (React Flow requires parent before child)
@@ -169,11 +190,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           insertIdx++;
         }
         updated.splice(insertIdx, 0, node);
-        set({ nodes: updated });
+        set({ ...hist, nodes: updated });
         return;
       }
     }
-    set({ nodes: [...nodes, node] });
+    set({ ...hist, nodes: [...nodes, node] });
   },
 
   removeNode: (id) => {
@@ -187,6 +208,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     };
     collect(id);
     set({
+      ...pushHistory(get),
       nodes: get().nodes.filter((n) => !toRemove.has(n.id)),
       edges: get().edges.filter((e) => !toRemove.has(e.source) && !toRemove.has(e.target)),
       selectedNodeId: toRemove.has(get().selectedNodeId ?? '') ? null : get().selectedNodeId,
@@ -195,6 +217,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   updateNodeConfig: (id, config) => {
     set({
+      ...pushHistory(get),
       nodes: get().nodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, config: { ...n.data.config, ...config } } } : n
       ),
@@ -224,6 +247,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   updateEdgeData: (id, data) => {
     set({
+      ...pushHistory(get),
       edges: get().edges.map((e) =>
         e.id === id ? { ...e, data: { ...(e.data ?? DEFAULT_EDGE_DATA), ...data } as EdgeData } : e
       ),
@@ -231,6 +255,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   setNodeParent: (nodeId, parentId) => {
+    set({ ...pushHistory(get) });
     const nodes = get().nodes;
     const nodeMap = new Map(nodes.map(nd => [nd.id, nd]));
 
@@ -387,6 +412,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
 
     set({
+      ...pushHistory(get),
       nodes: sortNodesParentFirst(nodes),
       edges: validEdges,
       selectedNodeId: null,
@@ -413,6 +439,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     const laid = autoLayout(result.nodes, result.edges);
     set({
+      ...pushHistory(get),
       nodes: sortNodesParentFirst(laid),
       edges: result.edges,
       selectedNodeId: null,
@@ -420,6 +447,46 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
 
     return { ok: true as const };
+  },
+
+  pushSnapshot: () => {
+    set({ ...pushHistory(get) });
+  },
+
+  undo: () => {
+    const { _history, nodes, edges } = get();
+    if (_history.past.length === 0) return;
+    const prev = _history.past[_history.past.length - 1];
+    set({
+      _skipAutoSave: true,
+      nodes: prev.nodes,
+      edges: prev.edges,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      _history: {
+        past: _history.past.slice(0, -1),
+        future: [{ nodes, edges }, ..._history.future],
+      },
+    });
+    set({ _skipAutoSave: false });
+  },
+
+  redo: () => {
+    const { _history, nodes, edges } = get();
+    if (_history.future.length === 0) return;
+    const next = _history.future[0];
+    set({
+      _skipAutoSave: true,
+      nodes: next.nodes,
+      edges: next.edges,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      _history: {
+        past: [..._history.past, { nodes, edges }],
+        future: _history.future.slice(1),
+      },
+    });
+    set({ _skipAutoSave: false });
   },
 
   save: () => {
@@ -442,20 +509,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     if (!raw) return;
     try {
       const schema: ArchitectureSchema = JSON.parse(raw);
-      set({ nodes: sortNodesParentFirst(schema.nodes), edges: schema.edges });
+      set({ ...pushHistory(get), nodes: sortNodesParentFirst(schema.nodes), edges: schema.edges });
     } catch {
       // ignore corrupted data
     }
   },
 
   clear: () => {
-    set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null });
+    set({ ...pushHistory(get), nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null });
     localStorage.removeItem(STORAGE_KEY);
   },
 }));
 
 // Auto-save on every nodes/edges change (debounced 500ms)
 useCanvasStore.subscribe((state, prev) => {
+  if (state._skipAutoSave) return;
   if (state.nodes !== prev.nodes || state.edges !== prev.edges) {
     debouncedSave(state.nodes, state.edges);
   }
