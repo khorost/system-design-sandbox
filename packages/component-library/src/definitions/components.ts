@@ -79,6 +79,23 @@ export const componentDefinitions: ComponentDefinition[] = [
     defaults: { maxRps: 50000, baseLatencyMs: 0, replicas: 1 },
   },
 
+  // --- External Services (downstream) ---
+  {
+    type: 'external_service',
+    label: 'External Service',
+    category: 'network',
+    icon: '🔌',
+    description: 'Third-party downstream service (payment gateway, SMS, email provider, etc.)',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Rate Limit (RPS)', type: 'number', default: 500, min: 1 },
+      { key: 'base_latency_ms', label: 'Latency (ms)', type: 'number', default: 200, min: 1 },
+      { key: 'error_rate', label: 'Error Rate (%)', type: 'number', default: 0.5, min: 0, max: 100 },
+      { key: 'timeout_ms', label: 'Timeout (ms)', type: 'number', default: 5000, min: 100 },
+      { key: 'protocol', label: 'Protocol', type: 'select', default: 'REST', options: ['REST', 'gRPC', 'GraphQL', 'SOAP'] },
+    ],
+    defaults: { maxRps: 500, baseLatencyMs: 200, replicas: 1 },
+  },
+
   // --- Network ---
   {
     type: 'api_gateway',
@@ -159,6 +176,7 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'memory_gb', label: 'Memory (GB)', type: 'number', default: 8, min: 1 },
       { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 2000, min: 100 },
       { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 10, min: 1 },
+      { key: 'language', label: 'Language', type: 'select', default: '', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
     ],
     defaults: { maxRps: 2000, baseLatencyMs: 10, replicas: 3 },
   },
@@ -173,6 +191,7 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'cold_start_ms', label: 'Cold Start (ms)', type: 'number', default: 200, min: 0 },
       { key: 'max_concurrent', label: 'Max Concurrent', type: 'number', default: 1000, min: 1 },
       { key: 'timeout_ms', label: 'Timeout (ms)', type: 'number', default: 30000, min: 100 },
+      { key: 'language', label: 'Language', type: 'select', default: '', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
     ],
     defaults: { maxRps: 3000, baseLatencyMs: 50, replicas: 1 },
   },
@@ -186,6 +205,7 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'max_rps_per_instance', label: 'Max Tasks/sec/Instance', type: 'number', default: 200, min: 10 },
       { key: 'concurrency', label: 'Concurrency', type: 'number', default: 10, min: 1 },
       { key: 'poll_interval_ms', label: 'Poll Interval (ms)', type: 'number', default: 100, min: 10 },
+      { key: 'language', label: 'Language', type: 'select', default: '', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
     ],
     defaults: { maxRps: 200, baseLatencyMs: 100, replicas: 2 },
   },
@@ -247,6 +267,38 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'consistency_level', label: 'Consistency', type: 'select', default: 'QUORUM', options: ['ONE', 'QUORUM', 'ALL'] },
     ],
     defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 3 },
+  },
+
+  {
+    type: 'mysql',
+    label: 'MySQL',
+    category: 'database',
+    icon: '🐬',
+    description: 'Relational database, widely used in web applications',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max QPS/Instance', type: 'number', default: 4000, min: 100 },
+      { key: 'replicas', label: 'Replicas', type: 'number', default: 1, min: 1 },
+      { key: 'read_replicas', label: 'Read Replicas', type: 'number', default: 0, min: 0 },
+      { key: 'max_connections', label: 'Max Connections', type: 'number', default: 151, min: 1 },
+      { key: 'storage_gb', label: 'Storage (GB)', type: 'number', default: 100, min: 1 },
+      { key: 'engine', label: 'Engine', type: 'select', default: 'InnoDB', options: ['InnoDB', 'MyISAM', 'NDB'] },
+    ],
+    defaults: { maxRps: 4000, baseLatencyMs: 3, replicas: 1 },
+  },
+  {
+    type: 'clickhouse',
+    label: 'ClickHouse',
+    category: 'database',
+    icon: '🏠',
+    description: 'Column-oriented OLAP database for analytics and real-time queries',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max QPS/Node', type: 'number', default: 10000, min: 100 },
+      { key: 'nodes', label: 'Nodes', type: 'number', default: 3, min: 1 },
+      { key: 'shards', label: 'Shards', type: 'number', default: 1, min: 1 },
+      { key: 'replication_factor', label: 'Replication Factor', type: 'number', default: 2, min: 1 },
+      { key: 'storage_tb', label: 'Storage (TB)', type: 'number', default: 1, min: 0.1 },
+    ],
+    defaults: { maxRps: 10000, baseLatencyMs: 5, replicas: 3 },
   },
 
   // --- Cache ---
@@ -372,6 +424,21 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'type', label: 'Type', type: 'select', default: 'pub_sub', options: ['pub_sub', 'point_to_point'] },
     ],
     defaults: { maxRps: 50000, baseLatencyMs: 3, replicas: 1 },
+  },
+
+  {
+    type: 'nats',
+    label: 'NATS',
+    category: 'messaging',
+    icon: '⚡',
+    description: 'High-performance cloud-native messaging (NATS / NATS JetStream)',
+    params: [
+      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Node', type: 'number', default: 200000, min: 1000 },
+      { key: 'nodes', label: 'Cluster Nodes', type: 'number', default: 3, min: 1, max: 15 },
+      { key: 'mode', label: 'Mode', type: 'select', default: 'core', options: ['core', 'jetstream'] },
+      { key: 'max_payload_kb', label: 'Max Payload (KB)', type: 'number', default: 1024, min: 1 },
+    ],
+    defaults: { maxRps: 200000, baseLatencyMs: 0.5, replicas: 3 },
   },
 
   // --- Infrastructure / Containers ---

@@ -17,6 +17,7 @@ export type ComponentType =
   | 'web_client'
   | 'mobile_client'
   | 'external_api'
+  | 'external_service'
   | 'api_gateway'
   | 'load_balancer'
   | 'cdn'
@@ -29,6 +30,8 @@ export type ComponentType =
   | 'postgresql'
   | 'mongodb'
   | 'cassandra'
+  | 'mysql'
+  | 'clickhouse'
   | 'redis'
   | 'memcached'
   | 's3'
@@ -38,6 +41,7 @@ export type ComponentType =
   | 'kafka'
   | 'rabbitmq'
   | 'event_bus'
+  | 'nats'
   | 'circuit_breaker'
   | 'rate_limiter'
   | 'retry_policy'
@@ -119,6 +123,7 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   web_client: 'serviceNode',
   mobile_client: 'serviceNode',
   external_api: 'serviceNode',
+  external_service: 'serviceNode',
   api_gateway: 'gatewayNode',
   load_balancer: 'loadBalancerNode',
   cdn: 'serviceNode',
@@ -131,6 +136,8 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   postgresql: 'databaseNode',
   mongodb: 'databaseNode',
   cassandra: 'databaseNode',
+  mysql: 'databaseNode',
+  clickhouse: 'databaseNode',
   redis: 'cacheNode',
   memcached: 'cacheNode',
   s3: 'databaseNode',
@@ -140,6 +147,7 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   kafka: 'queueNode',
   rabbitmq: 'queueNode',
   event_bus: 'queueNode',
+  nats: 'queueNode',
   circuit_breaker: 'serviceNode',
   rate_limiter: 'serviceNode',
   retry_policy: 'serviceNode',

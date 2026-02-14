@@ -35,6 +35,7 @@ export const paletteItems: PaletteItem[] = [
   { type: 'external_api', label: 'External API', icon: '🔗', category: 'clients' },
 
   // Network
+  { type: 'external_service', label: 'External Service', icon: '🔌', category: 'network' },
   { type: 'api_gateway', label: 'API Gateway', icon: '🚪', category: 'network' },
   { type: 'load_balancer', label: 'Load Balancer', icon: '⚖️', category: 'network' },
   { type: 'cdn', label: 'CDN', icon: '🌍', category: 'network' },
@@ -51,6 +52,8 @@ export const paletteItems: PaletteItem[] = [
   { type: 'postgresql', label: 'PostgreSQL', icon: '🐘', category: 'database' },
   { type: 'mongodb', label: 'MongoDB', icon: '🍃', category: 'database' },
   { type: 'cassandra', label: 'Cassandra', icon: '👁️', category: 'database' },
+  { type: 'mysql', label: 'MySQL', icon: '🐬', category: 'database' },
+  { type: 'clickhouse', label: 'ClickHouse', icon: '🏠', category: 'database' },
   { type: 's3', label: 'Object Storage', icon: '🪣', category: 'database' },
   { type: 'etcd', label: 'etcd', icon: '🔑', category: 'database' },
   { type: 'elasticsearch', label: 'Elasticsearch', icon: '🔍', category: 'database' },
@@ -63,6 +66,7 @@ export const paletteItems: PaletteItem[] = [
   { type: 'kafka', label: 'Kafka', icon: '📨', category: 'messaging' },
   { type: 'rabbitmq', label: 'RabbitMQ', icon: '🐇', category: 'messaging' },
   { type: 'event_bus', label: 'Event Bus', icon: '🚌', category: 'messaging' },
+  { type: 'nats', label: 'NATS', icon: '⚡', category: 'messaging' },
 
   // Storage
   { type: 'local_ssd', label: 'Local SSD', icon: '💾', category: 'storage' },

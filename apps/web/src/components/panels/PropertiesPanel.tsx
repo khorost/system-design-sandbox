@@ -61,6 +61,7 @@ const COMPONENT_PARAMS: Record<string, { key: string; label: string; type: 'numb
     { key: 'memory_gb', label: 'Memory (GB)', type: 'number' },
     { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number' },
     { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number' },
+    { key: 'language', label: 'Language', type: 'select', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
   ],
   postgresql: [
     { key: 'replicas', label: 'Replicas', type: 'number' },
@@ -351,7 +352,15 @@ function NodeProperties() {
 
   const paletteItem = paletteItems.find((i) => i.type === selectedNode.data.componentType);
   const def = getDefinition(selectedNode.data.componentType);
-  const params = COMPONENT_PARAMS[selectedNode.data.componentType] || [];
+  const params = COMPONENT_PARAMS[selectedNode.data.componentType]
+    ?? def?.params.map(p => ({
+      key: p.key,
+      label: p.label,
+      type: p.type === 'boolean' ? 'select' as const : p.type === 'select' ? 'select' as const : p.type === 'string' ? 'text' as const : 'number' as const,
+      ...(p.type === 'select' ? { options: p.options } : {}),
+      ...(p.type === 'boolean' ? { options: ['true', 'false'] } : {}),
+    }))
+    ?? [];
   const config = selectedNode.data.config;
 
   const configVal = (key: string): unknown => {

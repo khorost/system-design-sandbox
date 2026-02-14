@@ -34,6 +34,36 @@ function fmtK(n: number): string {
 
 const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
 
+const LANGUAGE_ICONS: Record<string, string> = {
+  go: 'Go',
+  java: 'Jv',
+  python: 'Py',
+  rust: 'Rs',
+  typescript: 'TS',
+  csharp: 'C#',
+  kotlin: 'Kt',
+  ruby: 'Rb',
+  php: 'php',
+  cpp: 'C++',
+  scala: 'Sc',
+  elixir: 'Ex',
+};
+
+const LANGUAGE_COLORS: Record<string, string> = {
+  go: '#00ADD8',
+  java: '#ED8B00',
+  python: '#3776AB',
+  rust: '#DEA584',
+  typescript: '#3178C6',
+  csharp: '#512BD4',
+  kotlin: '#7F52FF',
+  ruby: '#CC342D',
+  php: '#777BB4',
+  cpp: '#00599C',
+  scala: '#DC322F',
+  elixir: '#6E4A7E',
+};
+
 function getNodeSummary(componentType: string, config: Record<string, unknown>): string[] {
   const def = getDefinition(componentType as Parameters<typeof getDefinition>[0]);
   const v = (key: string): unknown => config[key] ?? def?.params.find(p => p.key === key)?.default;
@@ -51,6 +81,10 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
   const maxRps = v('max_rps_per_instance') as number | undefined;
 
   switch (componentType) {
+    case 'external_service':
+      return [`${fmtK(maxRps ?? 0)} rps, ${v('base_latency_ms')}ms`];
+    case 'nats':
+      return [`${nodes ?? 3} nodes, ${v('mode')}`];
     case 'service':
     case 'worker':
     case 'auth_service':
@@ -94,6 +128,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
 
   const customColor = data.config.color as string | undefined;
   const customTextColor = data.config.textColor as string | undefined;
+  const language = data.config.language as string | undefined;
   const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
   const utilColor = isRunning ? getUtilColor(maxEma) : '';
   const activeBorder = selected ? '#3b82f6' : utilColor || customColor || borderColor;
@@ -140,6 +175,15 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
           <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#e2e8f0' }}>
             {data.label}
           </span>
+          {language && LANGUAGE_ICONS[language] && (
+            <span
+              className="text-[9px] font-bold leading-none px-1.5 py-0.5 rounded"
+              style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
+              title={language}
+            >
+              {LANGUAGE_ICONS[language]}
+            </span>
+          )}
         </div>
         {summaryLines.length > 0 && (
           <div className="space-y-1 mb-2 pl-1">
