@@ -15,6 +15,17 @@
 | [TD-011](#td-011-фаза-4--сценарии-и-геймификация) | Фаза 4 — Сценарии и геймификация | High |
 | [TD-012](#td-012-мультиязычность-i18n) | Мультиязычность (i18n) | Medium |
 | [TD-013](#td-013-пользовательские-компоненты-со-скриптовой-логикой) | Пользовательские компоненты со скриптовой логикой | Medium |
+| [TD-014](#td-014-дедупликация-констант-цвета-типы-маппинги) | Дедупликация констант (цвета, типы, маппинги) | High |
+| [TD-015](#td-015-unit-тесты-для-ядра) | Unit-тесты для ядра | High |
+| [TD-016](#td-016-toast-уведомления-об-ошибках-импортаэкспорта) | Toast-уведомления об ошибках импорта/экспорта | High |
+| [TD-017](#td-017-валидация-ввода-в-properties-panel) | Валидация ввода в Properties Panel | High |
+| [TD-018](#td-018-санитизация-пользовательского-ввода) | Санитизация пользовательского ввода | Medium |
+| [TD-019](#td-019-ужесточение-eslint-конфигурации) | Ужесточение ESLint-конфигурации | Medium |
+| [TD-020](#td-020-accessibility-aria-клавиатурная-навигация) | Accessibility (ARIA, клавиатурная навигация) | Medium |
+| [TD-021](#td-021-вынос-магических-чисел-в-конфиг) | Вынос магических чисел в конфиг | Medium |
+| [TD-022](#td-022-reactmemo-оптимизация-узлов-канваса) | React.memo оптимизация узлов канваса | Low |
+| [TD-023](#td-023-обработка-ошибок-localstorage) | Обработка ошибок localStorage | Medium |
+| [TD-024](#td-024-автогенерация-component_params-из-component-library) | Автогенерация COMPONENT_PARAMS из component-library | Medium |
 
 ---
 
@@ -1574,3 +1585,246 @@ CREATE TABLE component_templates (
 ```
 
 Шаг 1 полезен сам по себе (кастомные узлы без скриптов). Шаг 2 добавляет поведение. Шаг 3 требует TD-004 (серверный каталог).
+
+---
+
+## TD-014: Дедупликация констант (цвета, типы, маппинги)
+
+**Приоритет:** High
+**Компоненты:** apps/web
+
+### Описание
+
+Константы `NODE_TYPE_COLORS`, `CONTAINER_COLORS`, `LANGUAGE_COLORS`, `LANGUAGE_ICONS`, `CLIENT_TYPES` дублируются в 5+ файлах: `Canvas.tsx`, `ComponentPalette.tsx`, `BaseNode.tsx`, `PropertiesPanel.tsx`, `FlowEdge.tsx`. Изменение цветовой схемы требует правок в нескольких местах.
+
+### Задачи
+
+- [ ] Создать `apps/web/src/utils/colors.ts` — вынести `NODE_TYPE_COLORS`, `CONTAINER_COLORS`, `LANGUAGE_COLORS`, `LANGUAGE_ICONS`
+- [ ] Создать `apps/web/src/types/constants.ts` — вынести `CLIENT_TYPES`, `CONTAINER_TYPES` и другие наборы типов
+- [ ] Заменить все локальные определения на импорты из общих модулей
+- [ ] Убедиться, что bundle size не увеличился (tree-shaking)
+
+---
+
+## TD-015: Unit-тесты для ядра
+
+**Приоритет:** High
+**Компоненты:** apps/web, packages/simulation-engine
+
+### Описание
+
+В проекте 0 тестовых файлов при 219 модулях. Нужно настроить тестовый фреймворк и покрыть тестами критические модули.
+
+### Приоритетные модули для покрытия
+
+| Модуль | Строк | Почему важно |
+|--------|-------|-------------|
+| `store/canvasStore.ts` | ~530 | Вся логика состояния, undo/redo, import/export |
+| `simulation/converter.ts` | ~95 | Преобразование граф → модель симуляции |
+| `utils/networkLatency.ts` | ~210 | Вычисление вложенности, абсолютных позиций |
+| `store/simulationStore.ts` | ~230 | Управление симуляцией, метрики |
+| `packages/simulation-engine/src/engine.ts` | — | DES-ядро, модель очереди, каскадные отказы |
+
+### Задачи
+
+- [ ] Настроить Vitest (совместим с Vite, zero-config)
+- [ ] Добавить скрипт `pnpm test` в корневой `package.json` и workspace-пакеты
+- [ ] Тесты `canvasStore`: addNode/removeNode, undo/redo, import/export, pushHistory
+- [ ] Тесты `converter`: convertNodesToComponents, convertEdgesToConnections, edge cases
+- [ ] Тесты `networkLatency`: getAbsolutePosition, getNestingDepth, sortNodesParentFirst
+- [ ] Тесты `simulation-engine`: engine tick, latency model, queue overflow, cascade failure
+- [ ] Добавить `pnpm test` в CI pipeline
+
+---
+
+## TD-016: Toast-уведомления об ошибках импорта/экспорта
+
+**Приоритет:** High
+**Компоненты:** apps/web
+
+### Описание
+
+Предупреждения и ошибки при импорте схем (неизвестные componentType, битые ссылки edge→node, невалидный JSON) пишутся в `console.warn` и не видны пользователю. Аналогично — ошибки worker-а при симуляции.
+
+### Затронутые места
+
+- `canvasStore.ts` — `importSchema()`: warnings выводятся в console
+- `canvasStore.ts` — `importDsl()`: warnings выводятся в console
+- `workerManager.ts` — ошибки worker-а: `console.error`
+
+### Задачи
+
+- [ ] Выбрать подход: toast-библиотека (react-hot-toast / sonner) или собственный компонент
+- [ ] Создать `apps/web/src/utils/notifications.ts` — API: `notify.success()`, `notify.warn()`, `notify.error()`
+- [ ] Заменить `console.warn` в `importSchema` / `importDsl` на `notify.warn()`
+- [ ] Показывать ошибки worker-а через `notify.error()`
+- [ ] Toast-контейнер в `App.tsx`
+
+---
+
+## TD-017: Валидация ввода в Properties Panel
+
+**Приоритет:** High
+**Компоненты:** apps/web
+
+### Описание
+
+Числовые поля в PropertiesPanel (replicas, cpu, memory, maxRps, latencyMs) не имеют ограничений. Можно ввести отрицательные значения, NaN, Infinity, что приводит к некорректной симуляции.
+
+### Правила валидации
+
+| Поле | Тип | Min | Max | Описание |
+|------|-----|-----|-----|----------|
+| replicas | integer | 1 | 1000 | Количество реплик |
+| cpu | integer | 100 | 128000 | mCPU |
+| memory | integer | 64 | 1048576 | МБ |
+| maxRps | number | 1 | 10000000 | Макс RPS на инстанс |
+| latencyMs | number | 0 | 60000 | Задержка (ms) |
+| bandwidthMbps | number | 1 | 100000 | Пропускная способность |
+| timeoutMs | number | 100 | 300000 | Таймаут (ms) |
+
+### Задачи
+
+- [ ] Добавить `min`/`max` атрибуты на `<input type="number">` в PropertiesPanel
+- [ ] Валидация при `onChange` — clamp значения в допустимый диапазон
+- [ ] Визуальная индикация невалидного значения (красная рамка)
+- [ ] Подсказки с допустимым диапазоном (title / tooltip)
+- [ ] Аналогичная валидация для edge-параметров (latencyMs, bandwidthMbps, timeoutMs)
+
+---
+
+## TD-018: Санитизация пользовательского ввода
+
+**Приоритет:** Medium
+**Компоненты:** apps/web
+
+### Описание
+
+Пользовательские label узлов и значения конфигурации не санитизируются при импорте JSON/DSL. Потенциальный вектор XSS при рендере.
+
+### Задачи
+
+- [ ] Добавить санитизацию label при импорте (DOMPurify или ручная очистка HTML-тегов)
+- [ ] Санитизация строковых значений config при импорте
+- [ ] Проверка длины label (max 100 символов) и значений config
+- [ ] Убедиться, что React JSX экранирует вывод (по умолчанию да, но проверить `dangerouslySetInnerHTML`)
+
+---
+
+## TD-019: Ужесточение ESLint-конфигурации
+
+**Приоритет:** Medium
+**Компоненты:** apps/web
+
+### Описание
+
+Текущий ESLint-конфиг минимален (24 строки). Нет правил на `console.log`, `any`, неиспользуемые импорты. В коде остаются отладочные `console.warn`/`console.log`.
+
+### Задачи
+
+- [ ] Добавить `no-console: warn` (кроме `console.error`)
+- [ ] Добавить `@typescript-eslint/no-explicit-any: error`
+- [ ] Добавить `@typescript-eslint/no-unused-vars: error` (с `_` prefix exception)
+- [ ] Добавить правило на сортировку импортов
+- [ ] Исправить все найденные нарушения
+- [ ] Интегрировать в `pnpm lint` и CI
+
+---
+
+## TD-020: Accessibility (ARIA, клавиатурная навигация)
+
+**Приоритет:** Medium
+**Компоненты:** apps/web
+
+### Описание
+
+Для обучающего инструмента важна доступность. Сейчас минимум ARIA-атрибутов, инпуты без `<label>`, icon-only кнопки без `aria-label`.
+
+### Задачи
+
+- [ ] Добавить `aria-label` на все icon-only кнопки (Toolbar, Palette)
+- [ ] Связать `<label>` с `<input>` в PropertiesPanel (через `htmlFor` / `id`)
+- [ ] Добавить `role` и `aria-expanded` на accordion-секции палитры
+- [ ] Проверить цветовой контраст (WCAG AA): `text-slate-500` на тёмном фоне
+- [ ] Добавить `aria-live="polite"` на области с динамическим контентом (метрики, статус симуляции)
+- [ ] Keyboard navigation: Tab-порядок в панелях, Enter для активации кнопок
+
+---
+
+## TD-021: Вынос магических чисел в конфиг
+
+**Приоритет:** Medium
+**Компоненты:** apps/web, packages/simulation-engine
+
+### Описание
+
+Числовые константы разбросаны по коду: `MAX_HISTORY = 100`, `tickInterval = 0.1`, EMA-коэффициенты, debounce-интервалы, размеры. Изменение требует поиска по файлам.
+
+### Задачи
+
+- [ ] Создать `apps/web/src/config/constants.ts`:
+  ```typescript
+  export const CONFIG = {
+    HISTORY: { MAX_ENTRIES: 100 },
+    SIMULATION: { TICK_INTERVAL_MS: 100, MAX_HISTORY: 3000, EMA_ALPHA_1S: 0.095 },
+    UI: { DEBOUNCE_SAVE_MS: 500, DEBOUNCE_RECONFIGURE_MS: 300 },
+    CANVAS: { DEFAULT_NODE_WIDTH: 200, DEFAULT_NODE_HEIGHT: 100 },
+  };
+  ```
+- [ ] Заменить inline-числа на ссылки на `CONFIG.*`
+- [ ] Аналогично для `packages/simulation-engine` — вынести engine defaults
+
+---
+
+## TD-022: React.memo оптимизация узлов канваса
+
+**Приоритет:** Low
+**Компоненты:** apps/web
+
+### Описание
+
+Компоненты узлов (`BaseNode`, `DatabaseNode`, `CacheNode`, `QueueNode`, `ServiceNode`) не обёрнуты в `React.memo()`. При изменении любого узла перерисовываются все. На схемах с 50+ узлами это заметно.
+
+### Задачи
+
+- [ ] Обернуть все node-компоненты в `React.memo()`
+- [ ] Профилирование React DevTools до/после — замер числа рендеров
+- [ ] Вынести вычисление цветов и стилей за пределы render (useMemo или top-level)
+- [ ] Убедиться, что props не создаются inline (объекты, функции)
+
+---
+
+## TD-023: Обработка ошибок localStorage
+
+**Приоритет:** Medium
+**Компоненты:** apps/web
+
+### Описание
+
+Auto-save в `canvasStore` записывает в localStorage без try-catch. При переполнении квоты (~5-10 MB) запись молча падает. Пользователь теряет данные без уведомления.
+
+### Задачи
+
+- [ ] Обернуть `localStorage.setItem` в try-catch в `debouncedSave`
+- [ ] При ошибке — показать уведомление (TD-016) с предложением экспортировать в файл
+- [ ] Показывать текущий размер сохранённых данных в UI (Settings или About)
+- [ ] Опционально: LZ-сжатие данных перед записью (lz-string)
+
+---
+
+## TD-024: Автогенерация COMPONENT_PARAMS из component-library
+
+**Приоритет:** Medium
+**Компоненты:** apps/web, packages/component-library
+
+### Описание
+
+`COMPONENT_PARAMS` в `PropertiesPanel.tsx` (~600 строк) дублирует определения параметров из `packages/component-library`. При добавлении нового компонента нужно обновлять оба места. Fallback через `getDefinition()` уже работает, но основной словарь устарел.
+
+### Задачи
+
+- [ ] Удалить хардкод `COMPONENT_PARAMS` из PropertiesPanel
+- [ ] Генерировать параметры полностью из `getDefinition()` (component-library)
+- [ ] Добавить в `ComponentDefinition` поля для UI: placeholder, unit, group (для группировки параметров)
+- [ ] Сохранить возможность override для специфичных компонентов (если нужна кастомная UI-логика)
+- [ ] Убедиться, что все существующие параметры корректно отображаются через новый механизм
