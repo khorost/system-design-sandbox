@@ -1,9 +1,9 @@
-FROM node:25-alpine AS builder
+FROM node:22-alpine AS builder
 RUN corepack enable
 WORKDIR /app
 
-# Копируем package.json-ы для кеширования pnpm install
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
+# Копируем package.json-ы и конфиги для кеширования pnpm install
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.json ./
 COPY apps/web/package.json apps/web/
 COPY packages/simulation-engine/package.json packages/simulation-engine/
 COPY packages/component-library/package.json packages/component-library/
