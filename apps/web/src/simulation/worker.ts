@@ -1,4 +1,5 @@
-import { createSimulationEngine, type SimulationEngine, type ComponentModel, type ConnectionModel } from '@system-design-sandbox/simulation-engine';
+import { type ComponentModel, type ConnectionModel,createSimulationEngine, type SimulationEngine } from '@system-design-sandbox/simulation-engine';
+
 import type { WorkerCommand, WorkerEvent } from './protocol.ts';
 
 let engine: SimulationEngine | null = null;

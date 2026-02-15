@@ -1,16 +1,18 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { useSimulationStore } from '../../store/simulationStore.ts';
 import {
-  LineChart,
-  Line,
-  AreaChart,
   Area,
-  XAxis,
-  YAxis,
+  AreaChart,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
+
 import { CONFIG } from '../../config/constants.ts';
+import { useSimulationStore } from '../../store/simulationStore.ts';
 
 const TICK_SEC = CONFIG.SIMULATION.TICK_INTERVAL_SEC;
 const WINDOWS = [
@@ -20,8 +22,7 @@ const WINDOWS = [
 ] as const;
 
 const tooltipStyle = { background: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 13 };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const fmtLabel = (v: any) => `${Number(v).toFixed(1)}s`;
+const fmtLabel = (v: ReactNode) => `${Number(v).toFixed(1)}s`;
 
 export function MetricsPanel() {
   const metricsHistory = useSimulationStore((s) => s.metricsHistory);

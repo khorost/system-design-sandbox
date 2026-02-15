@@ -1,15 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect,it } from 'vitest';
+
 import type { ComponentNode } from '../../types/index.ts';
 import type { ComponentType } from '../../types/index.ts';
 import {
-  isValidNesting,
-  getAbsolutePosition,
-  getNestingDepth,
-  getAncestorChain,
-  findLCA,
-  computeEffectiveLatency,
   CLIENT_TO_DATACENTER_LATENCY_MS,
+  computeEffectiveLatency,
+  findLCA,
+  getAbsolutePosition,
+  getAncestorChain,
+  getNestingDepth,
   INTER_DATACENTER_LATENCY_MS,
+  isValidNesting,
 } from '../networkLatency.ts';
 
 function mkNode(

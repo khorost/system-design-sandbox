@@ -1,4 +1,4 @@
-import type { ComponentModel, ConnectionModel, LoadProfile, SimulationMetrics, FailureReport } from '@system-design-sandbox/simulation-engine';
+import type { ComponentModel, ConnectionModel, FailureReport,LoadProfile, SimulationMetrics } from '@system-design-sandbox/simulation-engine';
 
 // Main → Worker messages
 export type WorkerCommand =

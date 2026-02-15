@@ -1,7 +1,8 @@
-import { create } from 'zustand';
-import { useCanvasStore } from './canvasStore.ts';
 import { estimateMonthlyCost } from '@system-design-sandbox/component-library';
+import { create } from 'zustand';
+
 import type { ComponentType } from '../types/index.ts';
+import { useCanvasStore } from './canvasStore.ts';
 
 interface CostItem {
   nodeId: string;

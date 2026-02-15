@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { useCostStore } from '../../store/costStore.ts';
+
 import { useCanvasStore } from '../../store/canvasStore.ts';
+import { useCostStore } from '../../store/costStore.ts';
 
 const CATEGORY_LABELS: Record<string, string> = {
   compute: 'Compute',

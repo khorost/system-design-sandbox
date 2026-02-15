@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useCanvasStore } from '../../store/canvasStore.ts';
-import { paletteItems, paletteCategories } from '../canvas/controls/paletteData.ts';
 import { estimateMonthlyCost } from '@system-design-sandbox/component-library';
-import { CONTAINER_TYPES } from '../../utils/networkLatency.ts';
+import { useCallback,useMemo, useState } from 'react';
+
+import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ComponentNode } from '../../types/index.ts';
+import { CONTAINER_TYPES } from '../../utils/networkLatency.ts';
+import { paletteCategories,paletteItems } from '../canvas/controls/paletteData.ts';
 
 type SortKey = 'name' | 'type' | 'category' | 'cost';
 type SortDir = 'asc' | 'desc';
@@ -247,7 +248,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
             </tr>
           </thead>
           <tbody>
-            {groupedRows.map((row, idx) => {
+            {groupedRows.map((row, _idx) => {
               if (row.kind === 'subtotal') {
                 return (
                   <tr key={`sub-${row.containerId}`} className="bg-white/[0.02]">

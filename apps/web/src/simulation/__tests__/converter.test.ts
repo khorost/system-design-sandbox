@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import type { ComponentNode, ComponentEdge } from '../../types/index.ts';
+import { describe, expect,it } from 'vitest';
+
+import type { ComponentEdge,ComponentNode } from '../../types/index.ts';
 import type { ComponentType } from '../../types/index.ts';
-import { convertNodesToComponents, convertEdgesToConnections, buildEdgeKeyToIdMap } from '../converter.ts';
+import { buildEdgeKeyToIdMap,convertEdgesToConnections, convertNodesToComponents } from '../converter.ts';
 
 function mkNode(
   id: string,

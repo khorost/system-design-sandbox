@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
-import { useSimulationStore } from '../../store/simulationStore.ts';
-import { useCanvasStore } from '../../store/canvasStore.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
 import type { ComponentType as EngineComponentType } from '@system-design-sandbox/simulation-engine';
+import { useMemo } from 'react';
+
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { useCanvasStore } from '../../store/canvasStore.ts';
+import { useSimulationStore } from '../../store/simulationStore.ts';
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

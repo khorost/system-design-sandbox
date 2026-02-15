@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { useCanvasStore } from '../../../store/canvasStore.ts';
+
 import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
+import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { notify } from '../../../utils/notifications.ts';
 
 /* ── tiny inline SVG icons (stroke-based) ── */

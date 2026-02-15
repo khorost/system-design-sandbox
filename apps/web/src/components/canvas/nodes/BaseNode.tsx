@@ -1,11 +1,12 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { ComponentNode, ComponentType } from '../../../types/index.ts';
-import { useCanvasStore } from '../../../store/canvasStore.ts';
-import { useSimulationStore } from '../../../store/simulationStore.ts';
-import type { NodeEma } from '../../../store/simulationStore.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+import { Handle, type NodeProps,Position } from '@xyflow/react';
+
+import { LANGUAGE_COLORS,LANGUAGE_ICONS } from '../../../constants/colors.ts';
 import { CLIENT_TYPES } from '../../../constants/componentTypes.ts';
-import { LANGUAGE_ICONS, LANGUAGE_COLORS } from '../../../constants/colors.ts';
+import { useCanvasStore } from '../../../store/canvasStore.ts';
+import type { NodeEma } from '../../../store/simulationStore.ts';
+import { useSimulationStore } from '../../../store/simulationStore.ts';
+import type { ComponentNode, ComponentType } from '../../../types/index.ts';
 
 interface BaseNodeProps {
   nodeProps: NodeProps<ComponentNode>;

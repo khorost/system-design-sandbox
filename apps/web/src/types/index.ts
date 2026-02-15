@@ -1,4 +1,4 @@
-import type { Node, Edge } from '@xyflow/react';
+import type { Edge,Node } from '@xyflow/react';
 
 export type ComponentCategory =
   | 'clients'

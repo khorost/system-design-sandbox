@@ -1,38 +1,39 @@
-import { useCallback, useEffect, useRef, type DragEvent } from 'react';
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  BackgroundVariant,
-  useReactFlow,
-  ReactFlowProvider,
-  reconnectEdge,
-  type Connection,
-  type NodeTypes,
-  type EdgeTypes,
-} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useCanvasStore } from '../../store/canvasStore.ts';
-import type { ComponentNode, ComponentEdge, ComponentNodeData, ComponentCategory, ComponentType } from '../../types/index.ts';
-import { NODE_TYPE_MAP } from '../../types/index.ts';
-import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
-import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../constants/colors.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import { sanitizeLabel } from '../../utils/sanitize.ts';
+import {
+  Background,
+  BackgroundVariant,
+  type Connection,
+  Controls,
+  type EdgeTypes,
+  MiniMap,
+  type NodeTypes,
+  ReactFlow,
+  ReactFlowProvider,
+  reconnectEdge,
+  useReactFlow,
+} from '@xyflow/react';
+import { type DragEvent,useCallback, useEffect, useRef } from 'react';
+
 import { CONFIG } from '../../config/constants.ts';
-import { CONTAINER_TYPES, CONTAINER_Z_INDEX, isValidNesting, getAbsolutePosition, getNestingDepth } from '../../utils/networkLatency.ts';
-import { ServiceNode } from './nodes/ServiceNode.tsx';
-import { DatabaseNode } from './nodes/DatabaseNode.tsx';
-import { CacheNode } from './nodes/CacheNode.tsx';
-import { QueueNode } from './nodes/QueueNode.tsx';
-import { LoadBalancerNode } from './nodes/LoadBalancerNode.tsx';
-import { GatewayNode } from './nodes/GatewayNode.tsx';
-import { ContainerNode } from './nodes/ContainerNode.tsx';
-import { FlowEdge } from './edges/FlowEdge.tsx';
+import { CONTAINER_COLORS,NODE_TYPE_COLORS } from '../../constants/colors.ts';
+import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { useCanvasStore } from '../../store/canvasStore.ts';
+import type { ComponentCategory, ComponentEdge, ComponentNode, ComponentNodeData, ComponentType } from '../../types/index.ts';
+import { NODE_TYPE_MAP } from '../../types/index.ts';
+import { CONTAINER_TYPES, CONTAINER_Z_INDEX, getAbsolutePosition, getNestingDepth,isValidNesting } from '../../utils/networkLatency.ts';
+import { sanitizeLabel } from '../../utils/sanitize.ts';
 import { Toolbar } from './controls/Toolbar.tsx';
 import { DebugStats } from './DebugStats.tsx';
+import { FlowEdge } from './edges/FlowEdge.tsx';
+import { CacheNode } from './nodes/CacheNode.tsx';
+import { ContainerNode } from './nodes/ContainerNode.tsx';
+import { DatabaseNode } from './nodes/DatabaseNode.tsx';
+import { GatewayNode } from './nodes/GatewayNode.tsx';
+import { LoadBalancerNode } from './nodes/LoadBalancerNode.tsx';
+import { QueueNode } from './nodes/QueueNode.tsx';
+import { ServiceNode } from './nodes/ServiceNode.tsx';
 
 const nodeTypes: NodeTypes = {
   serviceNode: ServiceNode,

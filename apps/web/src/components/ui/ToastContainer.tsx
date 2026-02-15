@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useToastStore, type ToastType } from '../../store/toastStore.ts';
+
+import { type ToastType,useToastStore } from '../../store/toastStore.ts';
 
 const ICON: Record<ToastType, string> = {
   success: '\u2713',

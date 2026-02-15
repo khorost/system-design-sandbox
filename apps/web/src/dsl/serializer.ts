@@ -1,6 +1,7 @@
-import type { ComponentNode, ComponentEdge, EdgeRoutingRule, ProtocolType } from '../types/index.ts';
-import { DEFAULT_EDGE_DATA } from '../types/index.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
+
+import type { ComponentEdge, ComponentNode, EdgeRoutingRule, ProtocolType } from '../types/index.ts';
+import { DEFAULT_EDGE_DATA } from '../types/index.ts';
 
 interface TagWeightEntry {
   tag: string;

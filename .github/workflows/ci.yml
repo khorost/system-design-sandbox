@@ -29,8 +29,22 @@ jobs:
             echo "server=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build-web:
+  lint:
     needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  build-web:
+    needs: [detect-changes, lint]
     if: needs.detect-changes.outputs.web == 'true'
     runs-on: [self-hosted]
     steps:

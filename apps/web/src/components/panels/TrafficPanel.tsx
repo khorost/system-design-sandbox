@@ -1,4 +1,5 @@
-import type { TagTraffic, NodeTagTraffic, EdgeTagTraffic } from '@system-design-sandbox/simulation-engine';
+import type { EdgeTagTraffic,NodeTagTraffic, TagTraffic } from '@system-design-sandbox/simulation-engine';
+
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import { useSimulationStore } from '../../store/simulationStore.ts';
 

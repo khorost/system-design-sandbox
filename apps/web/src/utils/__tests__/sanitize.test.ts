@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { stripHtml, sanitizeLabel, sanitizeString, sanitizeConfig } from '../sanitize.ts';
+import { describe, expect,it } from 'vitest';
+
 import { CONFIG } from '../../config/constants.ts';
+import { sanitizeConfig,sanitizeLabel, sanitizeString, stripHtml } from '../sanitize.ts';
 
 describe('stripHtml', () => {
   it('removes <script> tags', () => {

@@ -1,5 +1,5 @@
-import type { ComponentNode, ComponentType } from '../types/index.ts';
 import { CLIENT_TYPES } from '../constants/componentTypes.ts';
+import type { ComponentNode, ComponentType } from '../types/index.ts';
 
 /** Container types ordered by nesting level (innermost → outermost) */
 export const CONTAINER_TYPES = new Set<ComponentType>([

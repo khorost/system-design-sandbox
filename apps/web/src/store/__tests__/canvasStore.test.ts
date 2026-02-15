@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach,describe, expect, it } from 'vitest';
+
+import type { ComponentEdge, ComponentNode, ComponentType } from '../../types/index.ts';
 import { useCanvasStore } from '../canvasStore.ts';
-import type { ComponentNode, ComponentEdge, ComponentType } from '../../types/index.ts';
 
 function mkNode(id: string, componentType: ComponentType = 'service'): ComponentNode {
   return {

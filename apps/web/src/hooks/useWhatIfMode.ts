@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+
 import { useCanvasStore } from '../store/canvasStore.ts';
 import { useSimulationStore } from '../store/simulationStore.ts';
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSimulationStore } from '../../store/simulationStore.ts';
+
 import { useCanvasStore } from '../../store/canvasStore.ts';
+import { useSimulationStore } from '../../store/simulationStore.ts';
 
 export function DebugStats() {
   const [visible, setVisible] = useState(false);

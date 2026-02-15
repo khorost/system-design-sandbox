@@ -1,7 +1,8 @@
-import type { ComponentNode, ComponentEdge, EdgeData, EdgeRoutingRule, ComponentType, ProtocolType } from '../types/index.ts';
+import { getDefinition } from '@system-design-sandbox/component-library';
+
+import type { ComponentEdge, ComponentNode, ComponentType, EdgeData, EdgeRoutingRule, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, NODE_TYPE_MAP } from '../types/index.ts';
 import { CONTAINER_TYPES, CONTAINER_Z_INDEX } from '../utils/networkLatency.ts';
-import { getDefinition } from '@system-design-sandbox/component-library';
 import { sanitizeLabel, sanitizeString } from '../utils/sanitize.ts';
 
 interface ParseResult {

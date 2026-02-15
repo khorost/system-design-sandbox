@@ -1,8 +1,9 @@
-import type { ComponentModel, ConnectionModel, ComponentType as EngineComponentType, TagWeight } from '@system-design-sandbox/simulation-engine';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import type { ComponentNode, ComponentEdge, EdgeRoutingRule } from '../types/index.ts';
-import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
+import type { ComponentModel, ComponentType as EngineComponentType, ConnectionModel, TagWeight } from '@system-design-sandbox/simulation-engine';
+
 import { CLIENT_TYPES } from '../constants/componentTypes.ts';
+import type { ComponentEdge, ComponentNode, EdgeRoutingRule } from '../types/index.ts';
+import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
 
 export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, ComponentModel> {
   const components = new Map<string, ComponentModel>();

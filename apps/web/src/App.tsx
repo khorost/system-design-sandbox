@@ -1,15 +1,16 @@
-import { Component, useState, useCallback, useEffect, type ReactNode, type ErrorInfo } from 'react';
+import { Component, type ErrorInfo,type ReactNode, useCallback, useEffect, useState } from 'react';
+
 import { Canvas } from './components/canvas/Canvas.tsx';
 import { ComponentPalette } from './components/canvas/controls/ComponentPalette.tsx';
+import { InventoryTable } from './components/inventory/InventoryTable.tsx';
+import { CostPanel } from './components/panels/CostPanel.tsx';
+import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
-import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
-import { CostPanel } from './components/panels/CostPanel.tsx';
 import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
-import { InventoryTable } from './components/inventory/InventoryTable.tsx';
+import { ToastContainer } from './components/ui/ToastContainer.tsx';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
 import { useCanvasStore } from './store/canvasStore.ts';
-import { ToastContainer } from './components/ui/ToastContainer.tsx';
 
 type ViewMode = 'canvas' | 'table';
 

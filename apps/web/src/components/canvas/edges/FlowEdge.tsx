@@ -1,9 +1,10 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, type EdgeProps } from '@xyflow/react';
-import { useSimulationStore } from '../../../store/simulationStore.ts';
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps,getBezierPath, useInternalNode } from '@xyflow/react';
+
 import { useCanvasStore } from '../../../store/canvasStore.ts';
+import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { EdgeData } from '../../../types/index.ts';
-import { computeEffectiveLatency } from '../../../utils/networkLatency.ts';
 import { getFloatingEdgeParams } from '../../../utils/floatingEdge.ts';
+import { computeEffectiveLatency } from '../../../utils/networkLatency.ts';
 
 function getWidthByLatency(ms: number): number {
   if (ms <= 0.5) return 1;      // внутри docker/pod

@@ -20,7 +20,7 @@
 |  ✅  | [TD-016](#td-016-toast-уведомления-об-ошибках-импортаэкспорта) | ~~Toast-уведомления об ошибках импорта/экспорта~~ | High |
 |  ✅  | [TD-017](#td-017-валидация-ввода-в-properties-panel) | ~~Валидация ввода в Properties Panel~~ | High |
 |  ✅  | [TD-018](#td-018-санитизация-пользовательского-ввода) | ~~Санитизация пользовательского ввода~~ | Medium |
-|      | [TD-019](#td-019-ужесточение-eslint-конфигурации) | Ужесточение ESLint-конфигурации | Medium |
+|  ✅  | [TD-019](#td-019-ужесточение-eslint-конфигурации) | ~~Ужесточение ESLint-конфигурации~~ | Medium |
 |      | [TD-020](#td-020-accessibility-aria-клавиатурная-навигация) | Accessibility (ARIA, клавиатурная навигация) | Medium |
 |  ✅  | [TD-021](#td-021-вынос-магических-чисел-в-конфиг) | ~~Вынос магических чисел в конфиг~~ | Medium |
 |      | [TD-022](#td-022-reactmemo-оптимизация-узлов-канваса) | React.memo оптимизация узлов канваса | Low |
@@ -1717,10 +1717,11 @@ CREATE TABLE component_templates (
 
 ---
 
-## TD-019: Ужесточение ESLint-конфигурации
+## TD-019: Ужесточение ESLint-конфигурации ✅
 
 **Приоритет:** Medium
 **Компоненты:** apps/web
+**Статус:** Выполнено
 
 ### Описание
 
@@ -1728,12 +1729,12 @@ CREATE TABLE component_templates (
 
 ### Задачи
 
-- [ ] Добавить `no-console: warn` (кроме `console.error`)
-- [ ] Добавить `@typescript-eslint/no-explicit-any: error`
-- [ ] Добавить `@typescript-eslint/no-unused-vars: error` (с `_` prefix exception)
-- [ ] Добавить правило на сортировку импортов
-- [ ] Исправить все найденные нарушения
-- [ ] Интегрировать в `pnpm lint` и CI
+- [x] Добавить `no-console: warn` (кроме `console.error`)
+- [x] Добавить `@typescript-eslint/no-explicit-any: error`
+- [x] Добавить `@typescript-eslint/no-unused-vars: error` (с `_` prefix exception)
+- [x] Добавить правило на сортировку импортов (`eslint-plugin-simple-import-sort`)
+- [x] Исправить все найденные нарушения
+- [x] Интегрировать в `pnpm lint` и CI
 
 ---
 

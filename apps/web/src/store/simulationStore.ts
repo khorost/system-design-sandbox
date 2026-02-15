@@ -1,9 +1,10 @@
+import type { EdgeTagTraffic,LoadProfile, NodeTagTraffic, SimulationMetrics } from '@system-design-sandbox/simulation-engine';
 import { create } from 'zustand';
-import type { SimulationMetrics, LoadProfile, NodeTagTraffic, EdgeTagTraffic } from '@system-design-sandbox/simulation-engine';
-import { useCanvasStore } from './canvasStore.ts';
-import { convertNodesToComponents, convertEdgesToConnections, buildEdgeKeyToIdMap } from '../simulation/converter.ts';
-import { workerManager } from '../simulation/workerManager.ts';
+
 import { CONFIG } from '../config/constants.ts';
+import { buildEdgeKeyToIdMap,convertEdgesToConnections, convertNodesToComponents } from '../simulation/converter.ts';
+import { workerManager } from '../simulation/workerManager.ts';
+import { useCanvasStore } from './canvasStore.ts';
 
 /** Lightweight chart point — only the 5 numbers needed for graphs */
 export interface ChartPoint {

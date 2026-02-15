@@ -1,4 +1,4 @@
-import { Position, type InternalNode } from '@xyflow/react';
+import { type InternalNode,Position } from '@xyflow/react';
 
 function getNodeCenter(node: InternalNode) {
   const w = node.measured.width ?? 0;

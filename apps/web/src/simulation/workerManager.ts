@@ -1,6 +1,7 @@
-import type { ComponentModel, ConnectionModel, LoadProfile, SimulationMetrics, FailureReport } from '@system-design-sandbox/simulation-engine';
-import type { WorkerCommand, WorkerEvent } from './protocol.ts';
+import type { ComponentModel, ConnectionModel, FailureReport,LoadProfile, SimulationMetrics } from '@system-design-sandbox/simulation-engine';
+
 import { notify } from '../utils/notifications.ts';
+import type { WorkerCommand, WorkerEvent } from './protocol.ts';
 
 type TickCallback = (metrics: SimulationMetrics) => void;
 type FailureCallback = (report: FailureReport) => void;

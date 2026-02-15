@@ -1,14 +1,15 @@
-import { useState } from 'react';
-import { useCanvasStore } from '../../store/canvasStore.ts';
-import { paletteItems } from '../canvas/controls/paletteData.ts';
 import { getDefinition } from '@system-design-sandbox/component-library';
-import type { ProtocolType, EdgeRoutingRule } from '../../types/index.ts';
-import { DISK_COMPONENT_TYPES, NETWORK_PROTOCOLS, DISK_PROTOCOLS } from '../../types/index.ts';
-import { CONTAINER_TYPES, computeEffectiveLatency, isValidNesting } from '../../utils/networkLatency.ts';
-import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
-import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
-import { NumberInput } from '../ui/NumberInput.tsx';
+import { useState } from 'react';
+
 import { CONFIG } from '../../config/constants.ts';
+import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
+import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { useCanvasStore } from '../../store/canvasStore.ts';
+import type { EdgeRoutingRule,ProtocolType } from '../../types/index.ts';
+import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS,NETWORK_PROTOCOLS } from '../../types/index.ts';
+import { computeEffectiveLatency, CONTAINER_TYPES, isValidNesting } from '../../utils/networkLatency.ts';
+import { paletteItems } from '../canvas/controls/paletteData.ts';
+import { NumberInput } from '../ui/NumberInput.tsx';
 
 interface TagWeightEntry {
   tag: string;

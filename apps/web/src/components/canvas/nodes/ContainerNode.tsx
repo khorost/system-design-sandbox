@@ -1,7 +1,8 @@
-import { NodeResizer, type NodeProps } from '@xyflow/react';
-import type { ComponentNode } from '../../../types/index.ts';
-import { useCanvasStore } from '../../../store/canvasStore.ts';
+import { type NodeProps,NodeResizer } from '@xyflow/react';
+
 import { CONFIG } from '../../../config/constants.ts';
+import { useCanvasStore } from '../../../store/canvasStore.ts';
+import type { ComponentNode } from '../../../types/index.ts';
 
 const CONTAINER_STYLES: Record<string, { border: string; bg: string; headerBg: string }> = {
   docker_container: { border: '#3b82f6', bg: 'rgba(59,130,246,0.06)', headerBg: 'rgba(59,130,246,0.15)' },

@@ -1,6 +1,6 @@
-import type { ComponentNode, ComponentEdge } from '../types/index.ts';
-import { CONTAINER_TYPES } from '../utils/networkLatency.ts';
 import { CONFIG } from '../config/constants.ts';
+import type { ComponentEdge,ComponentNode } from '../types/index.ts';
+import { CONTAINER_TYPES } from '../utils/networkLatency.ts';
 
 // Must match or exceed actual rendered sizes:
 // - BaseNode has min-w-[170px] + padding → ~200px

@@ -1,4 +1,4 @@
-import type { ComponentType, ComponentCategory } from '../../../types/index.ts';
+import type { ComponentCategory,ComponentType } from '../../../types/index.ts';
 
 export interface PaletteItem {
   type: ComponentType;

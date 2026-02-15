@@ -1,8 +1,9 @@
-import { useState, type DragEvent } from 'react';
-import { paletteCategories, paletteItems, type PaletteItem } from './paletteData.ts';
+import { type DragEvent,useState } from 'react';
+
+import { CONTAINER_COLORS,NODE_TYPE_COLORS } from '../../../constants/colors.ts';
 import type { ComponentCategory } from '../../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../../types/index.ts';
-import { NODE_TYPE_COLORS, CONTAINER_COLORS } from '../../../constants/colors.ts';
+import { paletteCategories, type PaletteItem,paletteItems } from './paletteData.ts';
 
 function getItemColor(type: string): string {
   return CONTAINER_COLORS[type] ?? NODE_TYPE_COLORS[NODE_TYPE_MAP[type] ?? ''] ?? '#475569';
