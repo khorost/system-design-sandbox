@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"
 	"github.com/system-design-sandbox/server/internal/config"
 	"github.com/system-design-sandbox/server/internal/handler"
@@ -19,6 +20,10 @@ import (
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
