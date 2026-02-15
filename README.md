@@ -1,5 +1,13 @@
 # System Design Sandbox
 
+[![CI/CD](https://github.com/khorost/system-design-sandbox/actions/workflows/ci.yml/badge.svg)](https://github.com/khorost/system-design-sandbox/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/khorost/system-design-sandbox/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev/)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-9-f69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
+
 Интерактивный конструктор для обучения системному дизайну: визуальный редактор архитектур с симуляцией нагрузки в реальном времени.
 
 **Домен:** [sdsandbox.ru](https://sdsandbox.ru)
@@ -92,6 +100,19 @@ docs/
   spec.md               # Полная спецификация проекта
 ```
 
+## Quick Run
+
+```bash
+git clone https://github.com/khorost/system-design-sandbox.git
+cd system-design-sandbox
+pnpm install
+pnpm dev
+```
+
+Откройте [http://localhost:5173](http://localhost:5173) — приложение готово к работе.
+
+> **Требования:** Node.js >= 22, pnpm >= 9
+
 ## Разработка
 
 ```bash
@@ -100,6 +121,8 @@ pnpm dev                # Dev-серверы (Vite HMR)
 pnpm build              # Сборка всех пакетов
 pnpm lint               # Линтинг
 ```
+
+Подробнее о процессе разработки и правилах контрибьюции — в [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Дорожная карта
 
