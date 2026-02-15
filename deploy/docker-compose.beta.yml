@@ -1,15 +1,18 @@
 version: "3.8"
 
+# Beta: использует :latest из develop ветки
+# Обновление: docker compose -f docker-compose.beta.yml pull && docker compose -f docker-compose.beta.yml up -d
+
 services:
   web:
-    image: images.khorost.tech/sdsandbox-web-beta:latest
+    image: khorost/sdsandbox-web:latest
     container_name: sdsandbox-web-beta
     restart: unless-stopped
     ports:
       - "3001:80"
 
   server:
-    image: images.khorost.tech/sdsandbox-server-beta:latest
+    image: khorost/sdsandbox-server:latest
     container_name: sdsandbox-server-beta
     restart: unless-stopped
     ports:

@@ -1,15 +1,18 @@
 version: "3.8"
 
+# Production: использует версионированные теги (v0.1.0, v0.2.0, ...)
+# Обновление: IMAGE_TAG=0.2.0 docker compose -f docker-compose.prod.yml up -d
+
 services:
   web:
-    image: images.khorost.tech/sdsandbox-web:latest
+    image: khorost/sdsandbox-web:${IMAGE_TAG:-0.1.0}
     container_name: sdsandbox-web
     restart: unless-stopped
     ports:
       - "3000:80"
 
   server:
-    image: images.khorost.tech/sdsandbox-server:latest
+    image: khorost/sdsandbox-server:${IMAGE_TAG:-0.1.0}
     container_name: sdsandbox-server
     restart: unless-stopped
     ports:

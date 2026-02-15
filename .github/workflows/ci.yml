@@ -1,7 +1,11 @@
 name: CI/CD
 on:
   push:
-    branches: [main, 'feature/**']
+    branches: [develop]
+    tags: ['v*']
+
+env:
+  DOCKERHUB_ORG: khorost
 
 jobs:
   detect-changes:
@@ -9,13 +13,20 @@ jobs:
     outputs:
       web: ${{ steps.changes.outputs.web }}
       server: ${{ steps.changes.outputs.server }}
-      is_main: ${{ github.ref == 'refs/heads/main' }}
+      is_tag: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
       - id: changes
         run: |
+          # На тегах всегда собираем всё
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           DIFF=$(git diff --name-only HEAD~1)
           # web зависит от apps/web + packages/*
           if echo "$DIFF" | grep -qE '^(apps/web/|packages/)'; then
@@ -28,6 +39,13 @@ jobs:
             echo "server=true" >> "$GITHUB_OUTPUT"
           else
             echo "server=false" >> "$GITHUB_OUTPUT"
+          fi
+      - id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=latest" >> "$GITHUB_OUTPUT"
           fi
 
   lint:
@@ -44,90 +62,92 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
-  # ── Production: main → sdsandbox.ru ──
+  # ── Production: tags v* → sdsandbox.ru ──
 
-  build-web:
+  build-web-prod:
     needs: [detect-changes, lint]
-    if: needs.detect-changes.outputs.web == 'true' && needs.detect-changes.outputs.is_main == 'true'
+    if: needs.detect-changes.outputs.web == 'true' && needs.detect-changes.outputs.is_tag == 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
-        env:
-          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      - run: |
-          IMAGE=images.khorost.tech/sdsandbox-web
-          TAG=${GITHUB_SHA::8}
-          docker build -f apps/web/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest .
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:latest
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Build & push
+        run: |
+          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-web
+          VERSION=${{ needs.detect-changes.outputs.version }}
+          docker build -f apps/web/Dockerfile \
+            -t $IMAGE:$VERSION \
+            -t $IMAGE:${GITHUB_SHA::8} \
+            .
+          docker push $IMAGE:$VERSION
+          docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy
         if: success()
         run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB }}"
 
-  build-server:
+  build-server-prod:
     needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true' && needs.detect-changes.outputs.is_main == 'true'
+    if: needs.detect-changes.outputs.server == 'true' && needs.detect-changes.outputs.is_tag == 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
-        env:
-          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      - run: |
-          IMAGE=images.khorost.tech/sdsandbox-server
-          TAG=${GITHUB_SHA::8}
-          docker build -f apps/server/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest apps/server
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:latest
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Build & push
+        run: |
+          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-server
+          VERSION=${{ needs.detect-changes.outputs.version }}
+          docker build -f apps/server/Dockerfile \
+            -t $IMAGE:$VERSION \
+            -t $IMAGE:${GITHUB_SHA::8} \
+            apps/server
+          docker push $IMAGE:$VERSION
+          docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy
         if: success()
         run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER }}"
 
-  # ── Beta: feature/** → beta.sdsandbox.ru ──
+  # ── Beta: develop → beta.sdsandbox.ru ──
 
   build-web-beta:
     needs: [detect-changes, lint]
-    if: needs.detect-changes.outputs.web == 'true' && needs.detect-changes.outputs.is_main != 'true'
+    if: needs.detect-changes.outputs.web == 'true' && needs.detect-changes.outputs.is_tag != 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
-        env:
-          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      - run: |
-          IMAGE=images.khorost.tech/sdsandbox-web-beta
-          TAG=${GITHUB_SHA::8}
-          docker build -f apps/web/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest .
-          docker push $IMAGE:$TAG
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Build & push
+        run: |
+          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-web
+          docker build -f apps/web/Dockerfile \
+            -t $IMAGE:latest \
+            -t $IMAGE:${GITHUB_SHA::8} \
+            .
           docker push $IMAGE:latest
+          docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy to beta
         if: success()
         run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB_BETA }}"
 
   build-server-beta:
     needs: detect-changes
-    if: needs.detect-changes.outputs.server == 'true' && needs.detect-changes.outputs.is_main != 'true'
+    if: needs.detect-changes.outputs.server == 'true' && needs.detect-changes.outputs.is_tag != 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          docker login images.khorost.tech -u "$USERNAME" -p "$PASSWORD"
-        env:
-          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      - run: |
-          IMAGE=images.khorost.tech/sdsandbox-server-beta
-          TAG=${GITHUB_SHA::8}
-          docker build -f apps/server/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest apps/server
-          docker push $IMAGE:$TAG
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Build & push
+        run: |
+          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-server
+          docker build -f apps/server/Dockerfile \
+            -t $IMAGE:latest \
+            -t $IMAGE:${GITHUB_SHA::8} \
+            apps/server
           docker push $IMAGE:latest
+          docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy to beta
         if: success()
         run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER_BETA }}"
