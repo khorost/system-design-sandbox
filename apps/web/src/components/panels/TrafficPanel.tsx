@@ -47,7 +47,7 @@ function TagTable({ title, tags }: { title: string; tags: Record<string, TagTraf
             <span className={`font-medium ${getTagColor(tag)}`}>{tag}</span>
             <div className="flex gap-4">
               <span className="text-slate-300 font-mono w-16 text-right">{formatRps(traffic.rps)}/s</span>
-              <span className="text-slate-500 font-mono w-20 text-right">{formatBytes(traffic.bytesPerSec)}</span>
+              <span className="text-slate-400 font-mono w-20 text-right">{formatBytes(traffic.bytesPerSec)}</span>
             </div>
           </div>
         ))}
@@ -91,7 +91,7 @@ function EdgeTraffic({ edgeId, traffic }: { edgeId: string; traffic: EdgeTagTraf
   return (
     <div>
       <h4 className="text-sm font-bold text-slate-200 mb-3">
-        {srcLabel} <span className="text-slate-500 mx-1">&rarr;</span> {tgtLabel}
+        {srcLabel} <span className="text-slate-400 mx-1">&rarr;</span> {tgtLabel}
       </h4>
       <TagTable title="Forward Traffic" tags={traffic.forward} />
       <TagTable title="Response Traffic" tags={traffic.response} />
@@ -110,7 +110,7 @@ export function TrafficPanel() {
     return (
       <div className="p-4">
         <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Traffic</h3>
-        <p className="text-sm text-slate-500">Start simulation to see per-tag traffic stats.</p>
+        <p className="text-sm text-slate-400">Start simulation to see per-tag traffic stats.</p>
       </div>
     );
   }
@@ -121,7 +121,7 @@ export function TrafficPanel() {
       return (
         <div className="p-4">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Traffic</h3>
-          <p className="text-sm text-slate-500">No traffic data for this edge yet.</p>
+          <p className="text-sm text-slate-400">No traffic data for this edge yet.</p>
         </div>
       );
     }
@@ -139,7 +139,7 @@ export function TrafficPanel() {
       return (
         <div className="p-4">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Traffic</h3>
-          <p className="text-sm text-slate-500">No traffic data for this node yet.</p>
+          <p className="text-sm text-slate-400">No traffic data for this node yet.</p>
         </div>
       );
     }
@@ -154,7 +154,7 @@ export function TrafficPanel() {
   return (
     <div className="p-4">
       <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Traffic</h3>
-      <p className="text-sm text-slate-500">Select a node or edge to see per-tag traffic breakdown.</p>
+      <p className="text-sm text-slate-400">Select a node or edge to see per-tag traffic breakdown.</p>
     </div>
   );
 }

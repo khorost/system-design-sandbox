@@ -119,7 +119,7 @@ export function FlowEdge(props: EdgeProps) {
   const hasTrafficData = throughput > 0;
   const trafficLine = hasTrafficData
     ? <>{Math.round(throughput)} rps &middot; {formatBytes(totalBytesPerSec)}</>
-    : <span className="text-slate-500">&mdash; rps &middot; &mdash; KB/s</span>;
+    : <span className="text-slate-400">&mdash; rps &middot; &mdash; KB/s</span>;
 
   let labelContent: React.ReactNode = null;
   if (showLabel) {

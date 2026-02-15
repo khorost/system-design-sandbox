@@ -7,9 +7,11 @@ interface NumberInputProps {
   max?: number;
   step?: number;
   className?: string;
+  id?: string;
+  'aria-label'?: string;
 }
 
-export function NumberInput({ value, onChange, min, max, step, className }: NumberInputProps) {
+export function NumberInput({ value, onChange, min, max, step, className, id, 'aria-label': ariaLabel }: NumberInputProps) {
   const [localValue, setLocalValue] = useState<string>(String(value));
   const [touched, setTouched] = useState(false);
 
@@ -63,6 +65,8 @@ export function NumberInput({ value, onChange, min, max, step, className }: Numb
       min={min}
       max={max}
       step={step}
+      id={id}
+      aria-label={ariaLabel}
       title={rangeTitle}
       className={`${className ?? ''}${isOutOfRange ? ' border-red-500' : ''}`}
     />

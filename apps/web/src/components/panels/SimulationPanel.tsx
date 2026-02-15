@@ -46,7 +46,7 @@ export function SimulationPanel() {
           Traffic Sources
         </label>
         {clientNodes.length === 0 ? (
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Add client nodes to canvas to generate traffic
           </p>
         ) : (
@@ -73,16 +73,17 @@ export function SimulationPanel() {
             </div>
           </div>
         )}
-        <p className="text-[11px] text-slate-500 mt-1.5">
+        <p className="text-[11px] text-slate-400 mt-1.5">
           Configure RPS per client in Properties
         </p>
       </div>
 
       <div>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label htmlFor="sim-load-type" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
           Load Type
         </label>
         <select
+          id="sim-load-type"
           value={loadType}
           onChange={(e) => setLoadType(e.target.value as 'constant' | 'ramp' | 'spike')}
           className="w-full mt-1 px-3 py-2 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
@@ -130,7 +131,7 @@ export function SimulationPanel() {
       )}
 
       {currentMetrics && (
-        <div className="space-y-2 pt-3 border-t border-[var(--color-border)]">
+        <div aria-live="polite" className="space-y-2 pt-3 border-t border-[var(--color-border)]">
           <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Metrics</h4>
           <div className="grid grid-cols-2 gap-2">
             <MetricCard label="P50" value={`${currentMetrics.latencyP50.toFixed(1)}ms`} />
@@ -148,7 +149,7 @@ export function SimulationPanel() {
 function MetricCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="bg-[var(--color-bg)] rounded px-3 py-2">
-      <div className="text-[11px] text-slate-500 uppercase">{label}</div>
+      <div className="text-[11px] text-slate-400 uppercase">{label}</div>
       <div className={`text-sm font-mono font-semibold ${color || 'text-slate-200'}`}>{value}</div>
     </div>
   );

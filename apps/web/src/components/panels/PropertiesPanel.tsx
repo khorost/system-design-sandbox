@@ -155,8 +155,9 @@ function EdgeProperties() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Protocol</label>
+          <label htmlFor={`edge-${edge.id}-protocol`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Protocol</label>
           <select
+            id={`edge-${edge.id}-protocol`}
             value={effectiveProtocol}
             onChange={(e) => updateEdgeData(edge.id, { protocol: e.target.value as ProtocolType })}
             className={inputClass}
@@ -168,8 +169,9 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
+          <label htmlFor={`edge-${edge.id}-latency`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
           <NumberInput
+            id={`edge-${edge.id}-latency`}
             value={data?.latencyMs ?? 1}
             onChange={(n) => updateEdgeData(edge.id, { latencyMs: n })}
             min={0}
@@ -189,8 +191,9 @@ function EdgeProperties() {
         })()}
 
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
+          <label htmlFor={`edge-${edge.id}-bandwidth`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
           <NumberInput
+            id={`edge-${edge.id}-bandwidth`}
             value={data?.bandwidthMbps ?? 1000}
             onChange={(n) => updateEdgeData(edge.id, { bandwidthMbps: n })}
             min={1}
@@ -200,8 +203,9 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeout (ms)</label>
+          <label htmlFor={`edge-${edge.id}-timeout`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeout (ms)</label>
           <NumberInput
+            id={`edge-${edge.id}-timeout`}
             value={data?.timeoutMs ?? 5000}
             onChange={(n) => updateEdgeData(edge.id, { timeoutMs: n })}
             min={100}
@@ -271,7 +275,7 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
         </button>
       </div>
       {rules.length === 0 ? (
-        <p className="text-xs text-slate-500">No rules — equal distribution</p>
+        <p className="text-xs text-slate-400">No rules — equal distribution</p>
       ) : (
         <div className="space-y-2">
           {rules.map((rule, idx) => (
@@ -279,28 +283,33 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  id={`edge-${edgeId}-rule-${idx}-tag`}
                   value={rule.tag}
                   placeholder="tag"
+                  aria-label={`Rule ${idx + 1} tag`}
                   onChange={(e) => updateRule(idx, 'tag', e.target.value)}
                   className="flex-1 min-w-0 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
                 />
                 <input
                   type="number"
+                  id={`edge-${edgeId}-rule-${idx}-weight`}
                   min={0}
                   step={0.1}
                   value={rule.weight}
+                  aria-label={`Rule ${idx + 1} weight`}
                   onChange={(e) => updateRule(idx, 'weight', Number(e.target.value))}
                   className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
                 />
                 <button
                   onClick={() => removeRule(idx)}
+                  aria-label={`Remove rule ${idx + 1}`}
                   className="text-red-400 hover:text-red-300 text-xs px-1"
                 >
                   x
                 </button>
               </div>
               <div className="flex items-center gap-1 pl-1">
-                <span className="text-[10px] text-slate-500">→</span>
+                <span className="text-[10px] text-slate-400">→</span>
                 <input
                   type="text"
                   value={rule.outTag ?? ''}
@@ -332,7 +341,7 @@ function NodeLink({ node, onClick }: { node: { data: { icon: string; label: stri
     <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
       <span>{node.data.icon}</span>
       <span className="flex-1 text-left truncate">{node.data.label}</span>
-      <span className="text-slate-500">&rarr;</span>
+      <span className="text-slate-400">&rarr;</span>
     </button>
   );
 }
@@ -382,9 +391,10 @@ function NodeProperties() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+          <label htmlFor={`node-${selectedNode.id}-name`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
           <input
             type="text"
+            id={`node-${selectedNode.id}-name`}
             value={(config.name as string) || selectedNode.data.label}
             onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
             maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
@@ -402,27 +412,31 @@ function NodeProperties() {
                 <div className="flex items-center gap-1.5">
                   <input
                     type="color"
+                    id={`node-${selectedNode.id}-borderColor`}
                     value={(config.color as string) || defaultColor}
                     onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
                     title="Border color"
+                    aria-label="Border color"
                     className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
                   />
-                  <span className="text-[10px] text-slate-500">Border</span>
+                  <span className="text-[10px] text-slate-400">Border</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="color"
+                    id={`node-${selectedNode.id}-textColor`}
                     value={(config.textColor as string) || defaultTextColor}
                     onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
                     title="Text color"
+                    aria-label="Text color"
                     className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
                   />
-                  <span className="text-[10px] text-slate-500">Text</span>
+                  <span className="text-[10px] text-slate-400">Text</span>
                 </div>
                 {(config.color != null || config.textColor != null) && (
                   <button
                     onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
-                    className="ml-auto text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                    className="ml-auto text-xs text-slate-400 hover:text-slate-300 transition-colors"
                   >
                     Reset
                   </button>
@@ -434,11 +448,12 @@ function NodeProperties() {
 
         {params.map((param) => (
           <div key={param.key}>
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               {param.label}
             </label>
             {param.type === 'select' ? (
               <select
+                id={`node-${selectedNode.id}-param-${param.key}`}
                 value={(configVal(param.key) as string) || param.options?.[0] || ''}
                 onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
                 className={inputClass}
@@ -449,6 +464,7 @@ function NodeProperties() {
               </select>
             ) : param.type === 'number' ? (
               <NumberInput
+                id={`node-${selectedNode.id}-param-${param.key}`}
                 value={(configVal(param.key) as number) ?? 0}
                 onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
                 min={param.min}
@@ -459,6 +475,7 @@ function NodeProperties() {
             ) : (
               <input
                 type={param.type}
+                id={`node-${selectedNode.id}-param-${param.key}`}
                 value={(configVal(param.key) as string) ?? ''}
                 onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
                 maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
@@ -498,13 +515,14 @@ function NodeProperties() {
           const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
           return validParents.length > 0 ? (
             <div>
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
+              <label htmlFor={`node-${selectedNode.id}-parent`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
               {parentNode && (
                 <div className="mt-1 mb-1 rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
                   <NodeLink node={parentNode} onClick={() => focusNode(parentNode.id)} />
                 </div>
               )}
               <select
+                id={`node-${selectedNode.id}-parent`}
                 value={selectedNode.parentId ?? ''}
                 onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
                 className={inputClass}
@@ -539,7 +557,7 @@ function NodeProperties() {
         )}
 
         {params.length === 0 && (
-          <p className="text-sm text-slate-500">No configurable parameters for this component type.</p>
+          <p className="text-sm text-slate-400">No configurable parameters for this component type.</p>
         )}
       </div>
 
@@ -596,7 +614,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
         </button>
       </div>
       {tags.length === 0 ? (
-        <p className="text-xs text-slate-500">All traffic tagged as 'default'</p>
+        <p className="text-xs text-slate-400">All traffic tagged as 'default'</p>
       ) : (
         <div className="space-y-2">
           {tags.map((entry, idx) => {
@@ -605,22 +623,27 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
               <div key={idx} className="flex items-center gap-2">
                 <input
                   type="text"
+                  id={`node-${nodeId}-dist-tag-${idx}`}
                   value={entry.tag}
                   placeholder="tag"
+                  aria-label={`Tag ${idx + 1} name`}
                   onChange={(e) => updateTag(idx, 'tag', e.target.value)}
                   className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
                 />
                 <input
                   type="number"
+                  id={`node-${nodeId}-dist-weight-${idx}`}
                   min={0}
                   step={0.1}
                   value={entry.weight}
+                  aria-label={`Tag ${idx + 1} weight`}
                   onChange={(e) => updateTag(idx, 'weight', Number(e.target.value))}
                   className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
                 />
                 <span className="text-xs text-slate-400 w-10 text-right">{pct}%</span>
                 <button
                   onClick={() => removeTag(idx)}
+                  aria-label={`Remove tag ${idx + 1}`}
                   className="text-red-400 hover:text-red-300 text-xs px-1"
                 >
                   x
@@ -633,8 +656,10 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
       <div className="flex items-center gap-2 mt-2">
         <input
           type="text"
+          id={`node-${nodeId}-dist-new-tag`}
           value={newTag}
           placeholder="new tag name"
+          aria-label="New tag name"
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTag()}
           className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
@@ -658,7 +683,7 @@ export function PropertiesPanel() {
 
   return (
     <div className="flex-1 flex items-center justify-center p-4">
-      <p className="text-sm text-slate-500 text-center">Select a component or connection on the canvas to edit its properties</p>
+      <p className="text-sm text-slate-400 text-center">Select a component or connection on the canvas to edit its properties</p>
     </div>
   );
 }

@@ -31,7 +31,7 @@ export function CostPanel() {
     return (
       <div className="p-4">
         <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Cost Estimation</h3>
-        <p className="text-sm text-slate-500">Add components to see cost estimates.</p>
+        <p className="text-sm text-slate-400">Add components to see cost estimates.</p>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function CostPanel() {
       <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Cost Estimation</h3>
 
       <div className="bg-[var(--color-bg)] rounded-lg p-4 text-center">
-        <div className="text-xs text-slate-500 uppercase">Monthly Total</div>
+        <div className="text-xs text-slate-400 uppercase">Monthly Total</div>
         <div className="text-2xl font-bold text-slate-100 font-mono">
           ${totalMonthlyCost.toLocaleString('en-US', { minimumFractionDigits: 2 })}
         </div>

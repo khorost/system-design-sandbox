@@ -252,7 +252,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
               if (row.kind === 'subtotal') {
                 return (
                   <tr key={`sub-${row.containerId}`} className="bg-white/[0.02]">
-                    <td className={`${cellBase} text-xs text-slate-500 italic`} colSpan={9} style={{ paddingLeft: 20 + row.depth * 20 }}>
+                    <td className={`${cellBase} text-xs text-slate-400 italic`} colSpan={9} style={{ paddingLeft: 20 + row.depth * 20 }}>
                       Subtotal: {row.containerName} ({row.childCount} item{row.childCount !== 1 ? 's' : ''})
                     </td>
                     <td className={`${numericCell} font-mono text-xs font-semibold text-slate-400`}>
@@ -280,7 +280,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
                       {isContainer && hasChildren && (
                         <button
                           onClick={() => toggleCollapse(node.id)}
-                          className="text-xs text-slate-500 hover:text-slate-300 w-4 flex-shrink-0"
+                          className="text-xs text-slate-400 hover:text-slate-300 w-4 flex-shrink-0"
                         >
                           {isCollapsed ? '\u25B6' : '\u25BC'}
                         </button>
@@ -310,7 +310,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
                   </td>
 
                   {/* Parent */}
-                  <td className={`${cellBase} text-slate-500 text-xs`}>
+                  <td className={`${cellBase} text-slate-400 text-xs`}>
                     {parentNode ? getNodeName(parentNode) : '—'}
                   </td>
 
@@ -362,7 +362,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
                   </td>
 
                   {/* Connections count */}
-                  <td className={`${numericCell} text-slate-500`}>{conns || '—'}</td>
+                  <td className={`${numericCell} text-slate-400`}>{conns || '—'}</td>
 
                   {/* Cost — show subtotal when container is collapsed */}
                   {isContainer && hasChildren && isCollapsed ? (
@@ -406,7 +406,7 @@ export function InventoryTable({ onNavigateToNode }: InventoryTableProps) {
       </div>
       {nodes.length === 0 && (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-slate-500">No components on canvas. Add components from the palette first.</p>
+          <p className="text-sm text-slate-400">No components on canvas. Add components from the palette first.</p>
         </div>
       )}
     </div>

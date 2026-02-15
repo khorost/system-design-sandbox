@@ -32,10 +32,10 @@ function DebugStatsPanel() {
 
   return (
     <div className="absolute bottom-2 left-2 z-50 bg-black/80 backdrop-blur-sm border border-slate-600/50 rounded-lg px-3 py-2 text-xs font-mono text-slate-300 select-none pointer-events-none min-w-[190px]">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Engine Debug [*]</div>
+      <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Engine Debug [*]</div>
 
       <Row label="Graph" value={`${nodes.length} nodes / ${edges.length} edges`} />
-      <Row label="Sim" value={isRunning ? 'RUNNING' : 'STOPPED'} valueClass={isRunning ? 'text-green-400' : 'text-slate-500'} />
+      <Row label="Sim" value={isRunning ? 'RUNNING' : 'STOPPED'} valueClass={isRunning ? 'text-green-400' : 'text-slate-400'} />
 
       {stats && (
         <>
@@ -56,7 +56,7 @@ function DebugStatsPanel() {
 function Row({ label, value, valueClass }: { label: string; value: string | number; valueClass?: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-400">{label}</span>
       <span className={valueClass}>{value}</span>
     </div>
   );

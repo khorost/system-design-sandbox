@@ -19,7 +19,7 @@ export function ToastContainer() {
   const removeToast = useToastStore((s) => s.removeToast);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div aria-live="polite" role="status" className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
       <AnimatePresence>
         {toasts.map((toast) => (
           <motion.div
@@ -45,7 +45,8 @@ export function ToastContainer() {
             </span>
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-slate-500 hover:text-slate-300 shrink-0 leading-5"
+              aria-label="Close notification"
+              className="text-slate-400 hover:text-slate-300 shrink-0 leading-5"
             >
               &times;
             </button>

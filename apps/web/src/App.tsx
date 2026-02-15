@@ -54,7 +54,7 @@ function RightPanel() {
               className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
                 activeTopTab === tab
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-slate-500 hover:text-slate-300'
+                  : 'text-slate-400 hover:text-slate-300'
               }`}
             >
               {tab}
@@ -79,7 +79,7 @@ function RightPanel() {
               className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
                 activeBottomTab === tab
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-slate-500 hover:text-slate-300'
+                  : 'text-slate-400 hover:text-slate-300'
               }`}
             >
               {tab}
@@ -135,7 +135,7 @@ export default function App() {
             className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
               viewMode === 'canvas'
                 ? 'bg-blue-500/20 text-blue-400'
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-400 hover:text-slate-300'
             }`}
           >
             Designer
@@ -145,13 +145,13 @@ export default function App() {
             className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
               viewMode === 'table'
                 ? 'bg-blue-500/20 text-blue-400'
-                : 'text-slate-500 hover:text-slate-300'
+                : 'text-slate-400 hover:text-slate-300'
             }`}
           >
             Inventory
           </button>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+        <div className="flex items-center gap-2 text-[10px] text-slate-400">
           <span>v0.1.0</span>
           <span>&middot;</span>
           <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>

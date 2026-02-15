@@ -41,11 +41,11 @@ function MenuItem({ onClick, icon, children, hint, variant = 'default' }: {
     ? 'w-full px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded transition-colors flex items-center gap-2.5 whitespace-nowrap'
     : 'w-full px-3 py-2 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors flex items-center gap-2.5 whitespace-nowrap';
   return (
-    <button onClick={onClick} className={cls}>
+    <button onClick={onClick} className={cls} role="menuitem">
       {icon}
       <span className="flex flex-col items-start">
         <span>{children}</span>
-        {hint && <span className="text-[10px] leading-tight text-slate-500">{hint}</span>}
+        {hint && <span className="text-[10px] leading-tight text-slate-400">{hint}</span>}
       </span>
     </button>
   );
@@ -81,12 +81,15 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-label="File menu"
+        aria-haspopup="true"
+        aria-expanded={open}
         className="px-2 py-1 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1"
       >
         File {IconChevron}
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 min-w-[180px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-1.5 shadow-lg z-50">
+        <div role="menu" className="absolute top-full left-0 mt-1 min-w-[180px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-1.5 shadow-lg z-50">
           {items.map((group, gi) => (
             <div key={gi}>
               {gi > 0 && <MenuDivider />}
@@ -225,6 +228,7 @@ export function Toolbar() {
         onClick={undo}
         disabled={!canUndo}
         title="Undo (Ctrl+Z)"
+        aria-label="Undo (Ctrl+Z)"
         className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
         {IconUndo}
@@ -233,6 +237,7 @@ export function Toolbar() {
         onClick={redo}
         disabled={!canRedo}
         title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo (Ctrl+Shift+Z)"
         className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
         {IconRedo}

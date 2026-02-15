@@ -164,7 +164,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
             ))}
           </div>
         )}
-        <div className="text-[10px] text-slate-500 mt-1">{data.componentType}</div>
+        <div className="text-[10px] text-slate-400 mt-1">{data.componentType}</div>
       </div>
       {/* Source (output) — diamond, amber */}
       <Handle

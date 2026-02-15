@@ -33,7 +33,7 @@ export function MetricsPanel() {
     return (
       <div className="p-4">
         <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">Metrics</h3>
-        <p className="text-sm text-slate-500">Start simulation to see real-time metrics.</p>
+        <p className="text-sm text-slate-400">Start simulation to see real-time metrics.</p>
       </div>
     );
   }
@@ -61,11 +61,11 @@ export function MetricsPanel() {
     `px-2 py-0.5 text-[11px] rounded transition-colors ${
       active
         ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
-        : 'text-slate-500 hover:text-slate-300 border border-transparent'
+        : 'text-slate-400 hover:text-slate-300 border border-transparent'
     }`;
 
   return (
-    <div className="p-4 space-y-4 overflow-hidden">
+    <div aria-live="polite" className="p-4 space-y-4 overflow-hidden">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Metrics</h3>
         <div className="flex gap-1">
@@ -77,7 +77,7 @@ export function MetricsPanel() {
         </div>
       </div>
 
-      <div>
+      <div role="img" aria-label="Latency chart showing P50, P95, and P99 percentiles">
         <h4 className="text-xs text-slate-400 uppercase mb-1">Latency (ms)</h4>
         <div className="h-36 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -93,7 +93,7 @@ export function MetricsPanel() {
         </div>
       </div>
 
-      <div>
+      <div role="img" aria-label="Throughput chart showing requests per second">
         <h4 className="text-xs text-slate-400 uppercase mb-1">Throughput (rps)</h4>
         <div className="h-36 w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -107,7 +107,7 @@ export function MetricsPanel() {
         </div>
       </div>
 
-      <div>
+      <div role="img" aria-label="Error rate chart showing percentage of failed requests">
         <h4 className="text-xs text-slate-400 uppercase mb-1">Error Rate (%)</h4>
         <div className="h-36 w-full">
           <ResponsiveContainer width="100%" height="100%">
