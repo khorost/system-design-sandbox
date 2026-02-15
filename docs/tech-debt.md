@@ -1872,3 +1872,25 @@ Auto-save в `canvasStore` записывает в localStorage без try-catch
 - [ ] Blueprint-тема: сетка из тонких линий на фоне канваса (CSS background-image или React Flow background), моноширинный шрифт для узлов
 - [ ] Проверить WCAG AA контраст для всех трёх тем
 - [ ] Обновить Recharts-графики (MetricsPanel) — оси, тултипы, цвета линий через CSS-переменные
+
+## TD-026: Ограничение регистрации — промокоды и верификация email
+
+**Приоритет:** High
+**Компоненты:** apps/server, apps/web
+
+### Описание
+
+Для контроля доступа к платформе на начальном этапе нужна система ограничения регистрации новых пользователей. Регистрация возможна только по промокоду, а учётная запись активируется после подтверждения email.
+
+### Задачи
+
+- [ ] Модель `promo_codes` в БД: `code` (unique), `max_uses`, `current_uses`, `expires_at`, `created_by`, `is_active`
+- [ ] API: `POST /api/v1/auth/register` — принимает `email`, `name`, `promo_code`; валидирует промокод, создаёт пользователя со статусом `pending_verification`
+- [ ] Отправка email с кодом/ссылкой подтверждения (интеграция с SMTP или transactional email сервисом)
+- [ ] API: `GET /api/v1/auth/verify-email?token=...` — активирует учётную запись
+- [ ] Поле `status` в таблице `users`: `pending_verification`, `active`, `disabled`
+- [ ] Middleware: запрещать доступ к API для `pending_verification` и `disabled` пользователей
+- [ ] Admin API для управления промокодами: создание, деактивация, просмотр статистики использования
+- [ ] UI: форма регистрации с полем промокода, экран подтверждения email
+- [ ] Миграция БД: добавить `status` в `users`, создать таблицу `promo_codes`, таблицу `email_verifications`
+- [ ] Rate limiting на эндпоинты регистрации и верификации
