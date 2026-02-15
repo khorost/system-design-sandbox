@@ -152,7 +152,7 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-center gap-2 text-[10px] text-slate-400">
-          <span>v0.1.0</span>
+          <span>v0.2.0</span>
           <span>&middot;</span>
           <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
         </div>
