@@ -132,3 +132,7 @@ pnpm lint               # Линтинг
 | 2. Симуляция нагрузки | ✅ | DES-движок, метрики, графики, what-if, теги |
 | 3. Chaos Engineering | ⏳ | Kill instance/zone, network partition, latency injection |
 | 4. Сценарии и геймификация | ⏳ | 15+ уроков, шаблоны, health score, leaderboard |
+
+## Лицензия
+
+Проект распространяется под лицензией [MIT](LICENSE). Подробности — в файле `LICENSE`.
