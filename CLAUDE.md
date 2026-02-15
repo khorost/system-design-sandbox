@@ -57,14 +57,15 @@ pnpm preview    # Превью продакшн-сборки
 
 ## Git-flow
 
-- **`develop`** — основная ветка разработки. PR мержатся сюда. Push триггерит beta-деплой (`beta.sdsandbox.ru`).
-- **`main`** — protected branch (запрещён force-push и удаление). Релизы через теги `v*` на main триггерят prod-деплой.
+- **`develop`** — основная ветка разработки. PR мержатся сюда. Push триггерит beta-деплой (`:latest` → `beta.sdsandbox.ru`).
+- **`main`** — protected branch (запрещён force-push и удаление). Push триггерит prod-деплой (`:stable` → `sdsandbox.ru`).
+- **Теги `v*`** — создаются на `main` для фиксации версий. Собирают образ с тегом `:version`, но деплой не запускают.
 - **Feature-ветки** — создаются от `develop`, мержатся обратно в `develop` через PR.
 
 ## Домен
 
-- Продакшн: `sdsandbox.ru` (теги `v*` на `main`)
-- Beta: `beta.sdsandbox.ru` (push в `develop`)
+- Продакшн: `sdsandbox.ru` (push в `main`, образ `:stable`)
+- Beta: `beta.sdsandbox.ru` (push в `develop`, образ `:latest`)
 
 ## Серверная часть (Go)
 
