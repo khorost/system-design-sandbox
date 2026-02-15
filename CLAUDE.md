@@ -57,7 +57,7 @@ pnpm preview    # Превью продакшн-сборки
 
 ## Git-flow
 
-- **`develop`** — default branch, основная ветка разработки. PR мержатся сюда. Push триггерит beta-деплой (`beta.sdsandbox.ru`).
+- **`develop`** — основная ветка разработки. PR мержатся сюда. Push триггерит beta-деплой (`beta.sdsandbox.ru`).
 - **`main`** — protected branch (запрещён force-push и удаление). Релизы через теги `v*` на main триггерят prod-деплой.
 - **Feature-ветки** — создаются от `develop`, мержатся обратно в `develop` через PR.
 
