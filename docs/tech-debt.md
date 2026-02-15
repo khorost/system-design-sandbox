@@ -1894,3 +1894,43 @@ Auto-save в `canvasStore` записывает в localStorage без try-catch
 - [ ] UI: форма регистрации с полем промокода, экран подтверждения email
 - [ ] Миграция БД: добавить `status` в `users`, создать таблицу `promo_codes`, таблицу `email_verifications`
 - [ ] Rate limiting на эндпоинты регистрации и верификации
+
+## TD-027: HTML-снимки схем для шаринга без JS
+
+**Приоритет:** Medium
+**Компоненты:** apps/server, apps/web
+
+### Описание
+
+Возможность сделать «снимок» текущей архитектурной схемы и получить уникальный URL, по которому схема отображается как чистый HTML+CSS без JavaScript. Подход: клиент отправляет JSON схемы (existующий `exportSchema()`), сервер рендерит статический HTML через Go-шаблон.
+
+### Схема работы
+
+```
+Client: exportSchema() + viewport → POST /api/v1/snapshots
+Server: генерирует HTML+CSS, сохраняет → { url: "/s/{slug}" }
+GET /s/{slug} → чистый HTML+CSS, 0 JS
+```
+
+### Задачи
+
+**Сервер (Go):**
+- [ ] Модель `snapshots` в БД: `id`, `slug` (unique, 8-12 символов), `schema_json` (JSONB), `viewport` (JSONB), `html_cache` (TEXT), `user_id`, `created_at`, `expires_at`
+- [ ] API: `POST /api/v1/snapshots` — принимает JSON схемы + viewport, генерирует slug, рендерит HTML, сохраняет
+- [ ] Go HTML-шаблон: узлы → `<div style="position:absolute">`, контейнеры → вложенные `<div>`, рёбра → `<svg><path>`, иконки — emoji из данных
+- [ ] Обработка вложенности контейнеров (datacenter → rack → docker → services) — рекурсивный рендер
+- [ ] Маршрут `GET /s/{slug}` — отдаёт готовый HTML+CSS
+- [ ] OG-мета-теги в HTML (title, description, preview image) для social sharing
+- [ ] TTL / автоочистка старых снимков
+- [ ] Инвалидация html_cache при обновлении шаблона (версионирование)
+
+**Клиент (React):**
+- [ ] Кнопка «Share» в Toolbar — вызывает `exportSchema()`, отправляет на сервер, показывает URL
+- [ ] Копирование URL в буфер обмена с toast-уведомлением
+- [ ] Опционально: передача viewport (zoom, pan) для точного воспроизведения ракурса
+
+**HTML-рендер:**
+- [ ] CSS: inline-стили для позиционирования, встроенный `<style>` блок для общих классов (цвета узлов, типографика, контейнеры)
+- [ ] Адаптивная обёртка: `overflow: auto` для прокрутки больших схем
+- [ ] Лёгкий footer с ссылкой на sdsandbox.ru для редактирования
+- [ ] Размер HTML-страницы: целевой < 50KB для быстрой загрузки
