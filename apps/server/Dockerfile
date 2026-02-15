@@ -5,7 +5,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /server ./cmd/server
 
-FROM alpine:3.21
+FROM alpine:3.23.3
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /server /server
 COPY --from=builder /app/migrations/ /migrations/
