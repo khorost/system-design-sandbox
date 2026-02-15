@@ -5,10 +5,12 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type Storage struct {
-	Pool *pgxpool.Pool
+	Pool  *pgxpool.Pool
+	Redis redis.UniversalClient
 }
 
 func New(ctx context.Context, databaseURL string) (*Storage, error) {
@@ -26,5 +28,8 @@ func New(ctx context.Context, databaseURL string) (*Storage, error) {
 }
 
 func (s *Storage) Close() {
+	if s.Redis != nil {
+		s.Redis.Close()
+	}
 	s.Pool.Close()
 }

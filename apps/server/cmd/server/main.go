@@ -47,6 +47,13 @@ func main() {
 	}
 	defer store.Close()
 
+	// Connect to Redis (optional)
+	rdb, err := storage.NewRedis(ctx, cfg.Redis)
+	if err != nil {
+		log.Fatalf("failed to connect to redis: %v", err)
+	}
+	store.Redis = rdb
+
 	router := handler.NewRouter(store)
 
 	srv := &http.Server{
