@@ -14,8 +14,7 @@ jobs:
       web: ${{ steps.changes.outputs.web }}
       server: ${{ steps.changes.outputs.server }}
       tag: ${{ steps.meta.outputs.tag }}
-      deploy_web: ${{ steps.meta.outputs.deploy_web }}
-      deploy_server: ${{ steps.meta.outputs.deploy_server }}
+      env_name: ${{ steps.meta.outputs.env_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,22 +42,19 @@ jobs:
 
       - id: meta
         run: |
-          # Определяем Docker-тег и webhook-ы деплоя
-          #   develop → :latest + deploy beta
-          #   main    → :stable + deploy prod
-          #   v*      → :version (no deploy)
+          # Определяем Docker-тег и окружение деплоя
+          #   develop → :latest  + env=beta
+          #   main    → :stable  + env=prod
+          #   v*      → :version + env= (no deploy)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-            echo "deploy_web="                   >> "$GITHUB_OUTPUT"
-            echo "deploy_server="                >> "$GITHUB_OUTPUT"
+            echo "env_name=" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            echo "tag=stable"                    >> "$GITHUB_OUTPUT"
-            echo "deploy_web=DEPLOY_WEBHOOK_WEB" >> "$GITHUB_OUTPUT"
-            echo "deploy_server=DEPLOY_WEBHOOK_SERVER" >> "$GITHUB_OUTPUT"
+            echo "tag=stable" >> "$GITHUB_OUTPUT"
+            echo "env_name=prod" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/heads/develop ]]; then
-            echo "tag=latest"                         >> "$GITHUB_OUTPUT"
-            echo "deploy_web=DEPLOY_WEBHOOK_WEB_BETA" >> "$GITHUB_OUTPUT"
-            echo "deploy_server=DEPLOY_WEBHOOK_SERVER_BETA" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "env_name=beta" >> "$GITHUB_OUTPUT"
           fi
 
   lint:
@@ -93,9 +89,12 @@ jobs:
             .
           docker push $IMAGE:$TAG
           docker push $IMAGE:${GITHUB_SHA::8}
-      - name: Deploy
-        if: needs.detect-changes.outputs.deploy_web != ''
-        run: curl -s -X POST "${{ secrets[needs.detect-changes.outputs.deploy_web] }}"
+      - name: Deploy to prod
+        if: needs.detect-changes.outputs.env_name == 'prod'
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB }}"
+      - name: Deploy to beta
+        if: needs.detect-changes.outputs.env_name == 'beta'
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB_BETA }}"
 
   build-server:
     needs: detect-changes
@@ -115,6 +114,9 @@ jobs:
             apps/server
           docker push $IMAGE:$TAG
           docker push $IMAGE:${GITHUB_SHA::8}
-      - name: Deploy
-        if: needs.detect-changes.outputs.deploy_server != ''
-        run: curl -s -X POST "${{ secrets[needs.detect-changes.outputs.deploy_server] }}"
+      - name: Deploy to prod
+        if: needs.detect-changes.outputs.env_name == 'prod'
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER }}"
+      - name: Deploy to beta
+        if: needs.detect-changes.outputs.env_name == 'beta'
+        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER_BETA }}"
