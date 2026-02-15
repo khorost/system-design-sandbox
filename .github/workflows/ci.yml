@@ -91,10 +91,24 @@ jobs:
           docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy to prod
         if: needs.detect-changes.outputs.env_name == 'prod'
-        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB }}"
+        run: |
+          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-web-live/${{ secrets.UPDATER_KEY }}?async=1")
+          echo "Response: $RESPONSE"
+          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
+          if [ "$SUBMITTED" != "ok" ]; then
+            echo "Updater call failed, submitted=$SUBMITTED"
+            exit 1
+          fi
       - name: Deploy to beta
         if: needs.detect-changes.outputs.env_name == 'beta'
-        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_WEB_BETA }}"
+        run: |
+          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-web-beta/${{ secrets.UPDATER_KEY }}?async=1")
+          echo "Response: $RESPONSE"
+          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
+          if [ "$SUBMITTED" != "ok" ]; then
+            echo "Updater call failed, submitted=$SUBMITTED"
+            exit 1
+          fi
 
   build-server:
     needs: detect-changes
@@ -116,7 +130,21 @@ jobs:
           docker push $IMAGE:${GITHUB_SHA::8}
       - name: Deploy to prod
         if: needs.detect-changes.outputs.env_name == 'prod'
-        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER }}"
+        run: |
+          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-api-live/${{ secrets.UPDATER_KEY }}?async=1")
+          echo "Response: $RESPONSE"
+          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
+          if [ "$SUBMITTED" != "ok" ]; then
+            echo "Updater call failed, submitted=$SUBMITTED"
+            exit 1
+          fi
       - name: Deploy to beta
         if: needs.detect-changes.outputs.env_name == 'beta'
-        run: curl -s -X POST "${{ secrets.DEPLOY_WEBHOOK_SERVER_BETA }}"
+        run: |
+          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-api-beta/${{ secrets.UPDATER_KEY }}?async=1")
+          echo "Response: $RESPONSE"
+          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
+          if [ "$SUBMITTED" != "ok" ]; then
+            echo "Updater call failed, submitted=$SUBMITTED"
+            exit 1
+          fi
