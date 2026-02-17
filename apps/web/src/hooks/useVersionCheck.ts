@@ -52,11 +52,11 @@ export function useVersionCheck() {
     const currentScript = document.querySelector('script[src*="/assets/index-"]');
     if (currentScript) {
       initialScriptRef.current = currentScript.getAttribute('src');
-    } else {
-      checkVersion();
     }
 
+    // First check right away (via setInterval's first tick or an immediate timeout)
     const id = setInterval(checkVersion, CHECK_INTERVAL);
+    const immediateId = setTimeout(checkVersion, 0);
 
     // Dynamic import() failures surface as unhandled rejections
     const onRejection = (e: PromiseRejectionEvent) => {
@@ -78,6 +78,7 @@ export function useVersionCheck() {
     window.addEventListener('error', onResourceError, true);
 
     return () => {
+      clearTimeout(immediateId);
       clearInterval(id);
       window.removeEventListener('unhandledrejection', onRejection);
       window.removeEventListener('error', onResourceError, true);
