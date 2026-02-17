@@ -1,6 +1,6 @@
 {
   "name": "system-design-sandbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Interactive System Design Constructor — visual architecture editor with simulation",
   "scripts": {
