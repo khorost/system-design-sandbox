@@ -9,6 +9,7 @@ import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
 import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
 import { ToastContainer } from './components/ui/ToastContainer.tsx';
+import { useVersionCheck } from './hooks/useVersionCheck.ts';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
 import { useCanvasStore } from './store/canvasStore.ts';
 
@@ -99,6 +100,7 @@ function RightPanel() {
 
 export default function App() {
   useWhatIfMode();
+  const { updateAvailable, reload } = useVersionCheck();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const selectNode = useCanvasStore((s) => s.selectNode);
 
@@ -173,6 +175,14 @@ export default function App() {
       ) : (
         <div className="flex-1 min-h-0 overflow-hidden">
           <InventoryTable onNavigateToNode={handleNavigateToNode} />
+        </div>
+      )}
+      {updateAvailable && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 bg-blue-600 text-white text-sm rounded-lg shadow-lg">
+          <span>New version available</span>
+          <button onClick={reload} className="px-3 py-1 bg-white/20 rounded hover:bg-white/30 font-medium transition-colors">
+            Refresh
+          </button>
         </div>
       )}
       <ToastContainer />
