@@ -1,13 +1,7 @@
 import { type DragEvent,useState } from 'react';
 
-import { CONTAINER_COLORS,NODE_TYPE_COLORS } from '../../../constants/colors.ts';
 import type { ComponentCategory } from '../../../types/index.ts';
-import { NODE_TYPE_MAP } from '../../../types/index.ts';
 import { paletteCategories, type PaletteItem,paletteItems } from './paletteData.ts';
-
-function getItemColor(type: string): string {
-  return CONTAINER_COLORS[type] ?? NODE_TYPE_COLORS[NODE_TYPE_MAP[type] ?? ''] ?? '#475569';
-}
 
 export function ComponentPalette() {
   const [expandedCategory, setExpandedCategory] = useState<ComponentCategory | null>('infrastructure');
@@ -83,21 +77,17 @@ export function ComponentPalette() {
               </button>
               {isExpanded && (
                 <div id={`palette-cat-${cat.key}`} role="region" className="px-2 pb-2 space-y-1">
-                  {items.map((item) => {
-                    const color = getItemColor(item.type);
-                    return (
+                  {items.map((item) => (
                       <div
                         key={item.type}
                         draggable
                         onDragStart={(e) => onDragStart(e, item)}
                         className="flex items-center gap-2 px-3 py-2 rounded-md cursor-grab active:cursor-grabbing hover:bg-[var(--color-surface-hover)] transition-colors border border-transparent hover:border-[var(--color-border)]"
-                        style={{ borderLeftColor: color, borderLeftWidth: 2, borderLeftStyle: 'solid' }}
                       >
                         <span className="text-lg">{item.icon}</span>
                         <span className="text-sm text-slate-300">{item.label}</span>
                       </div>
-                    );
-                  })}
+                  ))}
                 </div>
               )}
             </div>
