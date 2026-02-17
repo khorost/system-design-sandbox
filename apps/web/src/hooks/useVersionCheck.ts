@@ -2,9 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
+// Vite throws TypeError with these messages when a dynamic import chunk is gone
+const CHUNK_ERROR_RE = /failed to fetch dynamically imported module|error loading dynamically imported module|loading chunk|load module script/i;
+
+function isChunkLoadError(error: unknown): boolean {
+  if (error instanceof TypeError && CHUNK_ERROR_RE.test(error.message)) return true;
+  if (error instanceof Error && error.name === 'ChunkLoadError') return true;
+  return false;
+}
+
 /**
- * Periodically fetches /index.html and compares the hashed script src
- * with the one loaded at startup. If they differ, a new deploy happened.
+ * 1. Periodically fetches /index.html and compares the hashed script src
+ *    with the one loaded at startup. If they differ — a new deploy happened.
+ * 2. Listens for chunk/asset load failures (dynamic import 404, CSS/JS load errors)
+ *    which indicate the running version's assets were removed from the server.
  */
 export function useVersionCheck() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -42,12 +53,35 @@ export function useVersionCheck() {
     if (currentScript) {
       initialScriptRef.current = currentScript.getAttribute('src');
     } else {
-      // Fallback: fetch and parse
       checkVersion();
     }
 
     const id = setInterval(checkVersion, CHECK_INTERVAL);
-    return () => clearInterval(id);
+
+    // Dynamic import() failures surface as unhandled rejections
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if (isChunkLoadError(e.reason)) {
+        setUpdateAvailable(true);
+      }
+    };
+
+    // <script> / <link> load failures surface as error events on the element
+    const onResourceError = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'SCRIPT' || target.tagName === 'LINK') {
+        setUpdateAvailable(true);
+      }
+    };
+
+    window.addEventListener('unhandledrejection', onRejection);
+    // capture: true — resource error events don't bubble, only capturable
+    window.addEventListener('error', onResourceError, true);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('unhandledrejection', onRejection);
+      window.removeEventListener('error', onResourceError, true);
+    };
   }, [checkVersion]);
 
   const reload = useCallback(() => {
