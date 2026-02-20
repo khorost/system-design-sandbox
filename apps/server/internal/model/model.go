@@ -8,9 +8,31 @@ import (
 )
 
 type User struct {
+	ID              pgtype.UUID        `json:"id"`
+	Email           string             `json:"email"`
+	Name            string             `json:"name"`
+	Status          string             `json:"status"`
+	DisplayName     *string            `json:"display_name,omitempty"`
+	GravatarAllowed bool               `json:"gravatar_allowed"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type SessionLogEntry struct {
 	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	SessionID string             `json:"session_id"`
+	Action    string             `json:"action"`
+	IP        string             `json:"ip,omitempty"`
+	UserAgent string             `json:"user_agent,omitempty"`
+	Geo       string             `json:"geo,omitempty"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type PromoCode struct {
+	Code      string             `json:"code"`
+	MaxUses   *int               `json:"max_uses,omitempty"`
+	UsedCount int                `json:"used_count"`
+	ExpiresAt *time.Time         `json:"expires_at,omitempty"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 

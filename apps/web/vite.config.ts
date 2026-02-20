@@ -9,4 +9,10 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(rootPkg.version),
   },
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8080',
+      '/auth': 'http://localhost:8080',
+    },
+  },
 })

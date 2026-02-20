@@ -5,12 +5,31 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
 	DatabaseURL string
 	ServerPort  string
 	Redis       RedisConfig
+	JWT         JWTConfig
+	SMTP        SMTPConfig
+	PublicURL   string
+}
+
+type JWTConfig struct {
+	Secret        string
+	AccessExpiry  time.Duration
+	RefreshExpiry time.Duration
+}
+
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	TLS      string // "none", "starttls", "tls"
+	From     string
 }
 
 type RedisConfig struct {
@@ -59,9 +78,52 @@ func Load() (*Config, error) {
 		sentinelURLs = strings.Split(v, ",")
 	}
 
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET environment variable is required")
+	}
+
+	accessExpiry := 5 * time.Minute
+	if v := os.Getenv("JWT_ACCESS_EXPIRY"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("JWT_ACCESS_EXPIRY must be a valid duration: %w", err)
+		}
+		accessExpiry = d
+	}
+
+	refreshExpiry := 7 * 24 * time.Hour
+	if v := os.Getenv("JWT_REFRESH_EXPIRY"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("JWT_REFRESH_EXPIRY must be a valid duration: %w", err)
+		}
+		refreshExpiry = d
+	}
+
+	publicURL := os.Getenv("PUBLIC_URL")
+	if publicURL == "" {
+		return nil, fmt.Errorf("PUBLIC_URL environment variable is required")
+	}
+
+	smtpPort := 587
+	if v := os.Getenv("SMTP_PORT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("SMTP_PORT must be an integer: %w", err)
+		}
+		smtpPort = n
+	}
+
+	smtpTLS := os.Getenv("SMTP_TLS")
+	if smtpTLS == "" {
+		smtpTLS = "starttls"
+	}
+
 	return &Config{
 		DatabaseURL: dbURL,
 		ServerPort:  port,
+		PublicURL:   publicURL,
 		Redis: RedisConfig{
 			URL:            os.Getenv("REDIS_URL"),
 			Password:       os.Getenv("REDIS_PASSWORD"),
@@ -69,6 +131,19 @@ func Load() (*Config, error) {
 			SentinelActive: sentinelActive,
 			SentinelMaster: os.Getenv("REDIS_SENTINEL_MASTER"),
 			SentinelURLs:   sentinelURLs,
+		},
+		JWT: JWTConfig{
+			Secret:        jwtSecret,
+			AccessExpiry:  accessExpiry,
+			RefreshExpiry: refreshExpiry,
+		},
+		SMTP: SMTPConfig{
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     smtpPort,
+			User:     os.Getenv("SMTP_USER"),
+			Password: os.Getenv("SMTP_PASSWORD"),
+			TLS:      smtpTLS,
+			From:     os.Getenv("SMTP_FROM"),
 		},
 	}, nil
 }

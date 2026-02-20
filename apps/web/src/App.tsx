@@ -1,5 +1,9 @@
-import { Component, type ErrorInfo,type ReactNode, useCallback, useEffect, useState } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useState } from 'react';
 
+import { CodeVerifyPage } from './components/auth/CodeVerifyPage.tsx';
+import { LoginPage } from './components/auth/LoginPage.tsx';
+import { OnboardingPage } from './components/auth/OnboardingPage.tsx';
+import { UserMenu } from './components/auth/UserMenu.tsx';
 import { Canvas } from './components/canvas/Canvas.tsx';
 import { ComponentPalette } from './components/canvas/controls/ComponentPalette.tsx';
 import { InventoryTable } from './components/inventory/InventoryTable.tsx';
@@ -11,6 +15,7 @@ import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
 import { ToastContainer } from './components/ui/ToastContainer.tsx';
 import { useVersionCheck } from './hooks/useVersionCheck.ts';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
+import { useAuthStore } from './store/authStore.ts';
 import { useCanvasStore } from './store/canvasStore.ts';
 
 type ViewMode = 'canvas' | 'table';
@@ -98,7 +103,7 @@ function RightPanel() {
   );
 }
 
-export default function App() {
+function MainApp() {
   useWhatIfMode();
   const { updateAvailable, reload } = useVersionCheck();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
@@ -153,10 +158,13 @@ export default function App() {
             Inventory
           </button>
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-slate-400">
-          <span>v{__APP_VERSION__}</span>
-          <span>&middot;</span>
-          <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-[10px] text-slate-400">
+            <span>v{__APP_VERSION__}</span>
+            <span>&middot;</span>
+            <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
+          </div>
+          <UserMenu />
         </div>
       </div>
 
@@ -188,4 +196,33 @@ export default function App() {
       <ToastContainer />
     </div>
   );
+}
+
+export default function App() {
+  const view = useAuthStore((s) => s.view);
+  const initialize = useAuthStore((s) => s.initialize);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  switch (view) {
+    case 'loading':
+      return (
+        <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-slate-400">Loading...</p>
+          </div>
+        </div>
+      );
+    case 'login':
+      return <LoginPage />;
+    case 'verify-code':
+      return <CodeVerifyPage />;
+    case 'onboarding':
+      return <OnboardingPage />;
+    case 'authenticated':
+      return <MainApp />;
+  }
 }

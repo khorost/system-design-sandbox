@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"
+	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
 	"github.com/system-design-sandbox/server/internal/handler"
 	"github.com/system-design-sandbox/server/internal/storage"
@@ -21,12 +22,13 @@ import (
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		slog.Info("no .env file found, using environment variables")
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -35,31 +37,43 @@ func main() {
 	// Run migrations
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to open db for migrations: %v", err)
+		slog.Error("failed to open db for migrations", "error", err)
+		os.Exit(1)
 	}
 	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("failed to set goose dialect: %v", err)
+		slog.Error("failed to set goose dialect", "error", err)
+		os.Exit(1)
 	}
 	if err := goose.Up(db, "migrations"); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 	db.Close()
 
 	// Connect via pgxpool
 	store, err := storage.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer store.Close()
 
 	// Connect to Redis (optional)
 	rdb, err := storage.NewRedis(ctx, cfg.Redis)
 	if err != nil {
-		log.Fatalf("failed to connect to redis: %v", err)
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	}
 	store.Redis = rdb
 
-	router := handler.NewRouter(store)
+	// Initialize auth services
+	var redisAuth *auth.RedisAuth
+	if rdb != nil {
+		redisAuth = auth.NewRedisAuth(rdb, cfg.JWT.RefreshExpiry)
+	}
+	emailSender := auth.NewEmailSender(cfg.SMTP)
+
+	router := handler.NewRouter(cfg, store, redisAuth, emailSender)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
@@ -74,21 +88,23 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("server starting on :%s", cfg.ServerPort)
+		slog.Info("server starting", "port", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-done
-	log.Println("shutting down server...")
+	slog.Info("shutting down server")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server shutdown error: %v", err)
+		slog.Error("server shutdown error", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }
