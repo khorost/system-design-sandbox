@@ -1,14 +1,22 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/tls"
+	_ "embed"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/smtp"
 	"strings"
 
 	"github.com/system-design-sandbox/server/internal/config"
 )
+
+//go:embed assets/login_email.html
+var loginEmailHTML string
+
+var loginEmailTmpl = template.Must(template.New("login_email").Parse(loginEmailHTML))
 
 // EmailSender sends login emails.
 type EmailSender interface {
@@ -140,29 +148,16 @@ func (s *smtpSender) sendViaClient(c *smtp.Client, to, msg string) error {
 	return c.Quit()
 }
 
+type emailData struct {
+	Code string
+	Link string
+}
+
 func buildEmailHTML(code, link string) string {
-	return `<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
-<tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;padding:40px;">
-<tr><td style="text-align:center;">
-  <h1 style="color:#e2e8f0;font-size:20px;margin:0 0 8px;">System Design Sandbox</h1>
-  <p style="color:#94a3b8;font-size:14px;margin:0 0 32px;">Your login code</p>
-  <div style="background:#0f172a;border-radius:8px;padding:20px;margin:0 0 24px;">
-    <span style="color:#60a5fa;font-size:32px;font-weight:bold;letter-spacing:6px;">` + code + `</span>
-  </div>
-  <p style="color:#94a3b8;font-size:13px;margin:0 0 24px;">Or click the button below:</p>
-  <a href="` + link + `" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:600;">
-    Verify Email
-  </a>
-  <p style="color:#64748b;font-size:12px;margin:24px 0 0;">This link expires in 5 minutes.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`
+	var buf bytes.Buffer
+	if err := loginEmailTmpl.Execute(&buf, emailData{Code: code, Link: link}); err != nil {
+		slog.Error("email: template render failed", "error", err)
+		return ""
+	}
+	return buf.String()
 }
