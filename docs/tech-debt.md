@@ -27,7 +27,7 @@
 |      | [TD-023](#td-023-обработка-ошибок-localstorage) | Обработка ошибок localStorage | Medium |
 |      | [TD-024](#td-024-автогенерация-component_params-из-component-library) | Автогенерация COMPONENT_PARAMS из component-library | Medium |
 |      | [TD-025](#td-025-поддержка-светлой-и-тёмной-темы) | Поддержка светлой и тёмной темы | Medium |
-|      | [TD-026](#td-026-ограничение-регистрации--промокоды-и-верификация-email) | Ограничение регистрации — промокоды и верификация email | High |
+|      | [TD-026](#td-026-passwordless-аутентификация-промокоды-и-верификация-email) | Passwordless-аутентификация, промокоды и верификация email | High |
 |      | [TD-027](#td-027-html-снимки-схем-для-шаринга-без-js) | HTML-снимки схем для шаринга без JS | Medium |
 |      | [TD-028](#td-028-презентационный-морфинг-между-схемами-checkpoints) | Презентационный морфинг между схемами (checkpoints) | Medium |
 |      | [TD-029](#td-029-защита-от-потери-несохранённой-схемы) | Защита от потери несохранённой схемы | High |
@@ -1877,27 +1877,179 @@ Auto-save в `canvasStore` записывает в localStorage без try-catch
 - [ ] Проверить WCAG AA контраст для всех трёх тем
 - [ ] Обновить Recharts-графики (MetricsPanel) — оси, тултипы, цвета линий через CSS-переменные
 
-## TD-026: Ограничение регистрации — промокоды и верификация email
+## TD-026: Passwordless-аутентификация, промокоды и верификация email
 
 **Приоритет:** High
 **Компоненты:** apps/server, apps/web
 
 ### Описание
 
-Для контроля доступа к платформе на начальном этапе нужна система ограничения регистрации новых пользователей. Регистрация возможна только по промокоду, а учётная запись активируется после подтверждения email.
+Passwordless-аутентификация без хранения паролей. Вход через magic link или одноразовый код из email. Регистрация ограничена промокодами, учётная запись активируется после подтверждения email. Поддержка множественных сессий с одного аккаунта, управление активными подключениями, профиль пользователя с gravatar.
+
+### Схема аутентификации
+
+**Passwordless flow (magic link + код):**
+
+1. Пользователь вводит email → `POST /api/v1/auth/login` → сервер отправляет email с magic link и кодом `XXX-XXX`
+2. **Magic link (двухшаговый flow):**
+   - `GET /auth/verify?token=...` → промежуточная HTML-страница с кнопкой «Войти» (не аутентифицирует — защита от почтовых сканеров, мессенджер-ботов превью и антивирусов, которые делают GET по ссылкам)
+   - Нажатие кнопки → `POST /api/v1/auth/verify` с токеном → аутентификация, инвалидация токена
+3. **Код XXX-XXX (fallback):** пользователь вводит 6-символьный alphanumeric-код (a-z, 0-9, ~2.2 млрд комбинаций) на странице логина → `POST /api/v1/auth/verify-code`
+
+**Токены и TTL:**
+- Magic link / код: TTL 5 минут, single-use (инвалидируется после успешного POST)
+- Access token: JWT, TTL 5 минут
+- Refresh token: TTL 7 суток, httpOnly secure cookie (не localStorage — защита от XSS)
+- Refresh rotation: при каждом refresh выдавать новый refresh token, старый инвалидировать
+
+### Профиль пользователя и отображение
+
+**Онбординг нового пользователя (после первой верификации email):**
+- Запрос имени (опционально) и разрешения на показ аватара из Gravatar
+- Если имя не указано — в качестве отображаемого имени используется email
+
+**Правила отображения пользователя:**
+
+| Контекст | Имя | Аватар | Email |
+|----------|-----|--------|-------|
+| Для себя | `display_name` или email | Gravatar (если разрешён) или инициалы/placeholder | полный email |
+| Для других | `display_name` (если задано) | Gravatar (если разрешён) или инициалы/placeholder | маскированный: `us**@ex***le.com` |
+
+Маскирование email: показываем первые 2 символа логина + `**` + `@` + первые 2 символа домена + `***` + последняя часть домена. Достаточно для идентификации, но нельзя восстановить полный адрес.
+
+### Управление сессиями
+
+Пользователь может быть авторизован одновременно с нескольких устройств. Каждый refresh token — отдельная сессия.
+
+**Метаданные сессии (Redis, активные):**
+- `session_id` — идентификатор (совпадает с refresh token ID)
+- `user_id`, `ip`, `user_agent`
+- `created_at` — время создания сессии
+- `last_active_at` — время последней активности (обновляется при refresh)
+- `geo` — страна/город по IP (GeoIP lookup при создании и refresh)
+
+**Структура в Redis:**
+- `session:{session_id}` → JSON `{ user_id, ip, user_agent, geo, created_at, last_active_at }`, TTL = TTL refresh token (7 суток)
+- `sessions:user:{user_id}` → SET session_id-ов для перечисления всех сессий пользователя
+
+**История сессий (PostgreSQL, аудит):**
+- Таблица `session_log`: `id`, `user_id`, `session_id`, `action` (created/refreshed/revoked/expired), `ip`, `user_agent`, `geo`, `created_at`
+- Запись добавляется при: создании сессии, принудительном завершении, logout
+- Хранится для аудита, не участвует в рантайм-авторизации
+
+**Операции:**
+- Просмотр всех активных сессий текущего пользователя (список с метаданными)
+- Принудительное завершение конкретной сессии (удаление refresh token + session из Redis)
+- Завершение всех сессий кроме текущей («Выйти везде»)
+
+### QR-авторизация (future)
+
+Сценарий: авторизованное устройство (телефон) подтверждает вход на неавторизованном (чужой компьютер).
+
+**Предварительная схема:**
+1. Неавторизованное устройство запрашивает QR-код → сервер генерирует `qr_token`, показывает QR
+2. Авторизованное устройство сканирует QR → получает `qr_token`
+3. Авторизованное устройство подтверждает вход → `POST /api/v1/auth/qr-confirm` с `qr_token` + своим access token
+4. Сервер создаёт сессию для неавторизованного устройства, уведомляет его (polling / WebSocket)
+
+> Детальная проработка — при реализации. Зарезервировать `qr_token` тип в Redis и эндпоинты.
+
+### Безопасность
+
+- **Single-use токены** — magic link и код одноразовые, инвалидируются после первого успешного использования
+- **Двухшаговый magic link** — GET показывает страницу, аутентификация только по POST (боты и сканеры не кликают кнопки)
+- **Referrer policy** — `Referrer-Policy: no-referrer` на странице верификации, `<meta name="robots" content="noindex">`
+- **Rate limiting на верификацию кода** — максимум 5 попыток на email, затем lockout и требование нового кода
+- **Rate limiting на отправку писем** — 1 письмо в 60 сек на email, 5 в час (защита от спама через систему)
+- **Timing-safe сравнение** — constant-time compare для кодов (crypto/subtle), исключение timing-атак
+- **Account enumeration** — одинаковый ответ независимо от существования email: «Если аккаунт существует, мы отправили письмо»
+- **Refresh token в Redis** — с возможностью отзыва, привязка к User-Agent
 
 ### Задачи
 
+**Регистрация и промокоды:**
 - [ ] Модель `promo_codes` в БД: `code` (unique), `max_uses`, `current_uses`, `expires_at`, `created_by`, `is_active`
-- [ ] API: `POST /api/v1/auth/register` — принимает `email`, `name`, `promo_code`; валидирует промокод, создаёт пользователя со статусом `pending_verification`
-- [ ] Отправка email с кодом/ссылкой подтверждения (интеграция с SMTP или transactional email сервисом)
-- [ ] API: `GET /api/v1/auth/verify-email?token=...` — активирует учётную запись
+- [ ] API: `POST /api/v1/auth/register` — принимает `email`, `promo_code`; валидирует промокод, создаёт пользователя со статусом `pending_verification`, отправляет email с magic link и кодом
 - [ ] Поле `status` в таблице `users`: `pending_verification`, `active`, `disabled`
-- [ ] Middleware: запрещать доступ к API для `pending_verification` и `disabled` пользователей
 - [ ] Admin API для управления промокодами: создание, деактивация, просмотр статистики использования
-- [ ] UI: форма регистрации с полем промокода, экран подтверждения email
-- [ ] Миграция БД: добавить `status` в `users`, создать таблицу `promo_codes`, таблицу `email_verifications`
-- [ ] Rate limiting на эндпоинты регистрации и верификации
+
+**Профиль пользователя:**
+- [ ] Поля в таблице `users`: `display_name` (nullable), `gravatar_allowed` (bool, default false)
+- [ ] Онбординг после первой верификации: если `display_name` IS NULL → показать форму запроса имени и согласия на Gravatar
+- [ ] API: `GET /api/v1/users/me` — полный профиль (email без маски)
+- [ ] API: `PATCH /api/v1/users/me` — обновление `display_name`, `gravatar_allowed`
+- [ ] API: `GET /api/v1/users/{id}/public` — публичный профиль (маскированный email, display_name, аватар)
+- [ ] Утилита маскирования email: `us**@ex***le.com` — первые 2 символа логина + `**@` + первые 2 символа домена + `***` + TLD
+- [ ] Gravatar: генерация URL по SHA-256 хешу email, fallback на placeholder/инициалы если `gravatar_allowed = false`
+
+**Passwordless-аутентификация (токены в Redis):**
+- [ ] Auth tokens в Redis: ключ `auth:{token}` → JSON `{ code, email, type, attempts }`, TTL 5 минут. Дополнительный индекс `auth:code:{email}:{code}` → `{token}` для поиска по коду
+- [ ] Сессии в Redis: ключ `session:{session_id}` → JSON `{ user_id, refresh_token, ip, user_agent, geo, created_at, last_active_at }`, TTL 7 суток. Индекс `sessions:user:{user_id}` (SET) для перечисления/отзыва сессий
+- [ ] API: `POST /api/v1/auth/login` — принимает `email`, генерирует токен + код, сохраняет в Redis, отправляет email
+- [ ] API: `GET /auth/verify?token=...` — промежуточная HTML-страница с кнопкой (не инвалидирует токен, проверяет наличие ключа в Redis)
+- [ ] API: `POST /api/v1/auth/verify` — принимает `token`, удаляет из Redis (атомарно через GETDEL), выдаёт access + refresh токены
+- [ ] API: `POST /api/v1/auth/verify-code` — принимает `email` + `code`, проверяет с rate limiting (HINCRBY `attempts`, max 5), выдаёт токены
+- [ ] API: `POST /api/v1/auth/refresh` — принимает refresh token из httpOnly cookie, ротация (новый ключ в Redis, старый удаляется)
+- [ ] API: `POST /api/v1/auth/logout` — удаляет refresh token и session из Redis, пишет в `session_log`
+- [ ] Интеграция с SMTP-сервером (шаблон письма с magic link + кодом XXX-XXX)
+- [ ] GeoIP lookup по IP при создании/refresh сессии (MaxMind GeoLite2 или аналог)
+
+**Управление сессиями:**
+- [ ] При создании сессии (login/verify) — записывать метаданные: IP, User-Agent, GeoIP, timestamp в Redis и `session_log` в БД
+- [ ] При refresh — обновлять `last_active_at`, `ip`, `geo` в Redis, запись `refreshed` в `session_log`
+- [ ] API: `GET /api/v1/auth/sessions` — список активных сессий текущего пользователя с метаданными (ip, geo, user_agent, created_at, last_active_at), пометка текущей сессии
+- [ ] API: `DELETE /api/v1/auth/sessions/{session_id}` — принудительное завершение конкретной сессии (удаление из Redis, запись `revoked` в `session_log`)
+- [ ] API: `POST /api/v1/auth/sessions/revoke-others` — завершение всех сессий кроме текущей
+- [ ] Таблица `session_log` в БД: `id`, `user_id`, `session_id`, `action` (created/refreshed/revoked), `ip`, `user_agent`, `geo`, `created_at`
+
+**Middleware и защита:**
+- [ ] Auth middleware: валидация JWT access token, запрет для `pending_verification` и `disabled`
+- [ ] Rate limiting: отправка писем (1/60с на email, 5/час), верификация кода (5 попыток на токен), регистрация
+- [ ] `Referrer-Policy: no-referrer` и `<meta name="robots" content="noindex">` на странице верификации
+- [ ] Constant-time compare для кодов
+
+**UI:**
+- [ ] Страница логина: ввод email → ожидание письма → ввод кода XXX-XXX (fallback)
+- [ ] Промежуточная страница magic link: кнопка «Войти», обработка истёкших/использованных токенов
+- [ ] Форма регистрации с полем промокода
+- [ ] Онбординг: форма ввода имени + чекбокс «Показывать аватар из Gravatar» (после первой верификации)
+- [ ] Страница профиля: редактирование имени, переключение gravatar, аватар-превью
+- [ ] Страница активных сессий: список с IP, гео, User-Agent, временем подключения/активности; пометка «текущая сессия»; кнопка завершения конкретной сессии; кнопка «Выйти везде кроме текущей»
+- [ ] Компонент отображения пользователя: аватар (gravatar или placeholder) + display_name или маскированный email
+- [ ] Хранение access token в памяти, refresh через httpOnly cookie
+
+**Инфраструктура:**
+- [ ] Redis-подключение: конфигурация, health check, graceful shutdown
+- [ ] Миграция БД: добавить `status`, `display_name`, `gravatar_allowed` в `users`; создать таблицы `promo_codes`, `session_log`
+
+**Переменные окружения — Redis:**
+
+| Переменная | Описание | По умолчанию |
+|-----------|----------|-------------|
+| `REDIS_URL` | Адрес Redis (формат `redis://host:port/db`) | `redis://localhost:6379/0` |
+| `REDIS_PASSWORD` | Пароль (опционально) | — |
+
+**Переменные окружения — GeoIP:**
+
+| Переменная | Описание | По умолчанию |
+|-----------|----------|-------------|
+| `MAXMIND_GEOLITE2` | Путь к файлу базы GeoLite2-City.mmdb | — |
+
+**Переменные окружения — SMTP:**
+
+| Переменная | Описание | По умолчанию |
+|-----------|----------|-------------|
+| `SMTP_HOST` | Хост SMTP-сервера | `localhost` |
+| `SMTP_PORT` | Порт SMTP-сервера | `25` |
+| `SMTP_USER` | Логин для авторизации (если пусто — без авторизации) | — |
+| `SMTP_PASSWORD` | Пароль для авторизации | — |
+| `SMTP_TLS` | Режим TLS: `none`, `starttls`, `tls` | `starttls` |
+| `SMTP_FROM` | Адрес отправителя | `noreply@sdsandbox.ru` |
+
+Режимы TLS:
+- `none` — без шифрования (порт 25, dev/локальная сеть)
+- `starttls` — STARTTLS upgrade после подключения (порт 587, стандарт для большинства провайдеров)
+- `tls` — implicit TLS, соединение сразу шифрованное (порт 465)
 
 ## TD-027: HTML-снимки схем для шаринга без JS
 
