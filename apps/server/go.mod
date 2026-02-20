@@ -1,8 +1,8 @@
 module github.com/system-design-sandbox/server
 
-go 1.24.0
+go 1.25.0
 
-toolchain go1.24.2
+toolchain go1.25
 
 require (
 	github.com/go-chi/chi/v5 v5.2.4
