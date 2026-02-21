@@ -8,38 +8,56 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
 	"github.com/system-design-sandbox/server/internal/geoip"
+	"github.com/system-design-sandbox/server/internal/metrics"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
 
-func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender, geo *geoip.Lookup) *chi.Mux {
+func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender, geo *geoip.Lookup, collector *metrics.Collector, hub *metrics.Hub) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(slogRequestLogger)
+	// Middleware safe for all routes including WebSocket.
+	r.Use(metrics.CountRequests(collector))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://sdsandbox.ru", "https://beta.sdsandbox.ru", "http://localhost:5173"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	}))
 
-	uh := &UserHandler{Store: store}
-	ah := &ArchitectureHandler{Store: store}
-	sh := &ScenarioHandler{Store: store}
-	simh := &SimulationHandler{Store: store}
-	authH := &AuthHandler{Store: store, RedisAuth: redisAuth, Email: emailSender, Config: cfg, GeoIP: geo}
-	sessH := &SessionHandler{Store: store, RedisAuth: redisAuth, Config: cfg}
+	// WebSocket — no CORS, no response-writer wrapping (origin checked by nhooyr.io/websocket).
+	wsH := &WSMetricsHandler{
+		Collector: collector,
+		Hub:       hub,
+		Origins:   []string{"sdsandbox.ru", "*.sdsandbox.ru", "localhost:*"},
+	}
+	r.Get("/ws", wsH.ServeHTTP)
 
-	// Verify page (server-rendered HTML with htmx)
-	r.Get("/auth/verify", authH.VerifyPage)
+	// Prometheus metrics
+	r.Handle("/metrics", promhttp.Handler())
 
-	r.Route("/api/v1", func(r chi.Router) {
+	// HTTP routes — with slog wrapper and CORS.
+	r.Group(func(r chi.Router) {
+		r.Use(slogRequestLogger)
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   []string{"https://sdsandbox.ru", "https://beta.sdsandbox.ru", "http://localhost:5173"},
+			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+			ExposedHeaders:   []string{"Link"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
+
+		uh := &UserHandler{Store: store}
+		ah := &ArchitectureHandler{Store: store}
+		sh := &ScenarioHandler{Store: store}
+		simh := &SimulationHandler{Store: store}
+		authH := &AuthHandler{Store: store, RedisAuth: redisAuth, Email: emailSender, Config: cfg, GeoIP: geo}
+		sessH := &SessionHandler{Store: store, RedisAuth: redisAuth, Config: cfg}
+
+		// Verify page (server-rendered HTML with htmx)
+		r.Get("/auth/verify", authH.VerifyPage)
+
+		r.Route("/api/v1", func(r chi.Router) {
 		// Public auth endpoints (no middleware)
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/send-code", authH.SendCode)
@@ -93,6 +111,7 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 			r.Get("/leaderboard/{scenarioID}", simh.Leaderboard)
 		})
 	})
+	}) // end r.Group (HTTP routes)
 
 	return r
 }

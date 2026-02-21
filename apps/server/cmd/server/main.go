@@ -17,6 +17,7 @@ import (
 	"github.com/system-design-sandbox/server/internal/config"
 	"github.com/system-design-sandbox/server/internal/geoip"
 	"github.com/system-design-sandbox/server/internal/handler"
+	"github.com/system-design-sandbox/server/internal/metrics"
 	"github.com/system-design-sandbox/server/internal/storage"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -117,14 +118,22 @@ func main() {
 		defer geo.Close()
 	}
 
-	router := handler.NewRouter(cfg, store, redisAuth, emailSender, geo)
+	// Metrics: hub first (collector depends on it)
+	hub := metrics.NewHub(15 * time.Second)
+	collector := metrics.NewCollector(rdb, hub, cfg.JWT.AccessExpiry)
+	collector.SetOnSnapshot(hub.Broadcast)
+
+	metricsCtx, metricsCancel := context.WithCancel(context.Background())
+	defer metricsCancel()
+	go collector.Run(metricsCtx, 20*time.Second)
+
+	router := handler.NewRouter(cfg, store, redisAuth, emailSender, geo, collector, hub)
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.ServerPort,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.ServerPort,
+		Handler:           router,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Graceful shutdown

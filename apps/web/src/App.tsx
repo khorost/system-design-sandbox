@@ -12,7 +12,9 @@ import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
 import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
+import { PlatformStatus } from './components/ui/PlatformStatus.tsx';
 import { ToastContainer } from './components/ui/ToastContainer.tsx';
+import { usePlatformMetrics } from './hooks/usePlatformMetrics.ts';
 import { useVersionCheck } from './hooks/useVersionCheck.ts';
 import { useWhatIfMode } from './hooks/useWhatIfMode.ts';
 import { useAuthStore } from './store/authStore.ts';
@@ -105,6 +107,7 @@ function RightPanel() {
 
 function MainApp() {
   useWhatIfMode();
+  usePlatformMetrics();
   const { updateAvailable, reload } = useVersionCheck();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const selectNode = useCanvasStore((s) => s.selectNode);
@@ -165,6 +168,7 @@ function MainApp() {
             <span>&middot;</span>
             <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
           </div>
+          <PlatformStatus />
           {user ? (
             <UserMenu />
           ) : (
