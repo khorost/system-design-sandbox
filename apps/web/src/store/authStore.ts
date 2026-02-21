@@ -11,6 +11,7 @@ interface User {
   status: string;
   display_name: string | null;
   gravatar_allowed: boolean;
+  gravatar_url?: string;
 }
 
 interface SessionInfo {

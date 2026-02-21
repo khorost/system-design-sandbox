@@ -7,6 +7,7 @@ export function UserMenu() {
   const [open, setOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export function UserMenu() {
   }, []);
 
   const initial = user?.display_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?';
+  const showGravatar = !!user?.gravatar_url && !imgError;
 
   const handleLogout = useCallback(async () => {
     setOpen(false);
@@ -31,10 +33,19 @@ export function UserMenu() {
       <div ref={menuRef} className="relative">
         <button
           onClick={() => setOpen(!open)}
-          className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white hover:bg-blue-500 transition-colors"
+          className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white hover:bg-blue-500 transition-colors overflow-hidden"
           title={user?.display_name || user?.email || ''}
         >
-          {initial}
+          {showGravatar ? (
+            <img
+              src={user.gravatar_url}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            initial
+          )}
         </button>
 
         {open && (
@@ -76,7 +87,7 @@ export function UserMenu() {
 function ProfileModal({ onClose }: { onClose: () => void }) {
   const { user, updateProfile, error, clearError } = useAuthStore();
   const [displayName, setDisplayName] = useState(user?.display_name || '');
-  const [gravatarAllowed, setGravatarAllowed] = useState(user?.gravatar_allowed || false);
+  const [gravatarAllowed, setGravatarAllowed] = useState(user?.gravatar_allowed ?? true);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSave = useCallback(

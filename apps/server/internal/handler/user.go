@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -188,6 +188,6 @@ func GravatarURL(email string, allowed bool) string {
 	if !allowed {
 		return ""
 	}
-	hash := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(email))))
+	hash := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
 	return fmt.Sprintf("https://www.gravatar.com/avatar/%x?d=identicon&s=80", hash)
 }

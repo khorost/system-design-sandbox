@@ -131,6 +131,10 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 	data, err := h.RedisAuth.GetAuthToken(r.Context(), req.Token)
 	if err != nil || data == nil {
+		if r.Header.Get("HX-Request") == "true" {
+			writeVerifyError(w, h.Config.PublicURL, "This link has expired or has already been used.")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_token", "invalid or expired token")
 		return
 	}
@@ -199,17 +203,25 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.TimingSafeEqual(sess.RefreshToken, refreshToken) {
+	currentMatch := auth.TimingSafeEqual(sess.RefreshToken, refreshToken)
+	prevMatch := sess.PrevRefreshToken != "" && auth.TimingSafeEqual(sess.PrevRefreshToken, refreshToken)
+
+	if !currentMatch && !prevMatch {
 		h.clearRefreshCookie(w)
 		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "invalid refresh token")
 		return
 	}
 
-	// Rotate refresh token
-	newRefreshToken, err := h.RedisAuth.RotateRefreshToken(r.Context(), sessionID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "failed to rotate refresh token")
-		return
+	// If the previous token matched, another tab already rotated.
+	// Return the current token without rotating again.
+	activeRefreshToken := sess.RefreshToken
+	if currentMatch {
+		rotated, err := h.RedisAuth.RotateRefreshToken(r.Context(), sessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", "failed to rotate refresh token")
+			return
+		}
+		activeRefreshToken = rotated
 	}
 
 	// Create new access token
@@ -241,7 +253,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	h.setRefreshCookie(w, sessionID, newRefreshToken)
+	h.setRefreshCookie(w, sessionID, activeRefreshToken)
 	writeJSON(w, http.StatusOK, authResponse{AccessToken: accessToken, User: user})
 }
 
@@ -319,6 +331,10 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	}
 
 	if user.Status == "disabled" {
+		if r.Header.Get("HX-Request") == "true" {
+			writeVerifyError(w, h.Config.PublicURL, "This account has been disabled.")
+			return
+		}
 		writeError(w, http.StatusForbidden, "account_disabled", "account is disabled")
 		return
 	}

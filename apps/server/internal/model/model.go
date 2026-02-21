@@ -1,7 +1,10 @@
 package model
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,6 +19,22 @@ type User struct {
 	GravatarAllowed bool               `json:"gravatar_allowed"`
 	ReferralSource  *string            `json:"referral_source,omitempty"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+// MarshalJSON adds computed gravatar_url field to User JSON output.
+func (u User) MarshalJSON() ([]byte, error) {
+	type Alias User
+	aux := struct {
+		Alias
+		GravatarURL string `json:"gravatar_url,omitempty"`
+	}{
+		Alias: Alias(u),
+	}
+	if u.GravatarAllowed && u.Email != "" {
+		hash := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(u.Email))))
+		aux.GravatarURL = fmt.Sprintf("https://www.gravatar.com/avatar/%x?d=identicon&s=80", hash)
+	}
+	return json.Marshal(&aux)
 }
 
 type SessionLogEntry struct {

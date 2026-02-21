@@ -28,12 +28,13 @@ type AuthTokenData struct {
 // without read-modify-write cycles.
 // UA is not stored here — it goes only to the session_log table.
 type SessionData struct {
-	UserID       string
-	RefreshToken string
-	IP           string
-	Geo          string
-	CreatedAt    string
-	LastActiveAt string
+	UserID           string
+	RefreshToken     string
+	PrevRefreshToken string // previous token kept for multi-tab race tolerance
+	IP               string
+	Geo              string
+	CreatedAt        string
+	LastActiveAt     string
 }
 
 // RedisAuth provides auth-related Redis operations.
@@ -219,12 +220,13 @@ func (ra *RedisAuth) CheckRateLimit(ctx context.Context, email string) error {
 // --- Session operations (Redis hashes) ---
 
 const (
-	fUserID       = "uid"
-	fRefreshToken = "rt"
-	fIP           = "ip"
-	fGeo          = "geo"
-	fCreatedAt    = "cat"
-	fLastActiveAt = "lat"
+	fUserID           = "uid"
+	fRefreshToken     = "rt"
+	fPrevRefreshToken = "prt"
+	fIP               = "ip"
+	fGeo              = "geo"
+	fCreatedAt        = "cat"
+	fLastActiveAt     = "lat"
 )
 
 func sessionKey(sessionID string) string   { return "s:" + sessionID }
@@ -259,12 +261,13 @@ func (ra *RedisAuth) GetSession(ctx context.Context, sessionID string) (*Session
 		return nil, nil
 	}
 	return &SessionData{
-		UserID:       m[fUserID],
-		RefreshToken: m[fRefreshToken],
-		IP:           m[fIP],
-		Geo:          m[fGeo],
-		CreatedAt:    m[fCreatedAt],
-		LastActiveAt: m[fLastActiveAt],
+		UserID:           m[fUserID],
+		RefreshToken:     m[fRefreshToken],
+		PrevRefreshToken: m[fPrevRefreshToken],
+		IP:               m[fIP],
+		Geo:              m[fGeo],
+		CreatedAt:        m[fCreatedAt],
+		LastActiveAt:     m[fLastActiveAt],
 	}, nil
 }
 
@@ -360,15 +363,17 @@ func (ra *RedisAuth) DeleteOtherSessions(ctx context.Context, currentSessionID, 
 	return count, nil
 }
 
-// RotateRefreshToken generates a new refresh token and updates only the changed fields.
+// RotateRefreshToken generates a new refresh token, saves current as previous,
+// and updates the session. The previous token is kept so that a concurrent
+// refresh from another browser tab can still succeed (race tolerance).
 func (ra *RedisAuth) RotateRefreshToken(ctx context.Context, sessionID string) (string, error) {
 	key := sessionKey(sessionID)
-	exists, err := ra.rdb.Exists(ctx, key).Result()
+	currentToken, err := ra.rdb.HGet(ctx, key, fRefreshToken).Result()
+	if err == redis.Nil {
+		return "", fmt.Errorf("session not found")
+	}
 	if err != nil {
 		return "", err
-	}
-	if exists == 0 {
-		return "", fmt.Errorf("session not found")
 	}
 	newToken, err := GenerateToken()
 	if err != nil {
@@ -376,7 +381,11 @@ func (ra *RedisAuth) RotateRefreshToken(ctx context.Context, sessionID string) (
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	pipe := ra.rdb.Pipeline()
-	pipe.HSet(ctx, key, fRefreshToken, newToken, fLastActiveAt, now)
+	pipe.HSet(ctx, key,
+		fRefreshToken, newToken,
+		fPrevRefreshToken, currentToken,
+		fLastActiveAt, now,
+	)
 	pipe.Expire(ctx, key, ra.sessionExpiry)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return "", err
