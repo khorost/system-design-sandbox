@@ -111,8 +111,7 @@ func main() {
 
 	geo, err := geoip.Open(cfg.MaxMindPath)
 	if err != nil {
-		slog.Error("failed to open geoip database", "error", err)
-		os.Exit(1)
+		slog.Warn("geoip disabled: failed to open database", "error", err)
 	}
 	if geo != nil {
 		defer geo.Close()
