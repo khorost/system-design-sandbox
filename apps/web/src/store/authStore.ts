@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { ApiError, apiFetch, setAccessToken } from '../api/client.ts';
+import { getApiUrl } from '../config/env.ts';
 
 export type AuthView = 'loading' | 'anonymous' | 'login' | 'verify-code' | 'onboarding' | 'authenticated';
 
@@ -73,7 +74,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchAuthConfig: async () => {
     try {
-      const res = await fetch('/api/v1/auth/config');
+      const res = await fetch(`${getApiUrl()}/api/v1/auth/config`);
       if (res.ok) {
         const data = await res.json();
         set({ authConfig: data });
@@ -88,7 +89,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     get().fetchAuthConfig();
 
     try {
-      const res = await fetch('/api/v1/auth/refresh', {
+      const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -157,7 +158,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   refresh: async () => {
     try {
-      const res = await fetch('/api/v1/auth/refresh', {
+      const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
       });

@@ -16,7 +16,7 @@ import { parseDsl } from '../dsl/parser.ts';
 import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import type { ArchitectureSchema, ComponentEdge, ComponentNode, EdgeData, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
-import { getAbsolutePosition } from '../utils/networkLatency.ts';
+import { CONTAINER_TYPES, getAbsolutePosition } from '../utils/networkLatency.ts';
 import { notify } from '../utils/notifications.ts';
 import { sanitizeConfig,sanitizeLabel } from '../utils/sanitize.ts';
 
@@ -68,27 +68,35 @@ function sortNodesParentFirst(nodes: ComponentNode[]): ComponentNode[] {
   return [...cleaned].sort((a, b) => depthOf(a) - depthOf(b));
 }
 
-function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[] } {
+function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; schemaName: string; schemaDescription: string; schemaTags: string[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { nodes: [], edges: [] };
+    if (!raw) return { nodes: [], edges: [], schemaName: '', schemaDescription: '', schemaTags: [] };
     const schema: ArchitectureSchema = JSON.parse(raw);
-    return { nodes: sortNodesParentFirst(schema.nodes ?? []), edges: schema.edges ?? [] };
+    return {
+      nodes: sortNodesParentFirst(schema.nodes ?? []),
+      edges: schema.edges ?? [],
+      schemaName: schema.metadata?.name ?? '',
+      schemaDescription: schema.metadata?.description ?? '',
+      schemaTags: schema.metadata?.tags ?? [],
+    };
   } catch {
-    return { nodes: [], edges: [] };
+    return { nodes: [], edges: [], schemaName: '', schemaDescription: '', schemaTags: [] };
   }
 }
 
 const initial = loadInitialState();
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[]) {
+function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[], schemaName: string, schemaDescription: string, schemaTags: string[]) {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const schema: ArchitectureSchema = {
       version: '1.0',
       metadata: {
-        name: 'My Architecture',
+        name: schemaName || 'My Architecture',
+        description: schemaDescription,
+        tags: schemaTags,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
@@ -108,6 +116,11 @@ interface CanvasState {
   selectedEdgeId: string | null;
   focusNodeId: string | null;
   edgeLabelMode: EdgeLabelMode;
+  schemaName: string;
+  schemaDescription: string;
+  schemaTags: string[];
+  architectureId: string | null;
+  isPublic: boolean;
   _history: { past: Snapshot[]; future: Snapshot[] };
   _skipAutoSave: boolean;
 
@@ -127,6 +140,12 @@ interface CanvasState {
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
   cycleEdgeLabelMode: () => void;
+
+  setSchemaName: (name: string) => void;
+  setSchemaDescription: (desc: string) => void;
+  setSchemaTags: (tags: string[]) => void;
+  setIsPublic: (v: boolean) => void;
+  setArchitectureId: (id: string | null) => void;
 
   exportSchema: () => string;
   importSchema: (json: string) => { ok: true } | { ok: false; error: string };
@@ -149,6 +168,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedEdgeId: null,
   focusNodeId: null,
   edgeLabelMode: 'auto',
+  schemaName: initial.schemaName,
+  schemaDescription: initial.schemaDescription,
+  schemaTags: initial.schemaTags,
+  architectureId: null,
+  isPublic: false,
   _history: { past: [], future: [] },
   _skipAutoSave: false,
 
@@ -315,6 +339,26 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return ancestors;
   },
 
+  setSchemaName: (name) => {
+    set({ schemaName: name });
+  },
+
+  setSchemaDescription: (desc) => {
+    set({ schemaDescription: desc });
+  },
+
+  setSchemaTags: (tags) => {
+    set({ schemaTags: tags });
+  },
+
+  setIsPublic: (v) => {
+    set({ isPublic: v });
+  },
+
+  setArchitectureId: (id) => {
+    set({ architectureId: id });
+  },
+
   cycleEdgeLabelMode: () => {
     const order: EdgeLabelMode[] = ['auto', 'protocol', 'traffic', 'full'];
     const cur = get().edgeLabelMode;
@@ -323,7 +367,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   exportSchema: () => {
-    const { nodes, edges } = get();
+    const { nodes, edges, schemaName, schemaDescription, schemaTags } = get();
     const now = new Date().toISOString();
 
     // Strip React Flow runtime state from nodes, keep schema-relevant fields
@@ -352,7 +396,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const schema = {
       version: '1.0',
       metadata: {
-        name: 'My Architecture',
+        name: schemaName || 'My Architecture',
+        description: schemaDescription,
+        tags: schemaTags,
         createdAt: now,
         updatedAt: now,
         exportedAt: now,
@@ -405,11 +451,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     }
 
-    // Validate edges — drop broken references
+    // Validate edges — drop broken references and edges to/from containers
     const nodeIds = new Set(nodes.map(n => n.id));
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
     const validEdges = edges.filter(e => {
       if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) {
         warnings.push(`Dropped edge "${e.id}" — source or target node not found.`);
+        return false;
+      }
+      const srcNode = nodeById.get(e.source);
+      const tgtNode = nodeById.get(e.target);
+      if (srcNode && CONTAINER_TYPES.has(srcNode.data.componentType)) {
+        warnings.push(`Dropped edge "${e.id}" — source "${srcNode.data.label}" is a container node.`);
+        return false;
+      }
+      if (tgtNode && CONTAINER_TYPES.has(tgtNode.data.componentType)) {
+        warnings.push(`Dropped edge "${e.id}" — target "${tgtNode.data.label}" is a container node.`);
         return false;
       }
       return true;
@@ -419,12 +476,22 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       notify.warn(warnings.join('\n'));
     }
 
+    const metadata = (schema as Record<string, unknown>).metadata as Record<string, unknown> | undefined;
+    const importedName = (metadata?.name as string) ?? '';
+    const importedDescription = (metadata?.description as string) ?? '';
+    const importedTags = Array.isArray(metadata?.tags) ? (metadata.tags as string[]) : [];
+
     set({
       ...pushHistory(get),
       nodes: sortNodesParentFirst(nodes),
       edges: validEdges,
       selectedNodeId: null,
       selectedEdgeId: null,
+      schemaName: importedName,
+      schemaDescription: importedDescription,
+      schemaTags: importedTags,
+      architectureId: null,
+      isPublic: false,
     });
 
     return { ok: true as const };
@@ -498,11 +565,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   save: () => {
-    const { nodes, edges } = get();
+    const { nodes, edges, schemaName, schemaDescription, schemaTags } = get();
     const schema: ArchitectureSchema = {
       version: '1.0',
       metadata: {
-        name: 'My Architecture',
+        name: schemaName || 'My Architecture',
+        description: schemaDescription,
+        tags: schemaTags,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
@@ -524,15 +593,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   clear: () => {
-    set({ ...pushHistory(get), nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null });
+    set({ ...pushHistory(get), nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null, schemaName: '', schemaDescription: '', schemaTags: [], architectureId: null, isPublic: false });
     localStorage.removeItem(STORAGE_KEY);
   },
 }));
 
-// Auto-save on every nodes/edges change (debounced 500ms)
+// Auto-save on every nodes/edges/metadata change (debounced 500ms)
 useCanvasStore.subscribe((state, prev) => {
   if (state._skipAutoSave) return;
-  if (state.nodes !== prev.nodes || state.edges !== prev.edges) {
-    debouncedSave(state.nodes, state.edges);
+  if (
+    state.nodes !== prev.nodes ||
+    state.edges !== prev.edges ||
+    state.schemaName !== prev.schemaName ||
+    state.schemaDescription !== prev.schemaDescription ||
+    state.schemaTags !== prev.schemaTags
+  ) {
+    debouncedSave(state.nodes, state.edges, state.schemaName, state.schemaDescription, state.schemaTags);
   }
 });

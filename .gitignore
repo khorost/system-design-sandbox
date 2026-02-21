@@ -12,4 +12,5 @@ coverage/
 Thumbs.db
 /.idea/***
 .claude/settings.local.json
+apps/web/public/config.dev.js
 

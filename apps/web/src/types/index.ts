@@ -111,6 +111,8 @@ export interface ArchitectureSchema {
   version: string;
   metadata: {
     name: string;
+    description?: string;
+    tags?: string[];
     createdAt: string;
     updatedAt: string;
   };
