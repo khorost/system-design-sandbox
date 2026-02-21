@@ -160,7 +160,7 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
   const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(
+  const fetchSessions = useCallback(
     (all: boolean) => {
       setLoading(true);
       listSessions(all ? 0 : undefined)
@@ -174,13 +174,18 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
   );
 
   useEffect(() => {
-    load(false);
-  }, [load]);
+    listSessions(undefined)
+      .then((res) => {
+        setSessions(res.sessions);
+        setTotal(res.total);
+      })
+      .finally(() => setLoading(false));
+  }, [listSessions]);
 
   const handleShowAll = useCallback(() => {
     setShowAll(true);
-    load(true);
-  }, [load]);
+    fetchSessions(true);
+  }, [fetchSessions]);
 
   const handleRevoke = useCallback(
     async (sessionID: string) => {
