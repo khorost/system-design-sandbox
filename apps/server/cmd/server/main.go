@@ -3,30 +3,68 @@ package main
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/pressly/goose/v3"
+	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
+	"github.com/system-design-sandbox/server/internal/geoip"
 	"github.com/system-design-sandbox/server/internal/handler"
+	"github.com/system-design-sandbox/server/internal/metrics"
 	"github.com/system-design-sandbox/server/internal/storage"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARN", "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		slog.Info("no .env file found, using environment variables")
 	}
+
+	// Configure logger
+	logLevel := parseLogLevel(os.Getenv("LOG_LEVEL"))
+	logStruct := strings.EqualFold(strings.TrimSpace(os.Getenv("LOG_STRUCT")), "true")
+	handlerOpts := &slog.HandlerOptions{
+		Level: logLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				a.Value = slog.StringValue(a.Value.Time().Format("2006-01-02T15:04:05.000Z07:00"))
+			}
+			return a
+		},
+	}
+	var logHandler slog.Handler
+	if logStruct {
+		logHandler = slog.NewJSONHandler(os.Stdout, handlerOpts)
+	} else {
+		logHandler = slog.NewTextHandler(os.Stdout, handlerOpts)
+	}
+	slog.SetDefault(slog.New(logHandler))
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		slog.Error("failed to load config", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -35,38 +73,66 @@ func main() {
 	// Run migrations
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to open db for migrations: %v", err)
+		slog.Error("failed to open db for migrations", "error", err)
+		os.Exit(1)
 	}
 	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("failed to set goose dialect: %v", err)
+		slog.Error("failed to set goose dialect", "error", err)
+		os.Exit(1)
 	}
 	if err := goose.Up(db, "migrations"); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
 	db.Close()
 
 	// Connect via pgxpool
 	store, err := storage.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer store.Close()
 
 	// Connect to Redis (optional)
 	rdb, err := storage.NewRedis(ctx, cfg.Redis)
 	if err != nil {
-		log.Fatalf("failed to connect to redis: %v", err)
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
 	}
 	store.Redis = rdb
 
-	router := handler.NewRouter(store)
+	// Initialize auth services
+	var redisAuth *auth.RedisAuth
+	if rdb != nil {
+		redisAuth = auth.NewRedisAuth(rdb, cfg.JWT.RefreshExpiry, cfg.RateLimit.PerMinute, cfg.RateLimit.PerHour)
+	}
+	emailSender := auth.NewEmailSender(cfg.SMTP)
+
+	geo, err := geoip.Open(cfg.MaxMindPath)
+	if err != nil {
+		slog.Warn("geoip disabled: failed to open database", "error", err)
+	}
+	if geo != nil {
+		defer geo.Close()
+	}
+
+	// Metrics: hub first (collector depends on it)
+	hub := metrics.NewHub(15 * time.Second)
+	collector := metrics.NewCollector(rdb, hub, cfg.JWT.AccessExpiry)
+	collector.SetOnSnapshot(hub.Broadcast)
+
+	metricsCtx, metricsCancel := context.WithCancel(context.Background())
+	defer metricsCancel()
+	go collector.Run(metricsCtx, 20*time.Second)
+
+	router := handler.NewRouter(cfg, store, redisAuth, emailSender, geo, collector, hub)
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.ServerPort,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.ServerPort,
+		Handler:           router,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Graceful shutdown
@@ -74,21 +140,23 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("server starting on :%s", cfg.ServerPort)
+		slog.Info("server starting", "port", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-done
-	log.Println("shutting down server...")
+	slog.Info("shutting down server")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("server shutdown error: %v", err)
+		slog.Error("server shutdown error", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("server stopped")
+	slog.Info("server stopped")
 }

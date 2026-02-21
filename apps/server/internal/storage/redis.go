@@ -3,15 +3,26 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/system-design-sandbox/server/internal/config"
 )
 
+// slogRedisLogger adapts slog to the go-redis internal logger interface.
+type slogRedisLogger struct{}
+
+func (slogRedisLogger) Printf(_ context.Context, format string, v ...interface{}) {
+	slog.Debug(fmt.Sprintf(format, v...), "component", "redis")
+}
+
+func init() {
+	redis.SetLogger(slogRedisLogger{})
+}
+
 func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClient, error) {
 	if cfg.URL == "" && len(cfg.SentinelURLs) == 0 {
-		log.Println("redis: no REDIS_URL or REDIS_SENTINEL_URL configured, skipping")
+		slog.Info("redis: no REDIS_URL or REDIS_SENTINEL_URL configured, skipping")
 		return nil, nil
 	}
 
@@ -30,14 +41,14 @@ func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClien
 			Password:      cfg.Password,
 			DB:            cfg.DB,
 		})
-		log.Printf("redis: connecting via sentinel (master=%s, sentinels=%v, db=%d)", cfg.SentinelMaster, cfg.SentinelURLs, cfg.DB)
+		slog.Info("redis: connecting via sentinel", "master", cfg.SentinelMaster, "sentinels", cfg.SentinelURLs, "db", cfg.DB)
 	} else {
 		client = redis.NewClient(&redis.Options{
 			Addr:     cfg.URL,
 			Password: cfg.Password,
 			DB:       cfg.DB,
 		})
-		log.Printf("redis: connecting to %s (db=%d)", cfg.URL, cfg.DB)
+		slog.Info("redis: connecting", "addr", cfg.URL, "db", cfg.DB)
 	}
 
 	if err := client.Ping(ctx).Err(); err != nil {
@@ -45,6 +56,6 @@ func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClien
 		return nil, fmt.Errorf("redis ping failed: %w", err)
 	}
 
-	log.Println("redis: connected")
+	slog.Info("redis: connected")
 	return client, nil
 }
