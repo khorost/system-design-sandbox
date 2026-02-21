@@ -3,8 +3,9 @@ import { useCallback, useState } from 'react';
 import { useAuthStore } from '../../store/authStore.ts';
 
 export function OnboardingPage() {
-  const { user, completeOnboarding, error, clearError } = useAuthStore();
+  const { user, completeOnboarding, error, clearError, authConfig } = useAuthStore();
   const [displayName, setDisplayName] = useState(user?.display_name || '');
+  const [referralSource, setReferralSource] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = useCallback(
@@ -13,12 +14,15 @@ export function OnboardingPage() {
       if (!displayName.trim()) return;
       setSubmitting(true);
       try {
-        await completeOnboarding(displayName.trim());
+        await completeOnboarding(
+          displayName.trim(),
+          referralSource.trim() || undefined,
+        );
       } finally {
         setSubmitting(false);
       }
     },
-    [displayName, completeOnboarding],
+    [displayName, referralSource, completeOnboarding],
   );
 
   return (
@@ -45,6 +49,22 @@ export function OnboardingPage() {
             />
           </div>
 
+          {authConfig.referral_field_enabled && (
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                How did you hear about us?
+                <span className="text-slate-500 ml-1">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={referralSource}
+                onChange={(e) => setReferralSource(e.target.value)}
+                placeholder="e.g. OTUS, friend, blog..."
+                className="w-full px-3 py-2.5 bg-[#0f172a] border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
           {error && <p className="text-red-400 text-xs">{error}</p>}
 
           <button
@@ -53,6 +73,14 @@ export function OnboardingPage() {
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
           >
             {submitting ? 'Saving...' : 'Continue'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => useAuthStore.getState().setView('authenticated')}
+            className="w-full py-2.5 bg-transparent border border-slate-600 hover:border-slate-500 text-slate-400 hover:text-slate-300 text-sm font-medium rounded-lg transition-colors"
+          >
+            Skip for now
           </button>
         </form>
       </div>

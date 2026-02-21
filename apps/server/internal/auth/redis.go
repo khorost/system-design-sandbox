@@ -12,9 +12,7 @@ import (
 const (
 	authTokenTTL    = 5 * time.Minute
 	rateLimitMinTTL = 60 * time.Second
-	rateLimitMinMax = 1
 	rateLimitHrTTL  = 3600 * time.Second
-	rateLimitHrMax  = 5
 	maxCodeAttempts = 5
 )
 
@@ -25,26 +23,35 @@ type AuthTokenData struct {
 	Attempts int    `json:"attempts"`
 }
 
-// SessionData is the data stored in Redis for an active session.
+// SessionData is the data stored as a Redis hash for an active session.
+// Using HSET allows atomic updates of individual fields (e.g. last_active_at)
+// without read-modify-write cycles.
+// UA is not stored here — it goes only to the session_log table.
 type SessionData struct {
-	UserID       string `json:"user_id"`
-	RefreshToken string `json:"refresh_token"`
-	IP           string `json:"ip"`
-	UserAgent    string `json:"ua"`
-	Geo          string `json:"geo"`
-	CreatedAt    string `json:"created_at"`
-	LastActiveAt string `json:"last_active_at"`
+	UserID       string
+	RefreshToken string
+	IP           string
+	Geo          string
+	CreatedAt    string
+	LastActiveAt string
 }
 
 // RedisAuth provides auth-related Redis operations.
 type RedisAuth struct {
-	rdb           redis.UniversalClient
-	sessionExpiry time.Duration
+	rdb             redis.UniversalClient
+	sessionExpiry   time.Duration
+	rateLimitPerMin int
+	rateLimitPerHr  int
 }
 
 // NewRedisAuth creates a new RedisAuth instance.
-func NewRedisAuth(rdb redis.UniversalClient, sessionExpiry time.Duration) *RedisAuth {
-	return &RedisAuth{rdb: rdb, sessionExpiry: sessionExpiry}
+func NewRedisAuth(rdb redis.UniversalClient, sessionExpiry time.Duration, rateLimitPerMin, rateLimitPerHr int) *RedisAuth {
+	return &RedisAuth{
+		rdb:             rdb,
+		sessionExpiry:   sessionExpiry,
+		rateLimitPerMin: rateLimitPerMin,
+		rateLimitPerHr:  rateLimitPerHr,
+	}
 }
 
 // --- Auth token operations ---
@@ -160,7 +167,16 @@ func (ra *RedisAuth) DeleteAuthToken(ctx context.Context, token string) error {
 
 // --- Rate limiting ---
 
-// CheckRateLimit returns an error if the email has exceeded rate limits.
+// RateLimitError is returned when the rate limit is exceeded.
+type RateLimitError struct {
+	RetryAfter int // seconds until the limit resets
+}
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("rate limit exceeded, retry after %d seconds", e.RetryAfter)
+}
+
+// CheckRateLimit returns a *RateLimitError if the email has exceeded rate limits.
 func (ra *RedisAuth) CheckRateLimit(ctx context.Context, email string) error {
 	minKey := rateLimitMinKey(email)
 	hrKey := rateLimitHrKey(email)
@@ -169,16 +185,26 @@ func (ra *RedisAuth) CheckRateLimit(ctx context.Context, email string) error {
 	if err != nil && err != redis.Nil {
 		return err
 	}
-	if minCount >= rateLimitMinMax {
-		return fmt.Errorf("rate limit: too many requests per minute")
+	if minCount >= ra.rateLimitPerMin {
+		ttl, _ := ra.rdb.TTL(ctx, minKey).Result()
+		retryAfter := int(ttl.Seconds())
+		if retryAfter <= 0 {
+			retryAfter = int(rateLimitMinTTL.Seconds())
+		}
+		return &RateLimitError{RetryAfter: retryAfter}
 	}
 
 	hrCount, err := ra.rdb.Get(ctx, hrKey).Int()
 	if err != nil && err != redis.Nil {
 		return err
 	}
-	if hrCount >= rateLimitHrMax {
-		return fmt.Errorf("rate limit: too many requests per hour")
+	if hrCount >= ra.rateLimitPerHr {
+		ttl, _ := ra.rdb.TTL(ctx, hrKey).Result()
+		retryAfter := int(ttl.Seconds())
+		if retryAfter <= 0 {
+			retryAfter = int(rateLimitHrTTL.Seconds())
+		}
+		return &RateLimitError{RetryAfter: retryAfter}
 	}
 
 	pipe := ra.rdb.Pipeline()
@@ -190,44 +216,120 @@ func (ra *RedisAuth) CheckRateLimit(ctx context.Context, email string) error {
 	return err
 }
 
-// --- Session operations ---
+// --- Session operations (Redis hashes) ---
 
-func sessionKey(sessionID string) string       { return "session:" + sessionID }
-func userSessionsKey(userID string) string     { return "sessions:user:" + userID }
+const (
+	fUserID       = "uid"
+	fRefreshToken = "rt"
+	fIP           = "ip"
+	fGeo          = "geo"
+	fCreatedAt    = "cat"
+	fLastActiveAt = "lat"
+)
 
-// CreateSession creates a new session in Redis.
+func sessionKey(sessionID string) string   { return "s:" + sessionID }
+func userSessionsKey(userID string) string { return "su:" + userID }
+
+// CreateSession creates a new session as a Redis hash.
 func (ra *RedisAuth) CreateSession(ctx context.Context, sessionID string, data SessionData) error {
-	b, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
+	key := sessionKey(sessionID)
 	pipe := ra.rdb.Pipeline()
-	pipe.Set(ctx, sessionKey(sessionID), b, ra.sessionExpiry)
+	pipe.HSet(ctx, key, map[string]interface{}{
+		fUserID:       data.UserID,
+		fRefreshToken: data.RefreshToken,
+		fIP:           data.IP,
+		fGeo:          data.Geo,
+		fCreatedAt:    data.CreatedAt,
+		fLastActiveAt: data.LastActiveAt,
+	})
+	pipe.Expire(ctx, key, ra.sessionExpiry)
 	pipe.SAdd(ctx, userSessionsKey(data.UserID), sessionID)
 	pipe.Expire(ctx, userSessionsKey(data.UserID), ra.sessionExpiry)
-	_, err = pipe.Exec(ctx)
+	_, err := pipe.Exec(ctx)
 	return err
 }
 
-// GetSession retrieves session data from Redis.
+// GetSession retrieves session data from a Redis hash.
 func (ra *RedisAuth) GetSession(ctx context.Context, sessionID string) (*SessionData, error) {
-	val, err := ra.rdb.Get(ctx, sessionKey(sessionID)).Result()
-	if err == redis.Nil {
-		return nil, nil
-	}
+	m, err := ra.rdb.HGetAll(ctx, sessionKey(sessionID)).Result()
 	if err != nil {
 		return nil, err
 	}
-	var data SessionData
-	if err := json.Unmarshal([]byte(val), &data); err != nil {
-		return nil, err
+	if len(m) == 0 {
+		return nil, nil
 	}
-	return &data, nil
+	return &SessionData{
+		UserID:       m[fUserID],
+		RefreshToken: m[fRefreshToken],
+		IP:           m[fIP],
+		Geo:          m[fGeo],
+		CreatedAt:    m[fCreatedAt],
+		LastActiveAt: m[fLastActiveAt],
+	}, nil
 }
 
 // ListUserSessions returns all active session IDs for a user.
 func (ra *RedisAuth) ListUserSessions(ctx context.Context, userID string) ([]string, error) {
 	return ra.rdb.SMembers(ctx, userSessionsKey(userID)).Result()
+}
+
+// SessionInfoItem is a resolved session with display data from Redis.
+type SessionInfoItem struct {
+	SessionID    string
+	IP           string
+	Geo          string
+	CreatedAt    string
+	LastActiveAt string
+	Current      bool
+}
+
+// ListUserSessionsFull returns resolved sessions using a pipeline of HGETALL.
+// Stale IDs (expired keys) are cleaned from the SET automatically.
+func (ra *RedisAuth) ListUserSessionsFull(ctx context.Context, userID, currentSessionID string) ([]SessionInfoItem, error) {
+	ids, err := ra.rdb.SMembers(ctx, userSessionsKey(userID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []SessionInfoItem{}, nil
+	}
+
+	// Pipeline HGETALL for all session keys at once
+	pipe := ra.rdb.Pipeline()
+	cmds := make([]*redis.MapStringStringCmd, len(ids))
+	for i, sid := range ids {
+		cmds[i] = pipe.HGetAll(ctx, sessionKey(sid))
+	}
+	_, _ = pipe.Exec(ctx)
+
+	var staleIDs []string
+	sessions := make([]SessionInfoItem, 0, len(ids))
+	for i, cmd := range cmds {
+		m, err := cmd.Result()
+		if err != nil || len(m) == 0 {
+			staleIDs = append(staleIDs, ids[i])
+			continue
+		}
+		sessions = append(sessions, SessionInfoItem{
+			SessionID:    ids[i],
+			IP:           m[fIP],
+			Geo:          m[fGeo],
+			CreatedAt:    m[fCreatedAt],
+			LastActiveAt: m[fLastActiveAt],
+			Current:      ids[i] == currentSessionID,
+		})
+	}
+
+	// Clean stale IDs from the SET
+	if len(staleIDs) > 0 {
+		members := make([]interface{}, len(staleIDs))
+		for i, id := range staleIDs {
+			members[i] = id
+		}
+		ra.rdb.SRem(ctx, userSessionsKey(userID), members...)
+	}
+
+	return sessions, nil
 }
 
 // DeleteSession removes a session from Redis.
@@ -258,32 +360,37 @@ func (ra *RedisAuth) DeleteOtherSessions(ctx context.Context, currentSessionID, 
 	return count, nil
 }
 
-// RotateRefreshToken generates a new refresh token and updates the session.
+// RotateRefreshToken generates a new refresh token and updates only the changed fields.
 func (ra *RedisAuth) RotateRefreshToken(ctx context.Context, sessionID string) (string, error) {
-	sess, err := ra.GetSession(ctx, sessionID)
-	if err != nil || sess == nil {
+	key := sessionKey(sessionID)
+	exists, err := ra.rdb.Exists(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	if exists == 0 {
 		return "", fmt.Errorf("session not found")
 	}
 	newToken, err := GenerateToken()
 	if err != nil {
 		return "", err
 	}
-	sess.RefreshToken = newToken
-	sess.LastActiveAt = time.Now().UTC().Format(time.RFC3339)
-	b, _ := json.Marshal(sess)
-	if err := ra.rdb.Set(ctx, sessionKey(sessionID), b, ra.sessionExpiry).Err(); err != nil {
+	now := time.Now().UTC().Format(time.RFC3339)
+	pipe := ra.rdb.Pipeline()
+	pipe.HSet(ctx, key, fRefreshToken, newToken, fLastActiveAt, now)
+	pipe.Expire(ctx, key, ra.sessionExpiry)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return "", err
 	}
 	return newToken, nil
 }
 
-// TouchSession updates the last_active_at timestamp.
+// TouchSession updates only the last_active_at field.
 func (ra *RedisAuth) TouchSession(ctx context.Context, sessionID string) error {
-	sess, err := ra.GetSession(ctx, sessionID)
-	if err != nil || sess == nil {
+	key := sessionKey(sessionID)
+	exists, err := ra.rdb.Exists(ctx, key).Result()
+	if err != nil || exists == 0 {
 		return nil
 	}
-	sess.LastActiveAt = time.Now().UTC().Format(time.RFC3339)
-	b, _ := json.Marshal(sess)
-	return ra.rdb.Set(ctx, sessionKey(sessionID), b, ra.sessionExpiry).Err()
+	now := time.Now().UTC().Format(time.RFC3339)
+	return ra.rdb.HSet(ctx, key, fLastActiveAt, now).Err()
 }

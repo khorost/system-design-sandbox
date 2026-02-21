@@ -12,7 +12,8 @@ var verifyFS embed.FS
 var verifyTmpl = template.Must(template.ParseFS(verifyFS, "templates/verify.html"))
 
 type verifyPageData struct {
-	Token string
+	Token     string
+	PublicURL string
 }
 
 // VerifyPage serves GET /auth/verify?token=... — a standalone HTML page with htmx.
@@ -27,7 +28,7 @@ func (h *AuthHandler) VerifyPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
 
-	data := verifyPageData{Token: token}
+	data := verifyPageData{Token: token, PublicURL: h.Config.PublicURL}
 	if err := verifyTmpl.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}

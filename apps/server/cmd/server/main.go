@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,16 +15,50 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
+	"github.com/system-design-sandbox/server/internal/geoip"
 	"github.com/system-design-sandbox/server/internal/handler"
 	"github.com/system-design-sandbox/server/internal/storage"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARN", "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func main() {
 	if err := godotenv.Load(); err != nil {
 		slog.Info("no .env file found, using environment variables")
 	}
+
+	// Configure logger
+	logLevel := parseLogLevel(os.Getenv("LOG_LEVEL"))
+	logStruct := strings.EqualFold(strings.TrimSpace(os.Getenv("LOG_STRUCT")), "true")
+	handlerOpts := &slog.HandlerOptions{
+		Level: logLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				a.Value = slog.StringValue(a.Value.Time().Format("2006-01-02T15:04:05.000Z07:00"))
+			}
+			return a
+		},
+	}
+	var logHandler slog.Handler
+	if logStruct {
+		logHandler = slog.NewJSONHandler(os.Stdout, handlerOpts)
+	} else {
+		logHandler = slog.NewTextHandler(os.Stdout, handlerOpts)
+	}
+	slog.SetDefault(slog.New(logHandler))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -69,11 +104,20 @@ func main() {
 	// Initialize auth services
 	var redisAuth *auth.RedisAuth
 	if rdb != nil {
-		redisAuth = auth.NewRedisAuth(rdb, cfg.JWT.RefreshExpiry)
+		redisAuth = auth.NewRedisAuth(rdb, cfg.JWT.RefreshExpiry, cfg.RateLimit.PerMinute, cfg.RateLimit.PerHour)
 	}
 	emailSender := auth.NewEmailSender(cfg.SMTP)
 
-	router := handler.NewRouter(cfg, store, redisAuth, emailSender)
+	geo, err := geoip.Open(cfg.MaxMindPath)
+	if err != nil {
+		slog.Error("failed to open geoip database", "error", err)
+		os.Exit(1)
+	}
+	if geo != nil {
+		defer geo.Close()
+	}
+
+	router := handler.NewRouter(cfg, store, redisAuth, emailSender, geo)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,

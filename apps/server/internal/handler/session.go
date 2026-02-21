@@ -2,10 +2,13 @@ package handler
 
 import (
 	"net/http"
+	"sort"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/system-design-sandbox/server/internal/auth"
+	"github.com/system-design-sandbox/server/internal/config"
 	"github.com/system-design-sandbox/server/internal/model"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
@@ -13,19 +16,26 @@ import (
 type SessionHandler struct {
 	Store     *storage.Storage
 	RedisAuth *auth.RedisAuth
+	Config    *config.Config
 }
 
 type sessionInfo struct {
 	SessionID    string `json:"session_id"`
 	IP           string `json:"ip"`
-	UserAgent    string `json:"user_agent"`
 	Geo          string `json:"geo"`
 	CreatedAt    string `json:"created_at"`
 	LastActiveAt string `json:"last_active_at"`
 	Current      bool   `json:"current"`
 }
 
+type sessionsResponse struct {
+	Sessions []sessionInfo `json:"sessions"`
+	Total    int           `json:"total"`
+}
+
 // ListSessions handles GET /api/v1/auth/sessions
+// Query params: ?limit=N (0 = all, default 6 = current + 5 recent)
+// All data comes from Redis (no PostgreSQL).
 func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
@@ -33,34 +43,46 @@ func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionIDs, err := h.RedisAuth.ListUserSessions(r.Context(), authUser.UserID)
+	all, err := h.RedisAuth.ListUserSessionsFull(r.Context(), authUser.UserID, authUser.SessionID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "failed to list sessions")
 		return
 	}
 
-	var sessions []sessionInfo
-	for _, sid := range sessionIDs {
-		sess, err := h.RedisAuth.GetSession(r.Context(), sid)
-		if err != nil || sess == nil {
-			continue
+	// Sort: current first, then by last_active_at descending
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Current != all[j].Current {
+			return all[i].Current
 		}
-		sessions = append(sessions, sessionInfo{
-			SessionID:    sid,
-			IP:           sess.IP,
-			UserAgent:    sess.UserAgent,
-			Geo:          sess.Geo,
-			CreatedAt:    sess.CreatedAt,
-			LastActiveAt: sess.LastActiveAt,
-			Current:      sid == authUser.SessionID,
+		return all[i].LastActiveAt > all[j].LastActiveAt
+	})
+
+	total := len(all)
+
+	// Apply limit (default 6: current + 5 recent)
+	limit := 6
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v >= 0 {
+			limit = v
+		}
+	}
+	if limit > 0 && limit < total {
+		all = all[:limit]
+	}
+
+	out := make([]sessionInfo, 0, len(all))
+	for _, s := range all {
+		out = append(out, sessionInfo{
+			SessionID:    s.SessionID,
+			IP:           s.IP,
+			Geo:          s.Geo,
+			CreatedAt:    s.CreatedAt,
+			LastActiveAt: s.LastActiveAt,
+			Current:      s.Current,
 		})
 	}
 
-	if sessions == nil {
-		sessions = []sessionInfo{}
-	}
-
-	writeJSON(w, http.StatusOK, sessions)
+	writeJSON(w, http.StatusOK, sessionsResponse{Sessions: out, Total: total})
 }
 
 // RevokeSession handles DELETE /api/v1/auth/sessions/{sessionID}
@@ -86,15 +108,17 @@ func (h *SessionHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 
 	h.RedisAuth.DeleteSession(r.Context(), targetSessionID, authUser.UserID)
 
-	var uid pgtype.UUID
-	uid.Scan(authUser.UserID)
-	h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-		UserID:    uid,
-		SessionID: targetSessionID,
-		Action:    "revoke",
-		IP:        clientIP(r),
-		UserAgent: r.UserAgent(),
-	})
+	if h.Config.SessionLogEnabled {
+		var uid pgtype.UUID
+		uid.Scan(authUser.UserID)
+		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+			UserID:    uid,
+			SessionID: targetSessionID,
+			Action:    "revoke",
+			IP:        clientIP(r),
+			UserAgent: r.UserAgent(),
+		})
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

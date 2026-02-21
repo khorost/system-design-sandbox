@@ -10,9 +10,16 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(rootPkg.version),
   },
   server: {
+    host: '0.0.0.0',
+    port: 5176,
+    allowedHosts: ['dev.sdsandbox.ru'],
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/auth': 'http://localhost:8080',
+      '/api': 'https://dev.sdsandbox.ru',
+      '/auth': 'https://dev.sdsandbox.ru',
+      '/ws': {
+        target: 'https://dev.sdsandbox.ru',
+        ws: true,
+      },
     },
   },
 })

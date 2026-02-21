@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/system-design-sandbox/server/internal/config"
 )
 
 func TestClientIP(t *testing.T) {
@@ -88,7 +90,7 @@ func TestVerifyPageRendersHTML(t *testing.T) {
 	req := httptest.NewRequest("GET", "/auth/verify?token=abc123", nil)
 	w := httptest.NewRecorder()
 
-	h := &AuthHandler{}
+	h := &AuthHandler{Config: &config.Config{PublicURL: "https://example.com"}}
 	h.VerifyPage(w, req)
 
 	if w.Code != http.StatusOK {

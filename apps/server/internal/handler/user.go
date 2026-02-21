@@ -95,6 +95,7 @@ func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
 type updateProfileRequest struct {
 	DisplayName     *string `json:"display_name"`
 	GravatarAllowed *bool   `json:"gravatar_allowed"`
+	ReferralSource  *string `json:"referral_source"`
 }
 
 // UpdateMe handles PATCH /api/v1/users/me — updates the authenticated user's profile.
@@ -114,7 +115,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	var uid pgtype.UUID
 	uid.Scan(authUser.UserID)
 
-	user, err := h.Store.UpdateUserProfile(r.Context(), uid, req.DisplayName, req.GravatarAllowed)
+	user, err := h.Store.UpdateUserProfile(r.Context(), uid, req.DisplayName, req.GravatarAllowed, req.ReferralSource)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "failed to update profile")
 		return

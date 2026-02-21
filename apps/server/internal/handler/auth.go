@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
+	"github.com/system-design-sandbox/server/internal/geoip"
 	"github.com/system-design-sandbox/server/internal/model"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
@@ -21,17 +22,17 @@ type AuthHandler struct {
 	RedisAuth *auth.RedisAuth
 	Email     auth.EmailSender
 	Config    *config.Config
+	GeoIP     *geoip.Lookup
 }
 
 // --- Request/Response types ---
 
-type registerRequest struct {
-	Email     string `json:"email"`
-	PromoCode string `json:"promo_code"`
+type sendCodeRequest struct {
+	Email string `json:"email"`
 }
 
-type loginRequest struct {
-	Email string `json:"email"`
+type authConfigResponse struct {
+	ReferralFieldEnabled bool `json:"referral_field_enabled"`
 }
 
 type verifyRequest struct {
@@ -54,9 +55,10 @@ type authResponse struct {
 
 // --- Handlers ---
 
-// Register handles POST /api/v1/auth/register
-func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	var req registerRequest
+// SendCode handles POST /api/v1/auth/send-code
+// Unified entry point: creates user if not exists, sends auth code.
+func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
+	var req sendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
@@ -64,78 +66,54 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if req.Email == "" || !strings.Contains(req.Email, "@") {
-		// Always return ok to prevent email enumeration
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
-
-	// Validate promo code
-	if req.PromoCode == "" {
-		writeError(w, http.StatusBadRequest, "promo_required", "promo code is required")
-		return
-	}
-	if err := h.Store.ValidateAndUsePromo(r.Context(), req.PromoCode); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_promo", "invalid or expired promo code")
-		return
-	}
-
-	// Check rate limit
-	if err := h.RedisAuth.CheckRateLimit(r.Context(), req.Email); err != nil {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
-
-	// Check if user already exists
-	_, err := h.Store.GetUserByEmail(r.Context(), req.Email)
-	if err == nil {
-		// User exists — send login email instead of registering
-		h.sendAuthEmail(r, req.Email)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
-
-	// Create user with pending status
-	_, err = h.Store.CreateUserWithStatus(r.Context(), req.Email, req.Email, "pending_verification")
-	if err != nil {
-		slog.Error("register: create user failed", "error", err)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
-	}
-
-	h.sendAuthEmail(r, req.Email)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-// Login handles POST /api/v1/auth/login
-func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
-		return
-	}
-
-	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	if req.Email == "" || !strings.Contains(req.Email, "@") {
+		slog.Warn("send-code: invalid email", "email", req.Email)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
 
 	// Check rate limit
 	if err := h.RedisAuth.CheckRateLimit(r.Context(), req.Email); err != nil {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		if rlErr, ok := err.(*auth.RateLimitError); ok {
+			slog.Warn("send-code: rate limited", "email", req.Email, "retry_after", rlErr.RetryAfter)
+			writeJSON(w, http.StatusTooManyRequests, map[string]interface{}{
+				"error":       "Too many requests. Please try again later.",
+				"code":        "rate_limited",
+				"retry_after": rlErr.RetryAfter,
+			})
+		} else {
+			slog.Error("send-code: rate limit check failed", "email", req.Email, "error", err)
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		}
 		return
 	}
 
 	// Check if user exists
 	_, err := h.Store.GetUserByEmail(r.Context(), req.Email)
 	if err != nil {
-		// User doesn't exist — still return ok (anti-enumeration)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-		return
+		// User doesn't exist — create with pending status
+		_, err = h.Store.CreateUserWithStatus(r.Context(), req.Email, req.Email, "pending_verification")
+		if err != nil {
+			// Race condition: concurrent INSERT may fail on unique constraint — re-read
+			_, retryErr := h.Store.GetUserByEmail(r.Context(), req.Email)
+			if retryErr != nil {
+				slog.Error("send-code: create user failed", "error", err)
+				writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+				return
+			}
+			// User was created by concurrent request — proceed
+		}
 	}
 
 	h.sendAuthEmail(r, req.Email)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// AuthConfig handles GET /api/v1/auth/config
+// Returns public auth configuration.
+func (h *AuthHandler) AuthConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, authConfigResponse{
+		ReferralFieldEnabled: h.Config.ReferralFieldEnabled,
+	})
 }
 
 // Verify handles POST /api/v1/auth/verify (magic link)
@@ -253,13 +231,15 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Log refresh
-	h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-		UserID:    uid,
-		SessionID: sessionID,
-		Action:    "refresh",
-		IP:        clientIP(r),
-		UserAgent: r.UserAgent(),
-	})
+	if h.Config.SessionLogEnabled {
+		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+			UserID:    uid,
+			SessionID: sessionID,
+			Action:    "refresh",
+			IP:        clientIP(r),
+			UserAgent: r.UserAgent(),
+		})
+	}
 
 	h.setRefreshCookie(w, sessionID, newRefreshToken)
 	writeJSON(w, http.StatusOK, authResponse{AccessToken: accessToken, User: user})
@@ -275,15 +255,17 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	h.RedisAuth.DeleteSession(r.Context(), authUser.SessionID, authUser.UserID)
 
-	var uid pgtype.UUID
-	uid.Scan(authUser.UserID)
-	h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-		UserID:    uid,
-		SessionID: authUser.SessionID,
-		Action:    "logout",
-		IP:        clientIP(r),
-		UserAgent: r.UserAgent(),
-	})
+	if h.Config.SessionLogEnabled {
+		var uid pgtype.UUID
+		uid.Scan(authUser.UserID)
+		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+			UserID:    uid,
+			SessionID: authUser.SessionID,
+			Action:    "logout",
+			IP:        clientIP(r),
+			UserAgent: r.UserAgent(),
+		})
+	}
 
 	h.clearRefreshCookie(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -308,8 +290,11 @@ func (h *AuthHandler) sendAuthEmail(r *http.Request, email string) {
 		return
 	}
 
+	slog.Info("auth: sending login email", "email", email)
 	if err := h.Email.SendLoginEmail(email, token, code, h.Config.PublicURL); err != nil {
-		slog.Error("auth: send email failed", "error", err)
+		slog.Error("auth: send email failed", "email", email, "error", err)
+	} else {
+		slog.Info("auth: login email sent", "email", email)
 	}
 }
 
@@ -354,12 +339,13 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
 		user.ID.Bytes[8:10], user.ID.Bytes[10:16])
 
+	ip := clientIP(r)
 	now := time.Now().UTC().Format(time.RFC3339)
 	sessData := auth.SessionData{
 		UserID:       userIDStr,
 		RefreshToken: refreshToken,
-		IP:           clientIP(r),
-		UserAgent:    r.UserAgent(),
+		IP:           ip,
+		Geo:          h.GeoIP.City(ip),
 		CreatedAt:    now,
 		LastActiveAt: now,
 	}
@@ -379,20 +365,27 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Log login
-	h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-		UserID:    user.ID,
-		SessionID: sessionID,
-		Action:    "login",
-		IP:        clientIP(r),
-		UserAgent: r.UserAgent(),
-	})
+	if h.Config.SessionLogEnabled {
+		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+			UserID:    user.ID,
+			SessionID: sessionID,
+			Action:    "login",
+			IP:        ip,
+			UserAgent: r.UserAgent(),
+			Geo:       h.GeoIP.City(ip),
+		})
+	}
 
 	h.setRefreshCookie(w, sessionID, refreshToken)
 
-	// If this is from htmx (verify page), send HX-Redirect
+	// If this is from htmx (verify page), return success HTML with auto-redirect
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", h.Config.PublicURL)
-		writeJSON(w, http.StatusOK, authResponse{AccessToken: accessToken, User: user})
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<p style="color:#4ade80;font-size:16px;font-weight:600;margin-bottom:8px;">Verified successfully!</p>`+
+			`<p style="color:#94a3b8;font-size:13px;">Redirecting in <span id="countdown">3</span> seconds...</p>`+
+			`<script>(function(){var n=3,el=document.getElementById("countdown"),`+
+			`t=setInterval(function(){n--;if(n<=0){clearInterval(t);window.location.href=%q}else{el.textContent=n}},1000)})()</script>`,
+			h.Config.PublicURL)
 		return
 	}
 

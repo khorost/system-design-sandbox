@@ -108,6 +108,7 @@ function MainApp() {
   const { updateAvailable, reload } = useVersionCheck();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -164,7 +165,16 @@ function MainApp() {
             <span>&middot;</span>
             <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
           </div>
-          <UserMenu />
+          {user ? (
+            <UserMenu />
+          ) : (
+            <button
+              onClick={() => useAuthStore.getState().setView('login')}
+              className="px-3 py-1.5 text-xs font-medium text-slate-300 bg-blue-500/20 rounded-md hover:bg-blue-500/30 transition-colors"
+            >
+              Sign in
+            </button>
+          )}
         </div>
       </div>
 
@@ -222,6 +232,7 @@ export default function App() {
       return <CodeVerifyPage />;
     case 'onboarding':
       return <OnboardingPage />;
+    case 'anonymous':
     case 'authenticated':
       return <MainApp />;
   }

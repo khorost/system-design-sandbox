@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Verify — System Design Sandbox</title>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-json-enc@2.0.3"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -68,12 +69,15 @@
                 hx-vals='{"token":"{{.Token}}"}'
                 hx-target="#result"
                 hx-swap="innerHTML"
-                hx-headers='{"Content-Type": "application/json"}'
+                hx-ext="json-enc"
             >
                 <span class="btn-text">Verify &amp; Login</span>
                 <span class="btn-loading"><span class="spinner"></span>Verifying...</span>
             </button>
         </div>
+        <p style="margin-top:24px;">
+            <a href="{{.PublicURL}}" style="color:#94a3b8;font-size:13px;text-decoration:none;">Go to homepage</a>
+        </p>
     </div>
 </body>
 </html>

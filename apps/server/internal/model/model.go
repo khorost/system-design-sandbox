@@ -14,6 +14,7 @@ type User struct {
 	Status          string             `json:"status"`
 	DisplayName     *string            `json:"display_name,omitempty"`
 	GravatarAllowed bool               `json:"gravatar_allowed"`
+	ReferralSource  *string            `json:"referral_source,omitempty"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -25,14 +26,6 @@ type SessionLogEntry struct {
 	IP        string             `json:"ip,omitempty"`
 	UserAgent string             `json:"user_agent,omitempty"`
 	Geo       string             `json:"geo,omitempty"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-type PromoCode struct {
-	Code      string             `json:"code"`
-	MaxUses   *int               `json:"max_uses,omitempty"`
-	UsedCount int                `json:"used_count"`
-	ExpiresAt *time.Time         `json:"expires_at,omitempty"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 

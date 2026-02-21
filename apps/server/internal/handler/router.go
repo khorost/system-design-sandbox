@@ -1,18 +1,23 @@
 package handler
 
 import (
+	"log/slog"
+	"net/http"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/system-design-sandbox/server/internal/auth"
 	"github.com/system-design-sandbox/server/internal/config"
+	"github.com/system-design-sandbox/server/internal/geoip"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
 
-func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender) *chi.Mux {
+func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender, geo *geoip.Lookup) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)
+	r.Use(slogRequestLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(cors.Handler(cors.Options{
@@ -28,8 +33,8 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	ah := &ArchitectureHandler{Store: store}
 	sh := &ScenarioHandler{Store: store}
 	simh := &SimulationHandler{Store: store}
-	authH := &AuthHandler{Store: store, RedisAuth: redisAuth, Email: emailSender, Config: cfg}
-	sessH := &SessionHandler{Store: store, RedisAuth: redisAuth}
+	authH := &AuthHandler{Store: store, RedisAuth: redisAuth, Email: emailSender, Config: cfg, GeoIP: geo}
+	sessH := &SessionHandler{Store: store, RedisAuth: redisAuth, Config: cfg}
 
 	// Verify page (server-rendered HTML with htmx)
 	r.Get("/auth/verify", authH.VerifyPage)
@@ -37,8 +42,8 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public auth endpoints (no middleware)
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authH.Register)
-			r.Post("/login", authH.Login)
+			r.Post("/send-code", authH.SendCode)
+			r.Get("/config", authH.AuthConfig)
 			r.Post("/verify", authH.Verify)
 			r.Post("/verify-code", authH.VerifyCode)
 			r.Post("/refresh", authH.Refresh)
@@ -90,4 +95,21 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	})
 
 	return r
+}
+
+// slogRequestLogger is a chi middleware that logs HTTP requests via slog.
+func slogRequestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		slog.Info("http",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", ww.Status(),
+			"bytes", ww.BytesWritten(),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"ip", r.RemoteAddr,
+		)
+	})
 }

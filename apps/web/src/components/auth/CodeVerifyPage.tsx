@@ -9,7 +9,7 @@ export function CodeVerifyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(60);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const { verifyCode, requestLogin, email, error, clearError } = useAuthStore();
+  const { verifyCode, requestCode, email, error, clearError } = useAuthStore();
 
   // Resend cooldown timer
   useEffect(() => {
@@ -80,9 +80,9 @@ export function CodeVerifyPage() {
     setResendCooldown(60);
     setDigits(Array(CODE_LENGTH).fill(''));
     clearError();
-    await requestLogin(email);
+    await requestCode(email);
     inputRefs.current[0]?.focus();
-  }, [email, requestLogin, clearError]);
+  }, [email, requestCode, clearError]);
 
   return (
     <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
@@ -130,13 +130,23 @@ export function CodeVerifyPage() {
             </button>
           </div>
 
-          <div className="text-center mt-3">
-            <button
-              onClick={() => useAuthStore.setState({ view: 'login', error: null })}
-              className="text-xs text-slate-400 hover:text-slate-300"
-            >
-              Use a different email
-            </button>
+          <div className="text-center mt-3 space-y-2">
+            <div>
+              <button
+                onClick={() => useAuthStore.setState({ view: 'login', error: null })}
+                className="text-xs text-slate-400 hover:text-slate-300"
+              >
+                Use a different email
+              </button>
+            </div>
+            <div>
+              <button
+                onClick={() => useAuthStore.getState().setView('anonymous')}
+                className="text-xs text-slate-500 hover:text-slate-400"
+              >
+                Continue without signing in
+              </button>
+            </div>
           </div>
         </div>
       </div>

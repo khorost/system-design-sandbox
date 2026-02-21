@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
 	_ "embed"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/system-design-sandbox/server/internal/config"
 )
@@ -38,7 +40,7 @@ type consoleSender struct{}
 
 func (s *consoleSender) SendLoginEmail(to, token, code, publicURL string) error {
 	link := publicURL + "/auth/verify?token=" + token
-	slog.Info("login email",
+	slog.Debug("login email (console)",
 		"to", to,
 		"code", code,
 		"link", link,
@@ -55,26 +57,50 @@ type smtpSender struct {
 func (s *smtpSender) SendLoginEmail(to, token, code, publicURL string) error {
 	link := publicURL + "/auth/verify?token=" + token
 
-	subject := "System Design Sandbox — Login Code: " + code
+	subject := "System Design Sandbox - Login Code: " + code
 	body := buildEmailHTML(code, link)
+	messageID := generateMessageID(s.cfg.From)
 
 	msg := "From: " + s.cfg.From + "\r\n" +
 		"To: " + to + "\r\n" +
 		"Subject: " + subject + "\r\n" +
+		"Message-ID: " + messageID + "\r\n" +
+		"Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/html; charset=UTF-8\r\n" +
 		"\r\n" + body
 
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
+	slog.Debug("sending login email", "to", to, "message_id", messageID)
+
+	var err error
 	switch strings.ToLower(s.cfg.TLS) {
 	case "tls":
-		return s.sendTLS(addr, to, msg)
+		err = s.sendTLS(addr, to, msg)
 	case "starttls":
-		return s.sendSTARTTLS(addr, to, msg)
+		err = s.sendSTARTTLS(addr, to, msg)
 	default:
-		return s.sendPlain(addr, to, msg)
+		err = s.sendPlain(addr, to, msg)
 	}
+
+	if err != nil {
+		slog.Error("email send failed", "to", to, "error", err)
+	} else {
+		slog.Debug("email sent", "to", to, "message_id", messageID)
+	}
+	return err
+}
+
+// generateMessageID creates an RFC 2822 compliant Message-ID using the sender domain.
+func generateMessageID(from string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	domain := "localhost"
+	if parts := strings.SplitN(from, "@", 2); len(parts) == 2 {
+		domain = parts[1]
+	}
+	return fmt.Sprintf("<%x.%x@%s>", b[:8], b[8:], domain)
 }
 
 func (s *smtpSender) auth() smtp.Auth {
@@ -149,13 +175,15 @@ func (s *smtpSender) sendViaClient(c *smtp.Client, to, msg string) error {
 }
 
 type emailData struct {
-	Code string
-	Link string
+	Code      string
+	Link      string
+	ExpiresAt string
 }
 
 func buildEmailHTML(code, link string) string {
+	expiresAt := time.Now().UTC().Add(authTokenTTL).Format("15:04 UTC")
 	var buf bytes.Buffer
-	if err := loginEmailTmpl.Execute(&buf, emailData{Code: code, Link: link}); err != nil {
+	if err := loginEmailTmpl.Execute(&buf, emailData{Code: code, Link: link, ExpiresAt: expiresAt}); err != nil {
 		slog.Error("email: template render failed", "error", err)
 		return ""
 	}

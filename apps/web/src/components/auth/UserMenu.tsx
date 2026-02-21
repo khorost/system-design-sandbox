@@ -136,7 +136,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
 interface SessionInfo {
   session_id: string;
   ip: string;
-  user_agent: string;
+  geo: string;
   created_at: string;
   last_active_at: string;
   current: boolean;
@@ -145,18 +145,37 @@ interface SessionInfo {
 function SessionsModal({ onClose }: { onClose: () => void }) {
   const { listSessions, revokeSession, revokeOtherSessions } = useAuthStore();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [showAll, setShowAll] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const load = useCallback(
+    (all: boolean) => {
+      setLoading(true);
+      listSessions(all ? 0 : undefined)
+        .then((res) => {
+          setSessions(res.sessions);
+          setTotal(res.total);
+        })
+        .finally(() => setLoading(false));
+    },
+    [listSessions],
+  );
+
   useEffect(() => {
-    listSessions()
-      .then(setSessions)
-      .finally(() => setLoading(false));
-  }, [listSessions]);
+    load(false);
+  }, [load]);
+
+  const handleShowAll = useCallback(() => {
+    setShowAll(true);
+    load(true);
+  }, [load]);
 
   const handleRevoke = useCallback(
     async (sessionID: string) => {
       await revokeSession(sessionID);
       setSessions((prev) => prev.filter((s) => s.session_id !== sessionID));
+      setTotal((prev) => prev - 1);
     },
     [revokeSession],
   );
@@ -164,22 +183,19 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
   const handleRevokeOthers = useCallback(async () => {
     await revokeOtherSessions();
     setSessions((prev) => prev.filter((s) => s.current));
+    setTotal(1);
   }, [revokeOtherSessions]);
 
-  const formatUA = (ua: string) => {
-    if (!ua) return 'Unknown';
-    if (ua.includes('Chrome')) return 'Chrome';
-    if (ua.includes('Firefox')) return 'Firefox';
-    if (ua.includes('Safari')) return 'Safari';
-    if (ua.includes('Edge')) return 'Edge';
-    return ua.slice(0, 30);
-  };
+  const hiddenCount = total - sessions.length;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-[#1e293b] rounded-xl p-6 w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-slate-100">Active Sessions</h2>
+          <h2 className="text-lg font-bold text-slate-100">
+            Active Sessions
+            <span className="ml-2 text-sm font-normal text-slate-400">({total})</span>
+          </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200 text-lg">&times;</button>
         </div>
 
@@ -191,10 +207,12 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
               <div key={s.session_id} className="bg-[#0f172a] rounded-lg p-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-200">
-                    {formatUA(s.user_agent)}
+                    {s.geo || s.ip}
                     {s.current && <span className="ml-2 text-green-400 text-[10px]">current</span>}
                   </p>
-                  <p className="text-[10px] text-slate-500">{s.ip} &middot; {new Date(s.created_at).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {s.geo ? s.ip + ' \u00b7 ' : ''}{new Date(s.created_at).toLocaleString()}
+                  </p>
                 </div>
                 {!s.current && (
                   <button onClick={() => handleRevoke(s.session_id)} className="text-xs text-red-400 hover:text-red-300">
@@ -203,10 +221,19 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             ))}
+
+            {hiddenCount > 0 && !showAll && (
+              <button
+                onClick={handleShowAll}
+                className="w-full py-2 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                Show all sessions ({hiddenCount} more)
+              </button>
+            )}
           </div>
         )}
 
-        {sessions.length > 1 && (
+        {total > 1 && (
           <button
             onClick={handleRevokeOthers}
             className="w-full mt-4 py-2 text-xs text-red-400 border border-red-400/30 rounded-lg hover:bg-red-400/10 transition-colors"

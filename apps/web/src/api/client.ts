@@ -1,11 +1,13 @@
 export class ApiError extends Error {
   code: string;
   status: number;
+  retryAfter?: number;
 
-  constructor(message: string, code: string, status: number) {
+  constructor(message: string, code: string, status: number, retryAfter?: number) {
     super(message);
     this.code = code;
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -82,7 +84,7 @@ export async function apiFetch<T = unknown>(
   }
 
   if (!res.ok) {
-    let body: { error?: string; code?: string } = {};
+    let body: { error?: string; code?: string; retry_after?: number } = {};
     try {
       body = await res.json();
     } catch {
@@ -92,6 +94,7 @@ export async function apiFetch<T = unknown>(
       body.error || res.statusText,
       body.code || 'unknown',
       res.status,
+      body.retry_after,
     );
   }
 

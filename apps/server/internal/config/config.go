@@ -9,12 +9,21 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	ServerPort  string
-	Redis       RedisConfig
-	JWT         JWTConfig
-	SMTP        SMTPConfig
-	PublicURL   string
+	DatabaseURL          string
+	ServerPort           string
+	Redis                RedisConfig
+	JWT                  JWTConfig
+	SMTP                 SMTPConfig
+	RateLimit            RateLimitConfig
+	PublicURL            string
+	ReferralFieldEnabled bool
+	MaxMindPath          string
+	SessionLogEnabled    bool
+}
+
+type RateLimitConfig struct {
+	PerMinute int
+	PerHour   int
 }
 
 type JWTConfig struct {
@@ -106,6 +115,41 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("PUBLIC_URL environment variable is required")
 	}
 
+	referralFieldEnabled := false
+	if v := os.Getenv("REFERRAL_FIELD_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("REFERRAL_FIELD_ENABLED must be a boolean: %w", err)
+		}
+		referralFieldEnabled = b
+	}
+
+	sessionLogEnabled := false
+	if v := os.Getenv("SESSION_LOG_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("SESSION_LOG_ENABLED must be a boolean: %w", err)
+		}
+		sessionLogEnabled = b
+	}
+
+	rlPerMinute := 5
+	if v := os.Getenv("RATE_LIMIT_PER_MINUTE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("RATE_LIMIT_PER_MINUTE must be an integer: %w", err)
+		}
+		rlPerMinute = n
+	}
+	rlPerHour := 20
+	if v := os.Getenv("RATE_LIMIT_PER_HOUR"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("RATE_LIMIT_PER_HOUR must be an integer: %w", err)
+		}
+		rlPerHour = n
+	}
+
 	smtpPort := 587
 	if v := os.Getenv("SMTP_PORT"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -121,9 +165,12 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL: dbURL,
-		ServerPort:  port,
-		PublicURL:   publicURL,
+		DatabaseURL:          dbURL,
+		ServerPort:           port,
+		PublicURL:            publicURL,
+		ReferralFieldEnabled: referralFieldEnabled,
+		SessionLogEnabled:    sessionLogEnabled,
+		MaxMindPath:          os.Getenv("MAXMIND_GEOLITE2"),
 		Redis: RedisConfig{
 			URL:            os.Getenv("REDIS_URL"),
 			Password:       os.Getenv("REDIS_PASSWORD"),
@@ -144,6 +191,10 @@ func Load() (*Config, error) {
 			Password: os.Getenv("SMTP_PASSWORD"),
 			TLS:      smtpTLS,
 			From:     os.Getenv("SMTP_FROM"),
+		},
+		RateLimit: RateLimitConfig{
+			PerMinute: rlPerMinute,
+			PerHour:   rlPerHour,
 		},
 	}, nil
 }

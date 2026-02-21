@@ -9,6 +9,17 @@ import (
 	"github.com/system-design-sandbox/server/internal/config"
 )
 
+// slogRedisLogger adapts slog to the go-redis internal logger interface.
+type slogRedisLogger struct{}
+
+func (slogRedisLogger) Printf(_ context.Context, format string, v ...interface{}) {
+	slog.Debug(fmt.Sprintf(format, v...), "component", "redis")
+}
+
+func init() {
+	redis.SetLogger(slogRedisLogger{})
+}
+
 func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClient, error) {
 	if cfg.URL == "" && len(cfg.SentinelURLs) == 0 {
 		slog.Info("redis: no REDIS_URL or REDIS_SENTINEL_URL configured, skipping")

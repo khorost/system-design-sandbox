@@ -16,6 +16,35 @@ func (s *Storage) CreateSessionLog(ctx context.Context, entry model.SessionLogEn
 	return err
 }
 
+// GetLoginInfoBySessionIDs returns the login log entry for each session ID (most recent login per session).
+// Result is a map from session_id to SessionLogEntry.
+func (s *Storage) GetLoginInfoBySessionIDs(ctx context.Context, sessionIDs []string) (map[string]model.SessionLogEntry, error) {
+	if len(sessionIDs) == 0 {
+		return map[string]model.SessionLogEntry{}, nil
+	}
+	rows, err := s.Pool.Query(ctx,
+		`SELECT DISTINCT ON (session_id) session_id, ip, user_agent, geo, created_at
+		 FROM session_log
+		 WHERE session_id = ANY($1) AND action = 'login'
+		 ORDER BY session_id, created_at DESC`,
+		sessionIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]model.SessionLogEntry, len(sessionIDs))
+	for rows.Next() {
+		var e model.SessionLogEntry
+		if err := rows.Scan(&e.SessionID, &e.IP, &e.UserAgent, &e.Geo, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		result[e.SessionID] = e
+	}
+	return result, rows.Err()
+}
+
 func (s *Storage) ListSessionLogs(ctx context.Context, userID pgtype.UUID, limit int) ([]model.SessionLogEntry, error) {
 	if limit <= 0 {
 		limit = 50
