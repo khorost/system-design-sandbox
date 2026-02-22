@@ -11,5 +11,6 @@ FROM alpine:3.23.3
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /server /server
 COPY --from=builder /app/migrations/ /migrations/
+
 EXPOSE 8080
 CMD ["/server"]
