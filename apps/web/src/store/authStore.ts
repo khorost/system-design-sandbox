@@ -61,6 +61,8 @@ interface AuthState {
 
 const SESSION_KEY = 'has_session';
 
+let initPromise: Promise<void> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   view: 'loading',
@@ -84,33 +86,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  initialize: async () => {
-    // Fetch auth config in parallel
-    get().fetchAuthConfig();
+  initialize: () => {
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      // Fetch auth config in parallel
+      get().fetchAuthConfig();
 
-    try {
-      const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        localStorage.removeItem(SESSION_KEY);
+      try {
+        const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          localStorage.removeItem(SESSION_KEY);
+          set({ view: 'anonymous' });
+          return;
+        }
+        const data = await res.json();
+        setAccessToken(data.access_token);
+        localStorage.setItem(SESSION_KEY, '1');
+        const user: User = data.user;
+
+        if (!user.display_name) {
+          set({ user, view: 'onboarding' });
+        } else {
+          set({ user, view: 'authenticated' });
+        }
+      } catch {
         set({ view: 'anonymous' });
-        return;
+      } finally {
+        initPromise = null;
       }
-      const data = await res.json();
-      setAccessToken(data.access_token);
-      localStorage.setItem(SESSION_KEY, '1');
-      const user: User = data.user;
-
-      if (!user.display_name) {
-        set({ user, view: 'onboarding' });
-      } else {
-        set({ user, view: 'authenticated' });
-      }
-    } catch {
-      set({ view: 'anonymous' });
-    }
+    })();
+    return initPromise;
   },
 
   requestCode: async (email: string) => {

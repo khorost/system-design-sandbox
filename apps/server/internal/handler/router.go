@@ -128,7 +128,7 @@ func slogRequestLogger(next http.Handler) http.Handler {
 			"status", ww.Status(),
 			"bytes", ww.BytesWritten(),
 			"duration_ms", time.Since(start).Milliseconds(),
-			"ip", r.RemoteAddr,
+			"ip", clientIP(r),
 		)
 	})
 }
