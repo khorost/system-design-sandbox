@@ -22,7 +22,7 @@ func (h *ScenarioHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(scenario)
+	_ = json.NewEncoder(w).Encode(scenario)
 }
 
 func (h *ScenarioHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -33,5 +33,5 @@ func (h *ScenarioHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(scenarios)
+	_ = json.NewEncoder(w).Encode(scenarios)
 }

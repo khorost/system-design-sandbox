@@ -25,7 +25,7 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 
-	// WebSocket — no CORS, no response-writer wrapping (origin checked by nhooyr.io/websocket).
+	// WebSocket — no CORS, no response-writer wrapping (origin checked by coder/websocket).
 	wsH := &WSMetricsHandler{
 		Collector: collector,
 		Hub:       hub,

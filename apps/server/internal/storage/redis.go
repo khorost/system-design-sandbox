@@ -52,7 +52,7 @@ func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClien
 	}
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, fmt.Errorf("redis ping failed: %w", err)
 	}
 

@@ -51,7 +51,7 @@ func (h *ArchitectureHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(arch)
+	_ = json.NewEncoder(w).Encode(arch)
 }
 
 func (h *ArchitectureHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func (h *ArchitectureHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(arch)
+	_ = json.NewEncoder(w).Encode(arch)
 }
 
 func (h *ArchitectureHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (h *ArchitectureHandler) ListByUser(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(archs)
+	_ = json.NewEncoder(w).Encode(archs)
 }
 
 func (h *ArchitectureHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +108,7 @@ func (h *ArchitectureHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(arch)
+	_ = json.NewEncoder(w).Encode(arch)
 }
 
 func (h *ArchitectureHandler) Delete(w http.ResponseWriter, r *http.Request) {

@@ -50,7 +50,7 @@ func (h *SimulationHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (h *SimulationHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +67,7 @@ func (h *SimulationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (h *SimulationHandler) ListByArchitecture(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +84,7 @@ func (h *SimulationHandler) ListByArchitecture(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	_ = json.NewEncoder(w).Encode(results)
 }
 
 func (h *SimulationHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
@@ -104,5 +104,5 @@ func (h *SimulationHandler) Leaderboard(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
+	_ = json.NewEncoder(w).Encode(entries)
 }

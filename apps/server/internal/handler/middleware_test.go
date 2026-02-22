@@ -27,7 +27,7 @@ func setupTestRedisAuth(t *testing.T) *auth.RedisAuth {
 	}
 	t.Cleanup(func() {
 		rdb.FlushDB(context.Background())
-		rdb.Close()
+		_ = rdb.Close()
 	})
 	return auth.NewRedisAuth(rdb, 7*24*time.Hour, 20*time.Second, 100, 100)
 }
@@ -69,7 +69,7 @@ func TestRequireAuth(t *testing.T) {
 		}
 
 		var body map[string]string
-		json.NewDecoder(w.Body).Decode(&body)
+		_ = json.NewDecoder(w.Body).Decode(&body)
 		if body["uid"] != userID {
 			t.Errorf("uid = %q, want %q", body["uid"], userID)
 		}
@@ -88,7 +88,7 @@ func TestRequireAuth(t *testing.T) {
 			t.Fatalf("expected 401, got %d", w.Code)
 		}
 		var body errorResponse
-		json.NewDecoder(w.Body).Decode(&body)
+		_ = json.NewDecoder(w.Body).Decode(&body)
 		if body.Code != "unauthorized" {
 			t.Errorf("code = %q, want %q", body.Code, "unauthorized")
 		}
@@ -105,7 +105,7 @@ func TestRequireAuth(t *testing.T) {
 			t.Fatalf("expected 401, got %d", w.Code)
 		}
 		var body errorResponse
-		json.NewDecoder(w.Body).Decode(&body)
+		_ = json.NewDecoder(w.Body).Decode(&body)
 		if body.Code != "session_expired" {
 			t.Errorf("code = %q, want %q", body.Code, "session_expired")
 		}
