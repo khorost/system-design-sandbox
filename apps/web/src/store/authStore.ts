@@ -2,10 +2,11 @@ import { create } from 'zustand';
 
 import { ApiError, apiFetch } from '../api/client.ts';
 import { getApiUrl } from '../config/env.ts';
+import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 
 export type AuthView = 'loading' | 'anonymous' | 'login' | 'verify-code' | 'onboarding' | 'authenticated';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -98,6 +99,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } else {
           set({ user, view: 'authenticated' });
         }
+        postTabMessage({ type: 'auth:login', user });
       } catch {
         localStorage.removeItem(SESSION_KEY);
         set({ view: 'anonymous' });
@@ -143,6 +145,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         set({ user, view: 'authenticated' });
       }
+      postTabMessage({ type: 'auth:login', user });
     } catch (e) {
       if (e instanceof ApiError) {
         set({ error: e.message });
@@ -168,6 +171,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     localStorage.removeItem(SESSION_KEY);
     set({ user: null, view: 'anonymous', email: '' });
+    postTabMessage({ type: 'auth:logout' });
   },
 
   updateProfile: async (displayName: string, gravatarAllowed: boolean) => {
@@ -217,3 +221,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await apiFetch('/api/v1/auth/sessions/revoke-others', { method: 'POST' });
   },
 }));
+
+// Cross-tab auth sync
+onTabMessage((msg) => {
+  if (msg.type === 'auth:logout') {
+    localStorage.removeItem(SESSION_KEY);
+    useAuthStore.setState({ user: null, view: 'anonymous', email: '' });
+  }
+  if (msg.type === 'auth:login') {
+    localStorage.setItem(SESSION_KEY, '1');
+    const view = msg.user.display_name ? 'authenticated' : 'onboarding';
+    useAuthStore.setState({ user: msg.user, view });
+  }
+});

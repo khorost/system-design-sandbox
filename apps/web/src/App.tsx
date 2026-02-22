@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useState } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { CodeVerifyPage } from './components/auth/CodeVerifyPage.tsx';
 import { LoginPage } from './components/auth/LoginPage.tsx';
@@ -128,6 +128,24 @@ function MainApp() {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
+  // Revalidate session on tab focus (throttled to 30s)
+  const lastCheckRef = useRef(0);
+  useEffect(() => {
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastCheckRef.current < 30_000) return;
+      lastCheckRef.current = now;
+      useAuthStore.getState().checkSession().then((ok) => {
+        if (!ok) {
+          localStorage.removeItem('has_session');
+          useAuthStore.setState({ user: null, view: 'anonymous', email: '' });
+        }
+      });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
   const handleNavigateToNode = useCallback(
     (nodeId: string) => {
       selectNode(nodeId);
@@ -163,11 +181,6 @@ function MainApp() {
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[10px] text-slate-400">
-            <span>v{__APP_VERSION__}</span>
-            <span>&middot;</span>
-            <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
-          </div>
           <PlatformStatus />
           {user ? (
             <UserMenu />
@@ -208,6 +221,11 @@ function MainApp() {
         </div>
       )}
       <ToastContainer />
+      <div className="fixed bottom-2 right-2 z-40 flex items-center gap-2 text-[10px] text-slate-500 pointer-events-none">
+        <span>v{__APP_VERSION__}</span>
+        <span>&middot;</span>
+        <span>&copy; {new Date().getFullYear()} sdsandbox.ru</span>
+      </div>
     </div>
   );
 }
