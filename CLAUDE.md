@@ -20,7 +20,7 @@ pnpm lint       # eslint .
 pnpm preview    # Превью продакшн-сборки
 ```
 
-Тестовый фреймворк пока не настроен.
+Тесты: Go — `go test ./...` в `apps/server`, фронтенд — Vitest (`npx vitest run` в `apps/web`).
 
 ## Архитектура
 
@@ -70,6 +70,37 @@ pnpm preview    # Превью продакшн-сборки
 ## Серверная часть (Go)
 
 Бэкенд на Go в `apps/server`. БД — PostgreSQL, схемы применяются через миграции.
+
+### Аутентификация
+
+Сессионная cookie (`session_id`, HttpOnly, Secure, SameSite=Strict, Path=/). JWT не используется — удалён полностью.
+
+- **Middleware** `RequireAuth(redisAuth)` — читает cookie `session_id`, валидирует через `RedisAuth.ValidateAndTouchSession()`.
+- **Сессии** хранятся в Redis как хеши (`s:{sessionID}`) с полями `uid`, `ip`, `geo`, `cat`, `lat`. TTL = sliding window (`SESSION_EXPIRY`, default 7d).
+- **Touch throttling** — `lat` и TTL обновляются не чаще чем раз в `SESSION_TOUCH_INTERVAL` (default 20s), чтобы снизить нагрузку на Redis при частых API-запросах.
+- **Логин** — magic link или код (`POST /auth/send-code` → `POST /auth/verify-code`). Ответ: `{ user }` + cookie `session_id`.
+- **Logout** — `POST /auth/logout` (за auth middleware), удаляет сессию из Redis, очищает cookie.
+- **Фронтенд** — `apiFetch()` с `credentials: 'include'`, без управления токенами. Инициализация через `GET /api/v1/users/me`.
+
+### Метрики и подсчёт пользователей
+
+Collector (`internal/metrics/collector.go`) периодически сканирует Redis-сессии и WebSocket Hub:
+
+- `METRICS_TICK` (default 40s) — интервал сканирования Redis (SCAN `s:*`).
+- `activeWindow` (5 мин) — порог для классификации сессий: active (lat < 5 мин) vs frozen.
+- **UsersOnline** — уникальные authenticated uid, подключённые по WebSocket.
+- **UsersOffline** — uid из Redis-сессий, не подключённые по WebSocket.
+- **AnonRecent** — уникальные анонимные visitor label, подключённые по WebSocket.
+
+Prometheus-метрики: `sds_platform_sessions_active`, `sds_platform_sessions_frozen`, `sds_platform_users_online`, `sds_platform_users_offline`, `sds_platform_anon_recent`, `sds_platform_http_requests_total`.
+
+### Переменные окружения (сессии и метрики)
+
+| Переменная | Default | Описание |
+|---|---|---|
+| `SESSION_EXPIRY` | `168h` (7d) | TTL сессии (sliding window). Fallback: `JWT_REFRESH_EXPIRY` |
+| `SESSION_TOUCH_INTERVAL` | `20s` | Минимальный интервал между обновлениями `lat` в Redis |
+| `METRICS_TICK` | `40s` | Интервал сканирования Redis коллектором метрик |
 
 ## Обратная совместимость экспорта/импорта схем
 

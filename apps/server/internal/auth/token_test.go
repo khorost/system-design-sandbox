@@ -4,7 +4,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestGenerateToken(t *testing.T) {
@@ -127,60 +126,3 @@ func TestNormalizeCode(t *testing.T) {
 	}
 }
 
-func TestCreateAndParseAccessToken(t *testing.T) {
-	secret := "test-secret-key-32-chars-minimum"
-	userID := "user-123"
-	sessionID := "session-456"
-	expiry := 5 * time.Minute
-
-	t.Run("roundtrip", func(t *testing.T) {
-		tokenStr, err := CreateAccessToken(secret, userID, sessionID, expiry)
-		if err != nil {
-			t.Fatalf("CreateAccessToken error: %v", err)
-		}
-		if tokenStr == "" {
-			t.Fatal("empty token string")
-		}
-
-		claims, err := ParseAccessToken(secret, tokenStr)
-		if err != nil {
-			t.Fatalf("ParseAccessToken error: %v", err)
-		}
-		if claims.UserID != userID {
-			t.Errorf("UserID = %q, want %q", claims.UserID, userID)
-		}
-		if claims.SessionID != sessionID {
-			t.Errorf("SessionID = %q, want %q", claims.SessionID, sessionID)
-		}
-	})
-
-	t.Run("wrong secret rejects", func(t *testing.T) {
-		tokenStr, _ := CreateAccessToken(secret, userID, sessionID, expiry)
-		_, err := ParseAccessToken("wrong-secret", tokenStr)
-		if err == nil {
-			t.Fatal("expected error for wrong secret")
-		}
-	})
-
-	t.Run("expired token rejects", func(t *testing.T) {
-		tokenStr, _ := CreateAccessToken(secret, userID, sessionID, -1*time.Minute)
-		_, err := ParseAccessToken(secret, tokenStr)
-		if err == nil {
-			t.Fatal("expected error for expired token")
-		}
-	})
-
-	t.Run("malformed token rejects", func(t *testing.T) {
-		_, err := ParseAccessToken(secret, "not.a.jwt")
-		if err == nil {
-			t.Fatal("expected error for malformed token")
-		}
-	})
-
-	t.Run("empty token rejects", func(t *testing.T) {
-		_, err := ParseAccessToken(secret, "")
-		if err == nil {
-			t.Fatal("expected error for empty token")
-		}
-	})
-}
