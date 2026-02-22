@@ -37,8 +37,8 @@ func TestGravatarURL(t *testing.T) {
 		if got == "" {
 			t.Fatal("expected non-empty URL")
 		}
-		// Known MD5 for "user@example.com"
-		expected := "https://www.gravatar.com/avatar/b58996c504c5638798eb6b511e6f49af?d=identicon&s=80"
+		// Known SHA-256 for "user@example.com"
+		expected := "https://www.gravatar.com/avatar/b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514?d=identicon&s=80"
 		if got != expected {
 			t.Errorf("got %q, want %q", got, expected)
 		}

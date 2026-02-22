@@ -4,9 +4,6 @@ on:
     branches: [develop, main]
     tags: ['v*']
 
-env:
-  DOCKERHUB_ORG: khorost
-
 jobs:
   detect-changes:
     runs-on: [self-hosted]
@@ -77,24 +74,60 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
+  lint-server:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server == 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: apps/server
+
+  test-server:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server == 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - name: Run Go tests
+        working-directory: apps/server
+        run: go test ./...
+
   build-web:
     needs: [detect-changes, lint]
     if: needs.detect-changes.outputs.web == 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - name: Login to Docker Hub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-      - name: Build & push
+      - name: Build image
         run: |
-          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-web
           TAG=${{ needs.detect-changes.outputs.tag }}
           docker build -f apps/web/Dockerfile \
-            -t $IMAGE:$TAG \
-            -t $IMAGE:${GITHUB_SHA::8} \
+            -t sdsandbox-web:$TAG \
             .
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:${GITHUB_SHA::8}
+      - name: Push to Nexus
+        run: |
+          TAG=${{ needs.detect-changes.outputs.tag }}
+          echo "${{ secrets.NEXUS_PASSWORD }}" | docker login "${{ secrets.NEXUS_URL }}" -u "${{ secrets.NEXUS_USERNAME }}" --password-stdin
+          docker tag sdsandbox-web:$TAG ${{ secrets.NEXUS_URL }}/sdsandbox-web:$TAG
+          docker push ${{ secrets.NEXUS_URL }}/sdsandbox-web:$TAG
+      - name: Push to Docker Hub
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${{ needs.detect-changes.outputs.tag }}
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker tag sdsandbox-web:$TAG khorost/sdsandbox-web:$TAG
+          docker push khorost/sdsandbox-web:$TAG
       - name: Deploy to prod
         if: needs.detect-changes.outputs.env_name == 'prod'
         run: |
@@ -117,25 +150,32 @@ jobs:
           fi
 
   build-server:
-    needs: detect-changes
+    needs: [detect-changes, lint-server, test-server]
     if: needs.detect-changes.outputs.server == 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
-      - name: Login to Docker Hub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-      - name: Build & push
+      - name: Build image
         run: |
-          IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-server
           TAG=${{ needs.detect-changes.outputs.tag }}
           docker build -f apps/server/Dockerfile \
             --build-arg VERSION=$TAG \
             --build-arg COMMIT=${GITHUB_SHA::8} \
-            -t $IMAGE:$TAG \
-            -t $IMAGE:${GITHUB_SHA::8} \
+            -t sdsandbox-server:$TAG \
             apps/server
-          docker push $IMAGE:$TAG
-          docker push $IMAGE:${GITHUB_SHA::8}
+      - name: Push to Nexus
+        run: |
+          TAG=${{ needs.detect-changes.outputs.tag }}
+          echo "${{ secrets.NEXUS_PASSWORD }}" | docker login "${{ secrets.NEXUS_URL }}" -u "${{ secrets.NEXUS_USERNAME }}" --password-stdin
+          docker tag sdsandbox-server:$TAG ${{ secrets.NEXUS_URL }}/sdsandbox-server:$TAG
+          docker push ${{ secrets.NEXUS_URL }}/sdsandbox-server:$TAG
+      - name: Push to Docker Hub
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${{ needs.detect-changes.outputs.tag }}
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker tag sdsandbox-server:$TAG khorost/sdsandbox-server:$TAG
+          docker push khorost/sdsandbox-server:$TAG
       - name: Deploy to prod
         if: needs.detect-changes.outputs.env_name == 'prod'
         run: |
