@@ -81,7 +81,10 @@ export function FlowEdge(props: EdgeProps) {
   let strokeColor = '#3b82f6';
   let strokeWidth = getWidthByLatency(latencyMs);
   let strokeDasharray: string | undefined;
-  let animation: string | undefined;
+  let animationName: string | undefined;
+  let animationDuration: string | undefined;
+  let animationTimingFunction: string | undefined;
+  let animationIterationCount: string | undefined;
   let animationPlayState: 'running' | 'paused' | undefined;
 
   if (isRunning && throughput > 0) {
@@ -95,7 +98,10 @@ export function FlowEdge(props: EdgeProps) {
     }
     const anim = getAnimationByThroughput(throughput);
     strokeDasharray = anim.dasharray;
-    animation = `flowAnimation ${anim.duration} linear infinite`;
+    animationName = 'flowAnimation';
+    animationDuration = anim.duration;
+    animationTimingFunction = 'linear';
+    animationIterationCount = 'infinite';
     animationPlayState = isPaused ? 'paused' : 'running';
   }
 
@@ -159,7 +165,10 @@ export function FlowEdge(props: EdgeProps) {
           stroke: effectiveColor,
           strokeWidth,
           strokeDasharray,
-          animation,
+          animationName,
+          animationDuration,
+          animationTimingFunction,
+          animationIterationCount,
           animationPlayState,
         }}
       />

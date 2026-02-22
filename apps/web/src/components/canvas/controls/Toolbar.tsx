@@ -1,8 +1,12 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
+import { createArchitecture, updateArchitecture } from '../../../api/architectures.ts';
+import { useAuthStore } from '../../../store/authStore.ts';
 import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
+import type { ArchitectureSchema } from '../../../types/index.ts';
 import { notify } from '../../../utils/notifications.ts';
+import { SavedArchitecturesModal } from '../../SavedArchitecturesModal.tsx';
 
 /* ── tiny inline SVG icons (stroke-based) ── */
 const s = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -30,18 +34,22 @@ const tooltipByMode: Record<EdgeLabelMode, string> = {
   full: 'Labels: All info',
 };
 
-function MenuItem({ onClick, icon, children, hint, variant = 'default' }: {
+function MenuItem({ onClick, icon, children, hint, variant = 'default', disabled = false }: {
   onClick: () => void;
   icon: ReactNode;
   children: ReactNode;
   hint?: string;
   variant?: 'default' | 'danger';
+  disabled?: boolean;
 }) {
-  const cls = variant === 'danger'
-    ? 'w-full px-3 py-2 text-sm text-red-400 hover:bg-red-400/10 rounded transition-colors flex items-center gap-2.5 whitespace-nowrap'
-    : 'w-full px-3 py-2 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors flex items-center gap-2.5 whitespace-nowrap';
+  const base = 'w-full px-3 py-2 text-sm rounded transition-colors flex items-center gap-2.5 whitespace-nowrap';
+  const cls = disabled
+    ? `${base} text-slate-500 cursor-not-allowed`
+    : variant === 'danger'
+      ? `${base} text-red-400 hover:bg-red-400/10`
+      : `${base} text-slate-300 hover:bg-[var(--color-surface-hover)]`;
   return (
-    <button onClick={onClick} className={cls} role="menuitem">
+    <button onClick={disabled ? undefined : onClick} className={cls} role="menuitem" aria-disabled={disabled}>
       {icon}
       <span className="flex flex-col items-start">
         <span>{children}</span>
@@ -55,7 +63,7 @@ function MenuDivider() {
   return <div className="my-1.5 h-px bg-[var(--color-border)]" />;
 }
 
-function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: string; onClick: () => void; variant?: 'default' | 'danger' }[][] }) {
+function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: string; onClick: () => void; variant?: 'default' | 'danger'; disabled?: boolean }[][] }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,7 +107,8 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
                   icon={item.icon}
                   hint={item.hint}
                   variant={item.variant}
-                  onClick={() => { setOpen(false); item.onClick(); }}
+                  disabled={item.disabled}
+                  onClick={() => { if (!item.disabled) { setOpen(false); item.onClick(); } }}
                 >
                   {item.label}
                 </MenuItem>
@@ -114,6 +123,20 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
 
 const IconUndo = <svg {...s}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>;
 const IconRedo = <svg {...s}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>;
+const IconCloud = <svg {...s}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>;
+const IconCopy = <svg {...s}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+const IconFolder = <svg {...s}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
+
+function buildSchemaForSave(): ArchitectureSchema {
+  const { nodes, edges, schemaName } = useCanvasStore.getState();
+  const now = new Date().toISOString();
+  return {
+    version: '1.0',
+    metadata: { name: schemaName || 'My Architecture', createdAt: now, updatedAt: now },
+    nodes,
+    edges,
+  };
+}
 
 export function Toolbar() {
   const save = useCanvasStore((s) => s.save);
@@ -129,9 +152,54 @@ export function Toolbar() {
   const redo = useCanvasStore((s) => s.redo);
   const canUndo = useCanvasStore((s) => s._history.past.length > 0);
   const canRedo = useCanvasStore((s) => s._history.future.length > 0);
+  const schemaName = useCanvasStore((s) => s.schemaName);
+  const architectureId = useCanvasStore((s) => s.architectureId);
+  const isPublic = useCanvasStore((s) => s.isPublic);
+  const setArchitectureId = useCanvasStore((s) => s.setArchitectureId);
+  const setSchemaName = useCanvasStore((s) => s.setSchemaName);
+
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = !!user;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dslFileInputRef = useRef<HTMLInputElement>(null);
+  const [showOpenModal, setShowOpenModal] = useState(false);
+
+  const canSaveToServer = isAuthenticated && schemaName.trim().length > 0;
+
+  const handleSaveToServer = async () => {
+    if (!user || !schemaName.trim()) return;
+    const { schemaDescription, schemaTags } = useCanvasStore.getState();
+    try {
+      const data = buildSchemaForSave();
+      if (architectureId) {
+        await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
+        notify.success('Saved');
+      } else {
+        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        setArchitectureId(result.id);
+        notify.success('Saved');
+      }
+    } catch (e) {
+      notify.error(`Save failed: ${(e as Error).message}`);
+    }
+  };
+
+  const handleSaveAs = async () => {
+    if (!user) return;
+    const name = window.prompt('Name for the copy:', schemaName || 'My Architecture');
+    if (!name?.trim()) return;
+    const { schemaDescription, schemaTags } = useCanvasStore.getState();
+    try {
+      const data = buildSchemaForSave();
+      const result = await createArchitecture(user.id, name, schemaDescription, data, isPublic, schemaTags);
+      setArchitectureId(result.id);
+      setSchemaName(name);
+      notify.success('Saved as new copy');
+    } catch (e) {
+      notify.error(`Save failed: ${(e as Error).message}`);
+    }
+  };
 
   const handleExport = () => {
     const json = exportSchema();
@@ -200,10 +268,31 @@ export function Toolbar() {
     }
   };
 
+  // Ctrl+S handler for save to server
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (canSaveToServer) {
+          handleSaveToServer();
+        } else {
+          save();
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  });
+
   const menuItems = [
     [
-      { icon: IconSave, label: 'Save', onClick: save },
-      { icon: IconLoad, label: 'Load', onClick: load },
+      { icon: IconCloud, label: 'Save to server', hint: 'Ctrl+S — Requires sign-in', onClick: handleSaveToServer, disabled: !canSaveToServer },
+      { icon: IconCopy, label: 'Save As...', hint: 'Save a copy with a new name', onClick: handleSaveAs, disabled: !isAuthenticated },
+      { icon: IconFolder, label: 'Open from server...', hint: 'Load a saved architecture', onClick: () => setShowOpenModal(true), disabled: !isAuthenticated },
+    ],
+    [
+      { icon: IconSave, label: 'Save locally', hint: 'Browser storage', onClick: save },
+      { icon: IconLoad, label: 'Load local', hint: 'From browser storage', onClick: load },
     ],
     [
       { icon: IconExport, label: 'Export JSON', hint: 'Full schema with positions (.json)', onClick: handleExport },
@@ -219,39 +308,42 @@ export function Toolbar() {
   ];
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
-      <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
-      <div className="w-px h-5 bg-[var(--color-border)]" />
-      <FileMenu items={menuItems} />
-      <div className="w-px h-5 bg-[var(--color-border)]" />
-      <button
-        onClick={undo}
-        disabled={!canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo (Ctrl+Z)"
-        className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        {IconUndo}
-      </button>
-      <button
-        onClick={redo}
-        disabled={!canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo (Ctrl+Shift+Z)"
-        className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        {IconRedo}
-      </button>
-      <div className="w-px h-5 bg-[var(--color-border)]" />
-      <button
-        onClick={cycleEdgeLabelMode}
-        title={tooltipByMode[edgeLabelMode]}
-        className="px-2 py-1 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1.5"
-      >
-        {IconTag} {labelByMode[edgeLabelMode]}
-      </button>
-      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
-      <input ref={dslFileInputRef} type="file" accept=".sds,.txt" className="hidden" onChange={handleDslFileChange} />
-    </div>
+    <>
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
+        <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
+        <div className="w-px h-5 bg-[var(--color-border)]" />
+        <FileMenu items={menuItems} />
+        <div className="w-px h-5 bg-[var(--color-border)]" />
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo (Ctrl+Z)"
+          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {IconUndo}
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Shift+Z)"
+          aria-label="Redo (Ctrl+Shift+Z)"
+          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {IconRedo}
+        </button>
+        <div className="w-px h-5 bg-[var(--color-border)]" />
+        <button
+          onClick={cycleEdgeLabelMode}
+          title={tooltipByMode[edgeLabelMode]}
+          className="px-2 py-1 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1.5"
+        >
+          {IconTag} {labelByMode[edgeLabelMode]}
+        </button>
+        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
+        <input ref={dslFileInputRef} type="file" accept=".sds,.txt" className="hidden" onChange={handleDslFileChange} />
+      </div>
+      {showOpenModal && <SavedArchitecturesModal onClose={() => setShowOpenModal(false)} />}
+    </>
   );
 }

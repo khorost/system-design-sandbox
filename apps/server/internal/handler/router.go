@@ -20,6 +20,7 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	r := chi.NewRouter()
 
 	// Middleware safe for all routes including WebSocket.
+	r.Use(middleware.RealIP)
 	r.Use(metrics.CountRequests(collector))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
@@ -128,7 +129,7 @@ func slogRequestLogger(next http.Handler) http.Handler {
 			"status", ww.Status(),
 			"bytes", ww.BytesWritten(),
 			"duration_ms", time.Since(start).Milliseconds(),
-			"ip", r.RemoteAddr,
+			"ip", clientIP(r),
 		)
 	})
 }

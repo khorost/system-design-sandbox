@@ -13,17 +13,21 @@ type ArchitectureHandler struct {
 }
 
 type createArchitectureRequest struct {
-	UserID     string          `json:"user_id"`
-	Name       string          `json:"name"`
-	ScenarioID *string         `json:"scenario_id,omitempty"`
-	Data       json.RawMessage `json:"data"`
-	IsPublic   bool            `json:"is_public"`
+	UserID      string          `json:"user_id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	ScenarioID  *string         `json:"scenario_id,omitempty"`
+	Data        json.RawMessage `json:"data"`
+	IsPublic    bool            `json:"is_public"`
+	Tags        []string        `json:"tags"`
 }
 
 type updateArchitectureRequest struct {
-	Name     string          `json:"name"`
-	Data     json.RawMessage `json:"data"`
-	IsPublic bool            `json:"is_public"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Data        json.RawMessage `json:"data"`
+	IsPublic    bool            `json:"is_public"`
+	Tags        []string        `json:"tags"`
 }
 
 func (h *ArchitectureHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +43,7 @@ func (h *ArchitectureHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arch, err := h.Store.CreateArchitecture(r.Context(), userID, req.Name, req.ScenarioID, req.Data, req.IsPublic)
+	arch, err := h.Store.CreateArchitecture(r.Context(), userID, req.Name, req.Description, req.ScenarioID, req.Data, req.IsPublic, req.Tags)
 	if err != nil {
 		http.Error(w, "failed to create architecture", http.StatusInternalServerError)
 		return
@@ -97,7 +101,7 @@ func (h *ArchitectureHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	arch, err := h.Store.UpdateArchitecture(r.Context(), id, req.Name, req.Data, req.IsPublic)
+	arch, err := h.Store.UpdateArchitecture(r.Context(), id, req.Name, req.Description, req.Data, req.IsPublic, req.Tags)
 	if err != nil {
 		http.Error(w, "failed to update architecture", http.StatusInternalServerError)
 		return

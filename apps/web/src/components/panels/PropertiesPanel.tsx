@@ -1,14 +1,19 @@
 import { getDefinition } from '@system-design-sandbox/component-library';
 import { useState } from 'react';
 
+import { createArchitecture, updateArchitecture } from '../../api/architectures.ts';
 import { CONFIG } from '../../config/constants.ts';
 import { DEFAULT_BORDER_COLORS } from '../../constants/colors.ts';
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
+import { useAuthStore } from '../../store/authStore.ts';
 import { useCanvasStore } from '../../store/canvasStore.ts';
+import type { ArchitectureSchema } from '../../types/index.ts';
 import type { EdgeRoutingRule,ProtocolType } from '../../types/index.ts';
 import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS,NETWORK_PROTOCOLS } from '../../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES, isValidNesting } from '../../utils/networkLatency.ts';
+import { notify } from '../../utils/notifications.ts';
 import { paletteItems } from '../canvas/controls/paletteData.ts';
+import { SavedArchitecturesModal } from '../SavedArchitecturesModal.tsx';
 import { NumberInput } from '../ui/NumberInput.tsx';
 
 interface TagWeightEntry {
@@ -669,6 +674,266 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   );
 }
 
+function buildSchema(nodes: import('../../types/index.ts').ComponentNode[], edges: import('../../types/index.ts').ComponentEdge[], schemaName: string): ArchitectureSchema {
+  const now = new Date().toISOString();
+  return {
+    version: '1.0',
+    metadata: { name: schemaName || 'My Architecture', createdAt: now, updatedAt: now },
+    nodes,
+    edges,
+  };
+}
+
+function SchemaProperties() {
+  const user = useAuthStore((s) => s.user);
+  const schemaName = useCanvasStore((s) => s.schemaName);
+  const schemaDescription = useCanvasStore((s) => s.schemaDescription);
+  const schemaTags = useCanvasStore((s) => s.schemaTags);
+  const isPublic = useCanvasStore((s) => s.isPublic);
+  const architectureId = useCanvasStore((s) => s.architectureId);
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const setSchemaName = useCanvasStore((s) => s.setSchemaName);
+  const setSchemaDescription = useCanvasStore((s) => s.setSchemaDescription);
+  const setSchemaTags = useCanvasStore((s) => s.setSchemaTags);
+  const setIsPublic = useCanvasStore((s) => s.setIsPublic);
+  const setArchitectureId = useCanvasStore((s) => s.setArchitectureId);
+
+  const [saving, setSaving] = useState(false);
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const [saveAsName, setSaveAsName] = useState('');
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+
+  const isAuthenticated = !!user;
+  const canSave = isAuthenticated && schemaName.trim().length > 0;
+
+  const addTag = (raw: string) => {
+    const tag = raw.trim().toLowerCase();
+    if (!tag || schemaTags.includes(tag)) return;
+    setSchemaTags([...schemaTags, tag]);
+  };
+
+  const removeTag = (tag: string) => {
+    setSchemaTags(schemaTags.filter((t) => t !== tag));
+  };
+
+  const handleTagKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(tagInput);
+      setTagInput('');
+    } else if (e.key === 'Backspace' && !tagInput && schemaTags.length > 0) {
+      removeTag(schemaTags[schemaTags.length - 1]);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user || !schemaName.trim()) return;
+    setSaving(true);
+    try {
+      const data = buildSchema(nodes, edges, schemaName);
+      if (architectureId) {
+        await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
+        notify.success('Saved');
+      } else {
+        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        setArchitectureId(result.id);
+        notify.success('Saved');
+      }
+    } catch (e) {
+      notify.error(`Save failed: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveAs = async () => {
+    if (!user || !saveAsName.trim()) return;
+    setSaving(true);
+    try {
+      const data = buildSchema(nodes, edges, saveAsName);
+      const result = await createArchitecture(user.id, saveAsName, schemaDescription, data, isPublic, schemaTags);
+      setArchitectureId(result.id);
+      setSchemaName(saveAsName);
+      setShowSaveAs(false);
+      setSaveAsName('');
+      notify.success('Saved as new copy');
+    } catch (e) {
+      notify.error(`Save failed: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+              <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+            </svg>
+          </span>
+          <div>
+            <h2 className="text-base font-bold text-slate-200">Architecture</h2>
+            <p className="text-xs text-slate-400">Schema properties</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div>
+          <label htmlFor="schema-name" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+          <input
+            type="text"
+            id="schema-name"
+            value={schemaName}
+            onChange={(e) => setSchemaName(e.target.value)}
+            placeholder="My Architecture"
+            maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
+            className={inputClass}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="schema-description" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</label>
+          <textarea
+            id="schema-description"
+            value={schemaDescription}
+            onChange={(e) => setSchemaDescription(e.target.value)}
+            placeholder="What does this architecture do?"
+            rows={3}
+            maxLength={2000}
+            className={`${inputClass} resize-y min-h-[60px]`}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="schema-tags" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tags</label>
+          <div className="mt-1 flex flex-wrap gap-1 p-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded min-h-[34px]">
+            {schemaTags.map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded">
+                {tag}
+                <button onClick={() => removeTag(tag)} className="text-blue-400/60 hover:text-blue-300 ml-0.5">&times;</button>
+              </span>
+            ))}
+            <input
+              type="text"
+              id="schema-tags"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleTagKeyDown}
+              onBlur={() => { if (tagInput.trim()) { addTag(tagInput); setTagInput(''); } }}
+              placeholder={schemaTags.length === 0 ? 'Add tags...' : ''}
+              className="flex-1 min-w-[60px] bg-transparent text-xs text-slate-200 outline-none px-1 py-0.5"
+            />
+          </div>
+          <p className="text-[10px] text-slate-500 mt-0.5">Press Enter or comma to add</p>
+        </div>
+
+        {isAuthenticated && (
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="schema-public"
+              checked={isPublic}
+              onChange={(e) => setIsPublic(e.target.checked)}
+              className="rounded border-slate-600 bg-[var(--color-bg)] text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+            />
+            <label htmlFor="schema-public" className="text-xs text-slate-300">Public</label>
+          </div>
+        )}
+
+        <div className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]">
+            <span className="text-xs font-semibold text-slate-400">Nodes</span>
+            <span className="text-sm font-mono font-bold text-slate-200">{nodes.length}</span>
+          </div>
+          <div className="flex items-center justify-between px-3 py-2">
+            <span className="text-xs font-semibold text-slate-400">Connections</span>
+            <span className="text-sm font-mono font-bold text-slate-200">{edges.length}</span>
+          </div>
+        </div>
+
+        {isAuthenticated ? (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cloud Storage</div>
+
+            {architectureId && (
+              <p className="text-xs text-slate-400 truncate" title={architectureId}>
+                ID: {architectureId.slice(0, 8)}...
+              </p>
+            )}
+
+            <button
+              onClick={handleSave}
+              disabled={!canSave || saving}
+              className="w-full px-3 py-2 text-sm text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+            >
+              {saving ? 'Saving...' : architectureId ? 'Save' : 'Save to server'}
+            </button>
+
+            {!schemaName.trim() && (
+              <p className="text-xs text-amber-400">Enter a name to save</p>
+            )}
+
+            {showSaveAs ? (
+              <div className="space-y-2 p-2 rounded border border-[var(--color-border)] bg-[var(--color-bg)]">
+                <input
+                  type="text"
+                  value={saveAsName}
+                  onChange={(e) => setSaveAsName(e.target.value)}
+                  placeholder="Name for the copy"
+                  maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveAs(); if (e.key === 'Escape') setShowSaveAs(false); }}
+                  className={inputClass}
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveAs}
+                    disabled={!saveAsName.trim() || saving}
+                    className="flex-1 px-2 py-1.5 text-xs text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+                  >
+                    Save copy
+                  </button>
+                  <button
+                    onClick={() => setShowSaveAs(false)}
+                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-[var(--color-border)] rounded transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setSaveAsName(schemaName); setShowSaveAs(true); }}
+                className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+              >
+                Save As...
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowOpenModal(true)}
+              className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+            >
+              Open from server...
+            </button>
+          </div>
+        ) : (
+          <div className="px-3 py-3 rounded border border-blue-500/20 bg-blue-500/5">
+            <p className="text-xs text-slate-400">Sign in to save to cloud</p>
+          </div>
+        )}
+      </div>
+
+      {showOpenModal && <SavedArchitecturesModal onClose={() => setShowOpenModal(false)} />}
+    </div>
+  );
+}
+
 export function PropertiesPanel() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
@@ -681,9 +946,5 @@ export function PropertiesPanel() {
     return <NodeProperties />;
   }
 
-  return (
-    <div className="flex-1 flex items-center justify-center p-4">
-      <p className="text-sm text-slate-400 text-center">Select a component or connection on the canvas to edit its properties</p>
-    </div>
-  );
+  return <SchemaProperties />;
 }

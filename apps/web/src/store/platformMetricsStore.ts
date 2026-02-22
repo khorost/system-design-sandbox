@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { getWsUrl } from '../config/env.ts';
+
 export interface PlatformMetrics {
   usersOnline: number;
   usersOffline: number;
@@ -33,6 +35,9 @@ function clearReconnect() {
 }
 
 function wsUrl(): string {
+  const base = getWsUrl();
+  if (base) return `${base}/ws`;
+  // Same origin — use current location
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${location.host}/ws`;
 }

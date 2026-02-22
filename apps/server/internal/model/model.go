@@ -52,10 +52,26 @@ type Architecture struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
 	Name         string             `json:"name"`
+	Description  string             `json:"description"`
 	ScenarioID   *string            `json:"scenario_id,omitempty"`
-	Data         json.RawMessage    `json:"data"`
+	Data         []byte             `json:"-"`
+	RawData      json.RawMessage    `json:"data,omitempty"`
 	ThumbnailURL *string            `json:"thumbnail_url,omitempty"`
 	IsPublic     bool               `json:"is_public"`
+	Tags         []string           `json:"tags"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ArchitectureListItem struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	ScenarioID   *string            `json:"scenario_id,omitempty"`
+	ThumbnailURL *string            `json:"thumbnail_url,omitempty"`
+	IsPublic     bool               `json:"is_public"`
+	Tags         []string           `json:"tags"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }

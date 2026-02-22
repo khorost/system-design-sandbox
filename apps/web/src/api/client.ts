@@ -1,3 +1,5 @@
+import { getApiUrl } from '../config/env.ts';
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -23,7 +25,7 @@ export function getAccessToken() {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  const res = await fetch('/api/v1/auth/refresh', {
+  const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   });
@@ -54,6 +56,7 @@ export async function apiFetch<T = unknown>(
   options: RequestInit = {},
 ): Promise<T> {
   const token = await ensureToken();
+  const url = `${getApiUrl()}${path}`;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -64,7 +67,7 @@ export async function apiFetch<T = unknown>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  let res = await fetch(path, {
+  let res = await fetch(url, {
     ...options,
     headers,
     credentials: 'include',
@@ -75,7 +78,7 @@ export async function apiFetch<T = unknown>(
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
-      res = await fetch(path, {
+      res = await fetch(url, {
         ...options,
         headers,
         credentials: 'include',
