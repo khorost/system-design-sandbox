@@ -22,7 +22,7 @@ type verifyPageData struct {
 func writeVerifyError(w http.ResponseWriter, publicURL, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	safeURL := html.EscapeString(publicURL)
-	fmt.Fprintf(w,
+	_, _ = fmt.Fprintf(w,
 		`<p style="color:#f87171;font-size:15px;font-weight:600;margin-bottom:12px;">%s</p>`+
 			`<p style="color:#94a3b8;font-size:13px;margin-bottom:20px;">Please request a new link or enter a code manually.</p>`+
 			`<div style="display:flex;gap:12px;justify-content:center;">`+

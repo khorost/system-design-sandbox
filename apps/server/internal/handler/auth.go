@@ -163,13 +163,13 @@ func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	// Timing-safe compare the normalized codes
 	if !auth.TimingSafeEqual(auth.NormalizeCode(data.Code), auth.NormalizeCode(req.Code)) {
-		h.RedisAuth.IncrAttempts(r.Context(), token)
+		_ = h.RedisAuth.IncrAttempts(r.Context(), token)
 		writeError(w, http.StatusBadRequest, "invalid_code", "invalid code")
 		return
 	}
 
 	// Delete the token now that it's verified
-	h.RedisAuth.DeleteAuthToken(r.Context(), token)
+	_ = h.RedisAuth.DeleteAuthToken(r.Context(), token)
 
 	h.completeVerification(w, r, data.Email)
 }
@@ -182,12 +182,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.RedisAuth.DeleteSession(r.Context(), authUser.SessionID, authUser.UserID)
+	_ = h.RedisAuth.DeleteSession(r.Context(), authUser.SessionID, authUser.UserID)
 
 	if h.Config.SessionLogEnabled {
 		var uid pgtype.UUID
-		uid.Scan(authUser.UserID)
-		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+		_ = uid.Scan(authUser.UserID)
+		_ = h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
 			UserID:    uid,
 			SessionID: authUser.SessionID,
 			Action:    "logout",
@@ -284,7 +284,7 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 
 	// Log login
 	if h.Config.SessionLogEnabled {
-		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+		_ = h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
 			UserID:    user.ID,
 			SessionID: sessionID,
 			Action:    "login",
@@ -299,7 +299,7 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	// If this is from htmx (verify page), return success HTML with auto-redirect
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<p style="color:#4ade80;font-size:16px;font-weight:600;margin-bottom:8px;">Verified successfully!</p>`+
+		_, _ = fmt.Fprintf(w, `<p style="color:#4ade80;font-size:16px;font-weight:600;margin-bottom:8px;">Verified successfully!</p>`+
 			`<p style="color:#94a3b8;font-size:13px;">Redirecting in <span id="countdown">3</span> seconds...</p>`+
 			`<script>(function(){var n=3,el=document.getElementById("countdown"),`+
 			`t=setInterval(function(){n--;if(n<=0){clearInterval(t);window.location.href=%q}else{el.textContent=n}},1000)})()</script>`,

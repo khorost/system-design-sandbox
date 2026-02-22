@@ -90,7 +90,7 @@ func main() {
 		slog.Error("failed to run migrations", "error", err)
 		os.Exit(1)
 	}
-	db.Close()
+	_ = db.Close()
 
 	// Connect via pgxpool
 	store, err := storage.New(ctx, cfg.DatabaseURL)
@@ -120,7 +120,7 @@ func main() {
 		slog.Warn("geoip disabled: failed to open database", "error", err)
 	}
 	if geo != nil {
-		defer geo.Close()
+		defer func() { _ = geo.Close() }()
 	}
 
 	// Metrics: hub first (collector depends on it)

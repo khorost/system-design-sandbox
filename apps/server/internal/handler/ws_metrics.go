@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/system-design-sandbox/server/internal/metrics"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 type wsHandshake struct {
@@ -54,7 +54,7 @@ func (h *WSMetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Hub.Remove(c)
-	conn.Close(websocket.StatusNormalClosure, "")
+	_ = conn.Close(websocket.StatusNormalClosure, "")
 }
 
 func (h *WSMetricsHandler) readHandshake(ctx context.Context, conn *websocket.Conn) (label, uid string) {

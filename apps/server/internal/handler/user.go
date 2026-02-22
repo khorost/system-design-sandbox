@@ -41,7 +41,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(user)
+	_ = json.NewEncoder(w).Encode(user)
 }
 
 func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +58,7 @@ func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	_ = json.NewEncoder(w).Encode(user)
 }
 
 func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(users)
+	_ = json.NewEncoder(w).Encode(users)
 }
 
 // Me handles GET /api/v1/users/me — returns the authenticated user's profile.
@@ -81,7 +81,7 @@ func (h *UserHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var uid pgtype.UUID
-	uid.Scan(authUser.UserID)
+	_ = uid.Scan(authUser.UserID)
 
 	user, err := h.Store.GetUser(r.Context(), uid)
 	if err != nil {
@@ -113,7 +113,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var uid pgtype.UUID
-	uid.Scan(authUser.UserID)
+	_ = uid.Scan(authUser.UserID)
 
 	user, err := h.Store.UpdateUserProfile(r.Context(), uid, req.DisplayName, req.GravatarAllowed, req.ReferralSource)
 	if err != nil {

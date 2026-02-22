@@ -3,6 +3,7 @@ module github.com/system-design-sandbox/server
 go 1.25.0
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/jackc/pgx/v5 v5.8.0
@@ -11,7 +12,6 @@ require (
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
-	nhooyr.io/websocket v1.8.17
 )
 
 require (

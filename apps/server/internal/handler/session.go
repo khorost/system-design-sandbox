@@ -106,12 +106,12 @@ func (h *SessionHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.RedisAuth.DeleteSession(r.Context(), targetSessionID, authUser.UserID)
+	_ = h.RedisAuth.DeleteSession(r.Context(), targetSessionID, authUser.UserID)
 
 	if h.Config.SessionLogEnabled {
 		var uid pgtype.UUID
-		uid.Scan(authUser.UserID)
-		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
+		_ = uid.Scan(authUser.UserID)
+		_ = h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
 			UserID:    uid,
 			SessionID: targetSessionID,
 			Action:    "revoke",

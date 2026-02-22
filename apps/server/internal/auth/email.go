@@ -119,7 +119,7 @@ func (s *smtpSender) sendSTARTTLS(addr, to, msg string) error {
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	tlsCfg := &tls.Config{ServerName: s.cfg.Host}
 	if err := c.StartTLS(tlsCfg); err != nil {
@@ -141,10 +141,10 @@ func (s *smtpSender) sendTLS(addr, to, msg string) error {
 	}
 	c, err := smtp.NewClient(conn, s.cfg.Host)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("smtp new client: %w", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	if a := s.auth(); a != nil {
 		if err := c.Auth(a); err != nil {

@@ -18,7 +18,7 @@ func TestWriteJSON(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 	}
 	var body map[string]string
-	json.NewDecoder(w.Body).Decode(&body)
+	_ = json.NewDecoder(w.Body).Decode(&body)
 	if body["key"] != "value" {
 		t.Errorf("body key = %q, want %q", body["key"], "value")
 	}
@@ -32,7 +32,7 @@ func TestWriteError(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
 	}
 	var body errorResponse
-	json.NewDecoder(w.Body).Decode(&body)
+	_ = json.NewDecoder(w.Body).Decode(&body)
 	if body.Error != "field is required" {
 		t.Errorf("error = %q, want %q", body.Error, "field is required")
 	}

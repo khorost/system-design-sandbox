@@ -29,7 +29,7 @@ func New(ctx context.Context, databaseURL string) (*Storage, error) {
 
 func (s *Storage) Close() {
 	if s.Redis != nil {
-		s.Redis.Close()
+		_ = s.Redis.Close()
 	}
 	s.Pool.Close()
 }

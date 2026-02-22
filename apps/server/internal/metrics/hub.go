@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 type client struct {
@@ -149,6 +149,6 @@ func (h *Hub) sendRaw(c *client, msg []byte) {
 	if err := c.conn.Write(ctx, websocket.MessageText, msg); err != nil {
 		slog.Debug("metrics hub: write failed, removing client", "error", err)
 		h.Remove(c)
-		c.conn.Close(websocket.StatusGoingAway, "write timeout")
+		_ = c.conn.Close(websocket.StatusGoingAway, "write timeout")
 	}
 }
