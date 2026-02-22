@@ -23,6 +23,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// Set via -ldflags at build time.
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
+
 func parseLogLevel(s string) slog.Level {
 	switch strings.ToUpper(strings.TrimSpace(s)) {
 	case "DEBUG":
@@ -140,7 +146,7 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("server starting", "port", cfg.ServerPort)
+		slog.Info("server starting", "version", Version, "commit", Commit, "port", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
