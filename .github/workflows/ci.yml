@@ -86,7 +86,7 @@ jobs:
           cache-dependency-path: apps/server/go.sum
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.10.1
           working-directory: apps/server
 
   test-server:
