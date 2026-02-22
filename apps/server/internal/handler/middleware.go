@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/system-design-sandbox/server/internal/auth"
 )
@@ -12,32 +11,31 @@ type contextKey string
 
 const authUserKey contextKey = "authUser"
 
-// AuthUser holds the authenticated user info extracted from JWT.
+// AuthUser holds the authenticated user info extracted from session cookie.
 type AuthUser struct {
 	UserID    string
 	SessionID string
 }
 
-// RequireAuth returns a chi middleware that validates Bearer JWT tokens.
-func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
+// RequireAuth returns a chi middleware that validates session cookies via Redis.
+func RequireAuth(redisAuth *auth.RedisAuth) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			header := r.Header.Get("Authorization")
-			if !strings.HasPrefix(header, "Bearer ") {
-				writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid authorization header")
+			cookie, err := r.Cookie("session_id")
+			if err != nil || cookie.Value == "" {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "missing session")
 				return
 			}
-			tokenStr := strings.TrimPrefix(header, "Bearer ")
 
-			claims, err := auth.ParseAccessToken(jwtSecret, tokenStr)
-			if err != nil {
-				writeError(w, http.StatusUnauthorized, "token_expired", "invalid or expired token")
+			sess, err := redisAuth.ValidateAndTouchSession(r.Context(), cookie.Value)
+			if err != nil || sess == nil {
+				writeError(w, http.StatusUnauthorized, "session_expired", "session expired")
 				return
 			}
 
 			ctx := context.WithValue(r.Context(), authUserKey, AuthUser{
-				UserID:    claims.UserID,
-				SessionID: claims.SessionID,
+				UserID:    sess.UserID,
+				SessionID: cookie.Value,
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

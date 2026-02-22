@@ -42,7 +42,7 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"https://sdsandbox.ru", "https://beta.sdsandbox.ru", "http://localhost:5173"},
 			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+			AllowedHeaders:   []string{"Accept", "Content-Type"},
 			ExposedHeaders:   []string{"Link"},
 			AllowCredentials: true,
 			MaxAge:           300,
@@ -65,12 +65,11 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 			r.Get("/config", authH.AuthConfig)
 			r.Post("/verify", authH.Verify)
 			r.Post("/verify-code", authH.VerifyCode)
-			r.Post("/refresh", authH.Refresh)
 		})
 
 		// Protected endpoints
 		r.Group(func(r chi.Router) {
-			r.Use(RequireAuth(cfg.JWT.Secret))
+			r.Use(RequireAuth(redisAuth))
 
 			r.Post("/auth/logout", authH.Logout)
 

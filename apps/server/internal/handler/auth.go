@@ -44,13 +44,8 @@ type verifyCodeRequest struct {
 	Code  string `json:"code"`
 }
 
-type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 type authResponse struct {
-	AccessToken string     `json:"access_token"`
-	User        model.User `json:"user"`
+	User model.User `json:"user"`
 }
 
 // --- Handlers ---
@@ -179,84 +174,6 @@ func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	h.completeVerification(w, r, data.Email)
 }
 
-// Refresh handles POST /api/v1/auth/refresh
-func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	// Read refresh token from cookie
-	cookie, err := r.Cookie("refresh_token")
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "no_refresh_token", "refresh token not found")
-		return
-	}
-
-	// Try to extract session ID from the cookie value format: sessionID:refreshToken
-	parts := strings.SplitN(cookie.Value, ":", 2)
-	if len(parts) != 2 {
-		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "invalid refresh token format")
-		return
-	}
-	sessionID, refreshToken := parts[0], parts[1]
-
-	sess, err := h.RedisAuth.GetSession(r.Context(), sessionID)
-	if err != nil || sess == nil {
-		h.clearRefreshCookie(w)
-		writeError(w, http.StatusUnauthorized, "session_expired", "session expired")
-		return
-	}
-
-	currentMatch := auth.TimingSafeEqual(sess.RefreshToken, refreshToken)
-	prevMatch := sess.PrevRefreshToken != "" && auth.TimingSafeEqual(sess.PrevRefreshToken, refreshToken)
-
-	if !currentMatch && !prevMatch {
-		h.clearRefreshCookie(w)
-		writeError(w, http.StatusUnauthorized, "invalid_refresh_token", "invalid refresh token")
-		return
-	}
-
-	// If the previous token matched, another tab already rotated.
-	// Return the current token without rotating again.
-	activeRefreshToken := sess.RefreshToken
-	if currentMatch {
-		rotated, err := h.RedisAuth.RotateRefreshToken(r.Context(), sessionID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal", "failed to rotate refresh token")
-			return
-		}
-		activeRefreshToken = rotated
-	}
-
-	// Create new access token
-	accessToken, err := auth.CreateAccessToken(
-		h.Config.JWT.Secret, sess.UserID, sessionID, h.Config.JWT.AccessExpiry,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "failed to create access token")
-		return
-	}
-
-	// Get user
-	var uid pgtype.UUID
-	uid.Scan(sess.UserID)
-	user, err := h.Store.GetUser(r.Context(), uid)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "failed to get user")
-		return
-	}
-
-	// Log refresh
-	if h.Config.SessionLogEnabled {
-		h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-			UserID:    uid,
-			SessionID: sessionID,
-			Action:    "refresh",
-			IP:        clientIP(r),
-			UserAgent: r.UserAgent(),
-		})
-	}
-
-	h.setRefreshCookie(w, sessionID, activeRefreshToken)
-	writeJSON(w, http.StatusOK, authResponse{AccessToken: accessToken, User: user})
-}
-
 // Logout handles POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	authUser, ok := GetAuthUser(r.Context())
@@ -279,7 +196,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	h.clearRefreshCookie(w)
+	h.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -345,11 +262,6 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "internal", "failed to generate session")
 		return
 	}
-	refreshToken, err := auth.GenerateToken()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "failed to generate refresh token")
-		return
-	}
 
 	userIDStr := fmt.Sprintf("%x-%x-%x-%x-%x",
 		user.ID.Bytes[0:4], user.ID.Bytes[4:6], user.ID.Bytes[6:8],
@@ -359,7 +271,6 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	now := time.Now().UTC().Format(time.RFC3339)
 	sessData := auth.SessionData{
 		UserID:       userIDStr,
-		RefreshToken: refreshToken,
 		IP:           ip,
 		Geo:          h.GeoIP.City(ip),
 		CreatedAt:    now,
@@ -368,15 +279,6 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 
 	if err := h.RedisAuth.CreateSession(r.Context(), sessionID, sessData); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "failed to create session")
-		return
-	}
-
-	// Create access token
-	accessToken, err := auth.CreateAccessToken(
-		h.Config.JWT.Secret, userIDStr, sessionID, h.Config.JWT.AccessExpiry,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", "failed to create access token")
 		return
 	}
 
@@ -392,7 +294,7 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	h.setRefreshCookie(w, sessionID, refreshToken)
+	h.setSessionCookie(w, sessionID)
 
 	// If this is from htmx (verify page), return success HTML with auto-redirect
 	if r.Header.Get("HX-Request") == "true" {
@@ -405,31 +307,30 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, authResponse{AccessToken: accessToken, User: user})
+	writeJSON(w, http.StatusOK, authResponse{User: user})
 }
 
-func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, sessionID, refreshToken string) {
-	maxAge := int(h.Config.JWT.RefreshExpiry.Seconds())
+func (h *AuthHandler) setSessionCookie(w http.ResponseWriter, sessionID string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    sessionID + ":" + refreshToken,
-		Path:     "/api/v1/auth",
-		MaxAge:   maxAge,
+		Name:     "session_id",
+		Value:    sessionID,
+		Path:     "/",
+		MaxAge:   int(h.Config.Session.Expiry.Seconds()),
 		HttpOnly: true,
 		Secure:   strings.HasPrefix(h.Config.PublicURL, "https"),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
-func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
+func (h *AuthHandler) clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
+		Name:     "session_id",
 		Value:    "",
-		Path:     "/api/v1/auth",
+		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   strings.HasPrefix(h.Config.PublicURL, "https"),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 

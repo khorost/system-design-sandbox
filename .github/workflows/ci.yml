@@ -129,6 +129,8 @@ jobs:
           IMAGE=${{ env.DOCKERHUB_ORG }}/sdsandbox-server
           TAG=${{ needs.detect-changes.outputs.tag }}
           docker build -f apps/server/Dockerfile \
+            --build-arg VERSION=$TAG \
+            --build-arg COMMIT=${GITHUB_SHA::8} \
             -t $IMAGE:$TAG \
             -t $IMAGE:${GITHUB_SHA::8} \
             apps/server

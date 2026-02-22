@@ -28,30 +28,30 @@ type AuthTokenData struct {
 // without read-modify-write cycles.
 // UA is not stored here — it goes only to the session_log table.
 type SessionData struct {
-	UserID           string
-	RefreshToken     string
-	PrevRefreshToken string // previous token kept for multi-tab race tolerance
-	IP               string
-	Geo              string
-	CreatedAt        string
-	LastActiveAt     string
+	UserID       string
+	IP           string
+	Geo          string
+	CreatedAt    string
+	LastActiveAt string
 }
 
 // RedisAuth provides auth-related Redis operations.
 type RedisAuth struct {
-	rdb             redis.UniversalClient
-	sessionExpiry   time.Duration
-	rateLimitPerMin int
-	rateLimitPerHr  int
+	rdb              redis.UniversalClient
+	sessionExpiry    time.Duration
+	touchMinInterval time.Duration // skip touch if last update was within this window
+	rateLimitPerMin  int
+	rateLimitPerHr   int
 }
 
 // NewRedisAuth creates a new RedisAuth instance.
-func NewRedisAuth(rdb redis.UniversalClient, sessionExpiry time.Duration, rateLimitPerMin, rateLimitPerHr int) *RedisAuth {
+func NewRedisAuth(rdb redis.UniversalClient, sessionExpiry, touchMinInterval time.Duration, rateLimitPerMin, rateLimitPerHr int) *RedisAuth {
 	return &RedisAuth{
-		rdb:             rdb,
-		sessionExpiry:   sessionExpiry,
-		rateLimitPerMin: rateLimitPerMin,
-		rateLimitPerHr:  rateLimitPerHr,
+		rdb:              rdb,
+		sessionExpiry:    sessionExpiry,
+		touchMinInterval: touchMinInterval,
+		rateLimitPerMin:  rateLimitPerMin,
+		rateLimitPerHr:   rateLimitPerHr,
 	}
 }
 
@@ -220,13 +220,11 @@ func (ra *RedisAuth) CheckRateLimit(ctx context.Context, email string) error {
 // --- Session operations (Redis hashes) ---
 
 const (
-	fUserID           = "uid"
-	fRefreshToken     = "rt"
-	fPrevRefreshToken = "prt"
-	fIP               = "ip"
-	fGeo              = "geo"
-	fCreatedAt        = "cat"
-	fLastActiveAt     = "lat"
+	fUserID       = "uid"
+	fIP           = "ip"
+	fGeo          = "geo"
+	fCreatedAt    = "cat"
+	fLastActiveAt = "lat"
 )
 
 func sessionKey(sessionID string) string   { return "s:" + sessionID }
@@ -238,7 +236,6 @@ func (ra *RedisAuth) CreateSession(ctx context.Context, sessionID string, data S
 	pipe := ra.rdb.Pipeline()
 	pipe.HSet(ctx, key, map[string]interface{}{
 		fUserID:       data.UserID,
-		fRefreshToken: data.RefreshToken,
 		fIP:           data.IP,
 		fGeo:          data.Geo,
 		fCreatedAt:    data.CreatedAt,
@@ -261,13 +258,11 @@ func (ra *RedisAuth) GetSession(ctx context.Context, sessionID string) (*Session
 		return nil, nil
 	}
 	return &SessionData{
-		UserID:           m[fUserID],
-		RefreshToken:     m[fRefreshToken],
-		PrevRefreshToken: m[fPrevRefreshToken],
-		IP:               m[fIP],
-		Geo:              m[fGeo],
-		CreatedAt:        m[fCreatedAt],
-		LastActiveAt:     m[fLastActiveAt],
+		UserID:       m[fUserID],
+		IP:           m[fIP],
+		Geo:          m[fGeo],
+		CreatedAt:    m[fCreatedAt],
+		LastActiveAt: m[fLastActiveAt],
 	}, nil
 }
 
@@ -363,43 +358,46 @@ func (ra *RedisAuth) DeleteOtherSessions(ctx context.Context, currentSessionID, 
 	return count, nil
 }
 
-// RotateRefreshToken generates a new refresh token, saves current as previous,
-// and updates the session. The previous token is kept so that a concurrent
-// refresh from another browser tab can still succeed (race tolerance).
-func (ra *RedisAuth) RotateRefreshToken(ctx context.Context, sessionID string) (string, error) {
+// ValidateAndTouchSession retrieves session data and, if the last touch is
+// older than touchMinInterval, updates last_active_at and extends the TTL.
+// This throttling reduces Redis writes on high-frequency API calls.
+// Returns nil if the session does not exist or has expired.
+func (ra *RedisAuth) ValidateAndTouchSession(ctx context.Context, sessionID string) (*SessionData, error) {
 	key := sessionKey(sessionID)
-	currentToken, err := ra.rdb.HGet(ctx, key, fRefreshToken).Result()
-	if err == redis.Nil {
-		return "", fmt.Errorf("session not found")
-	}
+	m, err := ra.rdb.HGetAll(ctx, key).Result()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	newToken, err := GenerateToken()
-	if err != nil {
-		return "", err
+	if len(m) == 0 {
+		return nil, nil
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	pipe := ra.rdb.Pipeline()
-	pipe.HSet(ctx, key,
-		fRefreshToken, newToken,
-		fPrevRefreshToken, currentToken,
-		fLastActiveAt, now,
-	)
-	pipe.Expire(ctx, key, ra.sessionExpiry)
-	if _, err := pipe.Exec(ctx); err != nil {
-		return "", err
-	}
-	return newToken, nil
-}
 
-// TouchSession updates only the last_active_at field.
-func (ra *RedisAuth) TouchSession(ctx context.Context, sessionID string) error {
-	key := sessionKey(sessionID)
-	exists, err := ra.rdb.Exists(ctx, key).Result()
-	if err != nil || exists == 0 {
-		return nil
+	latStr := m[fLastActiveAt]
+	now := time.Now().UTC()
+
+	// Only write to Redis if the last touch is old enough.
+	needsTouch := true
+	if ra.touchMinInterval > 0 && latStr != "" {
+		if lastTouch, err := time.Parse(time.RFC3339, latStr); err == nil {
+			needsTouch = now.Sub(lastTouch) >= ra.touchMinInterval
+		}
 	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	return ra.rdb.HSet(ctx, key, fLastActiveAt, now).Err()
+
+	if needsTouch {
+		latStr = now.Format(time.RFC3339)
+		pipe := ra.rdb.Pipeline()
+		pipe.HSet(ctx, key, fLastActiveAt, latStr)
+		pipe.Expire(ctx, key, ra.sessionExpiry)
+		if _, err := pipe.Exec(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	return &SessionData{
+		UserID:       m[fUserID],
+		IP:           m[fIP],
+		Geo:          m[fGeo],
+		CreatedAt:    m[fCreatedAt],
+		LastActiveAt: latStr,
+	}, nil
 }

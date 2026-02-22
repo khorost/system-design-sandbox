@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import { CONFIG } from '../config/constants.ts';
 import { autoLayout } from '../dsl/layout.ts';
 import { parseDsl } from '../dsl/parser.ts';
+import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import type { ArchitectureSchema, ComponentEdge, ComponentNode, EdgeData, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
@@ -88,9 +89,11 @@ function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; s
 const initial = loadInitialState();
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[], schemaName: string, schemaDescription: string, schemaTags: string[]) {
+
+function debouncedSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    const { nodes, edges, schemaName, schemaDescription, schemaTags } = useCanvasStore.getState();
     const schema: ArchitectureSchema = {
       version: '1.0',
       metadata: {
@@ -104,7 +107,29 @@ function debouncedSave(nodes: ComponentNode[], edges: ComponentEdge[], schemaNam
       edges,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(schema));
+    saveTimer = null;
   }, CONFIG.UI.DEBOUNCE_SAVE_MS);
+}
+
+function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    const { nodes, edges, schemaName, schemaDescription, schemaTags } = useCanvasStore.getState();
+    const schema: ArchitectureSchema = {
+      version: '1.0',
+      metadata: {
+        name: schemaName || 'My Architecture',
+        description: schemaDescription,
+        tags: schemaTags,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      nodes,
+      edges,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(schema));
+  }
 }
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
@@ -158,6 +183,7 @@ interface CanvasState {
 
   save: () => void;
   load: () => void;
+  loadFromStorage: () => void;
   clear: () => void;
 }
 
@@ -592,22 +618,195 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
   },
 
+  loadFromStorage: () => {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const schema: ArchitectureSchema = JSON.parse(raw);
+      set({
+        _skipAutoSave: true,
+        nodes: sortNodesParentFirst(schema.nodes ?? []),
+        edges: schema.edges ?? [],
+        schemaName: schema.metadata?.name ?? '',
+        schemaDescription: schema.metadata?.description ?? '',
+        schemaTags: schema.metadata?.tags ?? [],
+      });
+      set({ _skipAutoSave: false });
+    } catch {
+      // ignore corrupted data
+    }
+  },
+
   clear: () => {
     set({ ...pushHistory(get), nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null, schemaName: '', schemaDescription: '', schemaTags: [], architectureId: null, isPublic: false });
     localStorage.removeItem(STORAGE_KEY);
   },
 }));
 
-// Auto-save on every nodes/edges/metadata change (debounced 500ms)
+// Auto-save + cross-tab broadcast on every change
+const movedNodeIds = new Set<string>();
+let moveTimer: ReturnType<typeof setTimeout> | null = null;
+
 useCanvasStore.subscribe((state, prev) => {
   if (state._skipAutoSave) return;
-  if (
-    state.nodes !== prev.nodes ||
-    state.edges !== prev.edges ||
-    state.schemaName !== prev.schemaName ||
+
+  const nodesChanged = state.nodes !== prev.nodes;
+  const edgesChanged = state.edges !== prev.edges;
+  const metaChanged = state.schemaName !== prev.schemaName ||
     state.schemaDescription !== prev.schemaDescription ||
-    state.schemaTags !== prev.schemaTags
-  ) {
-    debouncedSave(state.nodes, state.edges, state.schemaName, state.schemaDescription, state.schemaTags);
+    state.schemaTags !== prev.schemaTags;
+
+  // Debounced save to localStorage
+  if (nodesChanged || edgesChanged || metaChanged) {
+    debouncedSave();
+  }
+
+  // Cross-tab broadcast: nodes
+  if (nodesChanged) {
+    const prevMap = new Map(prev.nodes.map(n => [n.id, n]));
+    const currMap = new Map(state.nodes.map(n => [n.id, n]));
+
+    const upserted: ComponentNode[] = [];
+    const removedIds: string[] = [];
+
+    for (const [id, node] of currMap) {
+      const prevNode = prevMap.get(id);
+      if (!prevNode) {
+        upserted.push(node);
+      } else if (prevNode !== node) {
+        // Structural change (data, parentId, style) → broadcast immediately
+        // Position-only change → debounce
+        if (prevNode.data !== node.data || prevNode.parentId !== node.parentId || prevNode.style !== node.style) {
+          upserted.push(node);
+        } else {
+          movedNodeIds.add(id);
+        }
+      }
+    }
+    for (const id of prevMap.keys()) {
+      if (!currMap.has(id)) removedIds.push(id);
+    }
+
+    if (upserted.length > 0) postTabMessage({ type: 'canvas:nodes-upserted', nodes: upserted });
+    if (removedIds.length > 0) postTabMessage({ type: 'canvas:nodes-removed', ids: removedIds });
+
+    // Debounced position broadcast (200ms)
+    if (movedNodeIds.size > 0) {
+      if (moveTimer) clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => {
+        const positions: Record<string, { x: number; y: number }> = {};
+        for (const n of useCanvasStore.getState().nodes) {
+          if (movedNodeIds.has(n.id)) positions[n.id] = n.position;
+        }
+        movedNodeIds.clear();
+        moveTimer = null;
+        if (Object.keys(positions).length > 0) {
+          postTabMessage({ type: 'canvas:nodes-moved', positions });
+        }
+      }, 200);
+    }
+  }
+
+  // Cross-tab broadcast: edges
+  if (edgesChanged) {
+    const prevMap = new Map(prev.edges.map(e => [e.id, e]));
+    const currMap = new Map(state.edges.map(e => [e.id, e]));
+
+    const upserted: ComponentEdge[] = [];
+    const removedIds: string[] = [];
+
+    for (const [id, edge] of currMap) {
+      if (!prevMap.has(id) || prevMap.get(id) !== edge) {
+        upserted.push(edge);
+      }
+    }
+    for (const id of prevMap.keys()) {
+      if (!currMap.has(id)) removedIds.push(id);
+    }
+
+    if (upserted.length > 0) postTabMessage({ type: 'canvas:edges-upserted', edges: upserted });
+    if (removedIds.length > 0) postTabMessage({ type: 'canvas:edges-removed', ids: removedIds });
+  }
+
+  // Cross-tab broadcast: metadata
+  if (metaChanged) {
+    postTabMessage({ type: 'canvas:meta', name: state.schemaName, description: state.schemaDescription, tags: state.schemaTags });
   }
 });
+
+// Receive cross-tab canvas operations
+onTabMessage((msg) => {
+  switch (msg.type) {
+    case 'canvas:nodes-upserted': {
+      const state = useCanvasStore.getState();
+      const remoteMap = new Map(msg.nodes.map(n => [n.id, n]));
+      const merged = state.nodes.map(n => remoteMap.get(n.id) ?? n);
+      const localIds = new Set(state.nodes.map(n => n.id));
+      const added = msg.nodes.filter(n => !localIds.has(n.id));
+      useCanvasStore.setState({ _skipAutoSave: true, nodes: sortNodesParentFirst([...merged, ...added]) });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+    }
+    case 'canvas:nodes-removed': {
+      const ids = new Set(msg.ids);
+      const state = useCanvasStore.getState();
+      useCanvasStore.setState({
+        _skipAutoSave: true,
+        nodes: state.nodes.filter(n => !ids.has(n.id)),
+        edges: state.edges.filter(e => !ids.has(e.source) && !ids.has(e.target)),
+        selectedNodeId: ids.has(state.selectedNodeId ?? '') ? null : state.selectedNodeId,
+      });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+    }
+    case 'canvas:nodes-moved': {
+      const state = useCanvasStore.getState();
+      useCanvasStore.setState({
+        _skipAutoSave: true,
+        nodes: state.nodes.map(n => {
+          const pos = msg.positions[n.id];
+          return pos ? { ...n, position: pos } : n;
+        }),
+      });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+    }
+    case 'canvas:edges-upserted': {
+      const state = useCanvasStore.getState();
+      const remoteMap = new Map(msg.edges.map(e => [e.id, e]));
+      const merged = state.edges.map(e => (remoteMap.get(e.id) ?? e) as ComponentEdge);
+      const localIds = new Set(state.edges.map(e => e.id));
+      const added = msg.edges.filter(e => !localIds.has(e.id)) as ComponentEdge[];
+      useCanvasStore.setState({ _skipAutoSave: true, edges: [...merged, ...added] });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+    }
+    case 'canvas:edges-removed': {
+      const ids = new Set(msg.ids);
+      const state = useCanvasStore.getState();
+      useCanvasStore.setState({
+        _skipAutoSave: true,
+        edges: state.edges.filter(e => !ids.has(e.id)),
+        selectedEdgeId: ids.has(state.selectedEdgeId ?? '') ? null : state.selectedEdgeId,
+      });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+    }
+    case 'canvas:meta':
+      useCanvasStore.setState({
+        _skipAutoSave: true,
+        schemaName: msg.name,
+        schemaDescription: msg.description,
+        schemaTags: msg.tags,
+      });
+      useCanvasStore.setState({ _skipAutoSave: false });
+      break;
+  }
+});
+
+// Flush pending save when tab goes to background
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushSave();
+  });
+}

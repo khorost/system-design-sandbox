@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { setAccessToken } from '../../api/client.ts';
 import { useAuthStore } from '../authStore.ts';
+
+// Ensure window exists for getApiUrl()
+if (typeof window === 'undefined') {
+  vi.stubGlobal('window', {});
+}
 
 // Mock global fetch
 const fetchMock = vi.fn();
@@ -39,7 +43,6 @@ const mockUserNoName = {
 
 beforeEach(() => {
   fetchMock.mockReset();
-  setAccessToken(null);
   localStorage.clear();
   useAuthStore.setState({
     user: null,
@@ -51,7 +54,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setAccessToken(null);
   localStorage.clear();
 });
 
@@ -72,13 +74,11 @@ describe('clearError', () => {
 });
 
 describe('initialize', () => {
-  it('sets authenticated on successful refresh with display_name', async () => {
+  it('sets authenticated on successful session check with display_name', async () => {
     // auth/config fetch
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { referral_field_enabled: false }));
-    // refresh fetch
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { access_token: 'tok', user: mockUser }),
-    );
+    // GET /users/me
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, mockUser));
 
     await useAuthStore.getState().initialize();
 
@@ -89,9 +89,7 @@ describe('initialize', () => {
 
   it('sets onboarding when user has no display_name', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { referral_field_enabled: false }));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { access_token: 'tok', user: mockUserNoName }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, mockUserNoName));
 
     await useAuthStore.getState().initialize();
 
@@ -99,7 +97,7 @@ describe('initialize', () => {
     expect(useAuthStore.getState().user).toEqual(mockUserNoName);
   });
 
-  it('sets anonymous view and clears marker on failed refresh', async () => {
+  it('sets anonymous view and clears marker on failed session check', async () => {
     localStorage.setItem('has_session', '1');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { referral_field_enabled: false }));
     fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'no session' }));
@@ -123,9 +121,7 @@ describe('initialize', () => {
 describe('requestCode', () => {
   it('transitions to verify-code on success', async () => {
     useAuthStore.setState({ view: 'login' });
-    // refresh attempt for ensureToken
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
-    // send-code request
+    // send-code request (no token management needed)
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
 
     await useAuthStore.getState().requestCode('test@example.com');
@@ -136,7 +132,6 @@ describe('requestCode', () => {
 
   it('sets error on failure', async () => {
     useAuthStore.setState({ view: 'login' });
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, { error: 'invalid email', code: 'bad_request' }),
     );
@@ -151,10 +146,7 @@ describe('requestCode', () => {
 describe('verifyCode', () => {
   it('transitions to authenticated on success with display_name', async () => {
     useAuthStore.setState({ view: 'verify-code', email: 'test@example.com' });
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { access_token: 'tok', user: mockUser }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: mockUser }));
 
     await useAuthStore.getState().verifyCode('ABC-DEF');
 
@@ -164,10 +156,7 @@ describe('verifyCode', () => {
 
   it('transitions to onboarding when no display_name', async () => {
     useAuthStore.setState({ view: 'verify-code', email: 'test@example.com' });
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { access_token: 'tok', user: mockUserNoName }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { user: mockUserNoName }));
 
     await useAuthStore.getState().verifyCode('ABC-DEF');
 
@@ -176,7 +165,6 @@ describe('verifyCode', () => {
 
   it('sets error on invalid code', async () => {
     useAuthStore.setState({ view: 'verify-code', email: 'test@example.com' });
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, { error: 'invalid code', code: 'invalid_code' }),
     );
@@ -191,7 +179,6 @@ describe('verifyCode', () => {
 describe('completeOnboarding', () => {
   it('transitions to authenticated', async () => {
     useAuthStore.setState({ view: 'onboarding', user: mockUserNoName });
-    setAccessToken('tok');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, mockUser));
 
     await useAuthStore.getState().completeOnboarding('Test User');
@@ -202,7 +189,6 @@ describe('completeOnboarding', () => {
 
   it('sends referral_source when provided', async () => {
     useAuthStore.setState({ view: 'onboarding', user: mockUserNoName });
-    setAccessToken('tok');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, mockUser));
 
     await useAuthStore.getState().completeOnboarding('Test User', 'OTUS');
@@ -217,7 +203,6 @@ describe('completeOnboarding', () => {
 describe('logout', () => {
   it('resets state to anonymous', async () => {
     useAuthStore.setState({ view: 'authenticated', user: mockUser });
-    setAccessToken('tok');
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     await useAuthStore.getState().logout();
@@ -229,7 +214,6 @@ describe('logout', () => {
 
   it('still resets state even if logout request fails', async () => {
     useAuthStore.setState({ view: 'authenticated', user: mockUser });
-    setAccessToken('tok');
     fetchMock.mockRejectedValueOnce(new Error('network'));
 
     await useAuthStore.getState().logout();
@@ -242,7 +226,6 @@ describe('logout', () => {
 describe('updateProfile', () => {
   it('updates user in state', async () => {
     useAuthStore.setState({ view: 'authenticated', user: mockUser });
-    setAccessToken('tok');
     const updated = { ...mockUser, display_name: 'New Name', gravatar_allowed: true };
     fetchMock.mockResolvedValueOnce(jsonResponse(200, updated));
 
@@ -253,13 +236,11 @@ describe('updateProfile', () => {
   });
 });
 
-describe('refresh', () => {
+describe('checkSession', () => {
   it('returns true and updates user on success', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { access_token: 'new-tok', user: mockUser }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, mockUser));
 
-    const result = await useAuthStore.getState().refresh();
+    const result = await useAuthStore.getState().checkSession();
 
     expect(result).toBe(true);
     expect(useAuthStore.getState().user).toEqual(mockUser);
@@ -268,7 +249,7 @@ describe('refresh', () => {
   it('returns false on failure', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(401, {}));
 
-    const result = await useAuthStore.getState().refresh();
+    const result = await useAuthStore.getState().checkSession();
 
     expect(result).toBe(false);
   });
@@ -276,7 +257,7 @@ describe('refresh', () => {
   it('returns false on network error', async () => {
     fetchMock.mockRejectedValueOnce(new Error('offline'));
 
-    const result = await useAuthStore.getState().refresh();
+    const result = await useAuthStore.getState().checkSession();
 
     expect(result).toBe(false);
   });

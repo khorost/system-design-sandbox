@@ -13,49 +13,10 @@ export class ApiError extends Error {
   }
 }
 
-let accessToken: string | null = null;
-let refreshPromise: Promise<string | null> | null = null;
-
-export function setAccessToken(token: string | null) {
-  accessToken = token;
-}
-
-export function getAccessToken() {
-  return accessToken;
-}
-
-async function refreshAccessToken(): Promise<string | null> {
-  const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!res.ok) {
-    accessToken = null;
-    return null;
-  }
-  const data = await res.json();
-  accessToken = data.access_token;
-  return accessToken;
-}
-
-async function ensureToken(): Promise<string | null> {
-  if (!accessToken) {
-    // Try refresh once (single in-flight promise to prevent races)
-    if (!refreshPromise) {
-      refreshPromise = refreshAccessToken().finally(() => {
-        refreshPromise = null;
-      });
-    }
-    return refreshPromise;
-  }
-  return accessToken;
-}
-
 export async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const token = await ensureToken();
   const url = `${getApiUrl()}${path}`;
 
   const headers: Record<string, string> = {
@@ -63,28 +24,11 @@ export async function apiFetch<T = unknown>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  let res = await fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers,
     credentials: 'include',
   });
-
-  // Auto-refresh on 401
-  if (res.status === 401 && token) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      headers['Authorization'] = `Bearer ${newToken}`;
-      res = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
-    }
-  }
 
   if (!res.ok) {
     let body: { error?: string; code?: string; retry_after?: number } = {};

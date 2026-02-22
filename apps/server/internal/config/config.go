@@ -12,7 +12,7 @@ type Config struct {
 	DatabaseURL          string
 	ServerPort           string
 	Redis                RedisConfig
-	JWT                  JWTConfig
+	Session              SessionConfig
 	SMTP                 SMTPConfig
 	RateLimit            RateLimitConfig
 	PublicURL            string
@@ -26,10 +26,10 @@ type RateLimitConfig struct {
 	PerHour   int
 }
 
-type JWTConfig struct {
-	Secret        string
-	AccessExpiry  time.Duration
-	RefreshExpiry time.Duration
+type SessionConfig struct {
+	Expiry       time.Duration
+	TouchMinInterval time.Duration // minimum interval between session touch writes
+	MetricsTick  time.Duration     // how often the metrics collector scans Redis
 }
 
 type SMTPConfig struct {
@@ -87,27 +87,37 @@ func Load() (*Config, error) {
 		sentinelURLs = strings.Split(v, ",")
 	}
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		return nil, fmt.Errorf("JWT_SECRET environment variable is required")
-	}
-
-	accessExpiry := 5 * time.Minute
-	if v := os.Getenv("JWT_ACCESS_EXPIRY"); v != "" {
+	sessionExpiry := 7 * 24 * time.Hour
+	if v := os.Getenv("SESSION_EXPIRY"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("JWT_ACCESS_EXPIRY must be a valid duration: %w", err)
+			return nil, fmt.Errorf("SESSION_EXPIRY must be a valid duration: %w", err)
 		}
-		accessExpiry = d
-	}
-
-	refreshExpiry := 7 * 24 * time.Hour
-	if v := os.Getenv("JWT_REFRESH_EXPIRY"); v != "" {
+		sessionExpiry = d
+	} else if v := os.Getenv("JWT_REFRESH_EXPIRY"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return nil, fmt.Errorf("JWT_REFRESH_EXPIRY must be a valid duration: %w", err)
 		}
-		refreshExpiry = d
+		sessionExpiry = d
+	}
+
+	metricsTick := 40 * time.Second
+	if v := os.Getenv("METRICS_TICK"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("METRICS_TICK must be a valid duration: %w", err)
+		}
+		metricsTick = d
+	}
+
+	touchMinInterval := 20 * time.Second
+	if v := os.Getenv("SESSION_TOUCH_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("SESSION_TOUCH_INTERVAL must be a valid duration: %w", err)
+		}
+		touchMinInterval = d
 	}
 
 	publicURL := os.Getenv("PUBLIC_URL")
@@ -179,10 +189,10 @@ func Load() (*Config, error) {
 			SentinelMaster: os.Getenv("REDIS_SENTINEL_MASTER"),
 			SentinelURLs:   sentinelURLs,
 		},
-		JWT: JWTConfig{
-			Secret:        jwtSecret,
-			AccessExpiry:  accessExpiry,
-			RefreshExpiry: refreshExpiry,
+		Session: SessionConfig{
+			Expiry:           sessionExpiry,
+			TouchMinInterval: touchMinInterval,
+			MetricsTick:      metricsTick,
 		},
 		SMTP: SMTPConfig{
 			Host:     os.Getenv("SMTP_HOST"),

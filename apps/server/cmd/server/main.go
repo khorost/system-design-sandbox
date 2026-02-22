@@ -23,6 +23,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// Set via -ldflags at build time.
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
+
 func parseLogLevel(s string) slog.Level {
 	switch strings.ToUpper(strings.TrimSpace(s)) {
 	case "DEBUG":
@@ -105,7 +111,7 @@ func main() {
 	// Initialize auth services
 	var redisAuth *auth.RedisAuth
 	if rdb != nil {
-		redisAuth = auth.NewRedisAuth(rdb, cfg.JWT.RefreshExpiry, cfg.RateLimit.PerMinute, cfg.RateLimit.PerHour)
+		redisAuth = auth.NewRedisAuth(rdb, cfg.Session.Expiry, cfg.Session.TouchMinInterval, cfg.RateLimit.PerMinute, cfg.RateLimit.PerHour)
 	}
 	emailSender := auth.NewEmailSender(cfg.SMTP)
 
@@ -119,12 +125,12 @@ func main() {
 
 	// Metrics: hub first (collector depends on it)
 	hub := metrics.NewHub(15 * time.Second)
-	collector := metrics.NewCollector(rdb, hub, cfg.JWT.AccessExpiry)
+	collector := metrics.NewCollector(rdb, hub, 5*time.Minute)
 	collector.SetOnSnapshot(hub.Broadcast)
 
 	metricsCtx, metricsCancel := context.WithCancel(context.Background())
 	defer metricsCancel()
-	go collector.Run(metricsCtx, 20*time.Second)
+	go collector.Run(metricsCtx, cfg.Session.MetricsTick)
 
 	router := handler.NewRouter(cfg, store, redisAuth, emailSender, geo, collector, hub)
 
@@ -140,7 +146,7 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("server starting", "port", cfg.ServerPort)
+		slog.Info("server starting", "version", Version, "commit", Commit, "port", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server error", "error", err)
 			os.Exit(1)

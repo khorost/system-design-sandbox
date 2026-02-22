@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 
-import { ApiError, apiFetch, setAccessToken } from '../api/client.ts';
+import { ApiError, apiFetch } from '../api/client.ts';
 import { getApiUrl } from '../config/env.ts';
+import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 
 export type AuthView = 'loading' | 'anonymous' | 'login' | 'verify-code' | 'onboarding' | 'authenticated';
 
-interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -46,7 +47,7 @@ interface AuthState {
   setView: (view: AuthView) => void;
   requestCode: (email: string) => Promise<void>;
   verifyCode: (code: string) => Promise<void>;
-  refresh: () => Promise<boolean>;
+  checkSession: () => Promise<boolean>;
   logout: () => Promise<void>;
   updateProfile: (displayName: string, gravatarAllowed: boolean) => Promise<void>;
   completeOnboarding: (displayName: string, referralSource?: string) => Promise<void>;
@@ -89,30 +90,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: () => {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-      // Fetch auth config in parallel
       get().fetchAuthConfig();
-
       try {
-        const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          localStorage.removeItem(SESSION_KEY);
-          set({ view: 'anonymous' });
-          return;
-        }
-        const data = await res.json();
-        setAccessToken(data.access_token);
+        const user = await apiFetch<User>('/api/v1/users/me');
         localStorage.setItem(SESSION_KEY, '1');
-        const user: User = data.user;
-
         if (!user.display_name) {
           set({ user, view: 'onboarding' });
         } else {
           set({ user, view: 'authenticated' });
         }
+        postTabMessage({ type: 'auth:login', user });
       } catch {
+        localStorage.removeItem(SESSION_KEY);
         set({ view: 'anonymous' });
       } finally {
         initPromise = null;
@@ -144,11 +133,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ error: null });
     const { email } = get();
     try {
-      const data = await apiFetch<{ access_token: string; user: User }>('/api/v1/auth/verify-code', {
+      const data = await apiFetch<{ user: User }>('/api/v1/auth/verify-code', {
         method: 'POST',
         body: JSON.stringify({ email, code }),
       });
-      setAccessToken(data.access_token);
       localStorage.setItem(SESSION_KEY, '1');
       const user = data.user;
 
@@ -157,6 +145,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         set({ user, view: 'authenticated' });
       }
+      postTabMessage({ type: 'auth:login', user });
     } catch (e) {
       if (e instanceof ApiError) {
         set({ error: e.message });
@@ -164,16 +153,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  refresh: async () => {
+  checkSession: async () => {
     try {
-      const res = await fetch(`${getApiUrl()}/api/v1/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      setAccessToken(data.access_token);
-      set({ user: data.user });
+      const user = await apiFetch<User>('/api/v1/users/me');
+      set({ user });
       return true;
     } catch {
       return false;
@@ -186,9 +169,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // ignore errors on logout
     }
-    setAccessToken(null);
     localStorage.removeItem(SESSION_KEY);
     set({ user: null, view: 'anonymous', email: '' });
+    postTabMessage({ type: 'auth:logout' });
   },
 
   updateProfile: async (displayName: string, gravatarAllowed: boolean) => {
@@ -238,3 +221,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await apiFetch('/api/v1/auth/sessions/revoke-others', { method: 'POST' });
   },
 }));
+
+// Cross-tab auth sync
+onTabMessage((msg) => {
+  if (msg.type === 'auth:logout') {
+    localStorage.removeItem(SESSION_KEY);
+    useAuthStore.setState({ user: null, view: 'anonymous', email: '' });
+  }
+  if (msg.type === 'auth:login') {
+    localStorage.setItem(SESSION_KEY, '1');
+    const view = msg.user.display_name ? 'authenticated' : 'onboarding';
+    useAuthStore.setState({ user: msg.user, view });
+  }
+});
