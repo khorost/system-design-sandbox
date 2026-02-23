@@ -13,13 +13,13 @@ import { create } from 'zustand';
 import { CONFIG } from '../config/constants.ts';
 import { autoLayout } from '../dsl/layout.ts';
 import { parseDsl } from '../dsl/parser.ts';
-import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import type { ArchitectureSchema, ComponentEdge, ComponentNode, EdgeData, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
 import { CONTAINER_TYPES, getAbsolutePosition } from '../utils/networkLatency.ts';
 import { notify } from '../utils/notifications.ts';
 import { sanitizeConfig,sanitizeLabel } from '../utils/sanitize.ts';
+import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
