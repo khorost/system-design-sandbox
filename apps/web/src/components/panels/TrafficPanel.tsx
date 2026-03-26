@@ -1,5 +1,5 @@
 import type { EdgeTagTraffic, NodeTagTraffic, TagTraffic } from '@system-design-sandbox/simulation-engine';
-import { useState, useRef } from 'react';
+import { useRef, useState } from 'react';
 
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import { useSimulationStore } from '../../store/simulationStore.ts';
@@ -35,10 +35,6 @@ function fmtBw(kbps: number): string {
   if (kbps >= 1024) return `${(kbps / 1024).toFixed(1)} MB/s`;
   if (kbps >= 100) return `${kbps.toFixed(0)} KB/s`;
   return `${kbps.toFixed(1)} KB/s`;
-}
-
-function fmtPct(v: number): string {
-  return `${(v * 100).toFixed(1)}%`;
 }
 
 /** Merge all unique tags from req + resp, sorted alphabetically, stable across renders. */

@@ -83,10 +83,9 @@ export interface NextHop {
 }
 
 /**
- * For node `currentNode` and request with `tag`:
- * - load_balancer: 1 request → 1 random unvisited neighbor
- * - has routing rules for tag: fan-out by weight
- * - no rules: 1 request → 1 random unvisited neighbor (backward compat)
+ * Proportional routing: each edge has a coefficient per tag (explicit rule weight, or default 1).
+ * Traffic is routed to 1 random neighbor weighted by coefficients.
+ * Weight 0 = blocked. Load balancers use the same weighted selection.
  */
 export function resolveNextHops(
   currentNode: string,
@@ -94,7 +93,7 @@ export function resolveNextHops(
   visited: string[],
   adjacency: Map<string, string[]>,
   connectionLookup: Map<string, ConnectionModel>,
-  loadBalancerNodes: Set<string>,
+  _loadBalancerNodes: Set<string>,
 ): NextHop[] {
   const neighbors = adjacency.get(currentNode);
   if (!neighbors || neighbors.length === 0) return [];
@@ -103,31 +102,25 @@ export function resolveNextHops(
   const unvisited = neighbors.filter(n => !visitedSet.has(n));
   if (unvisited.length === 0) return [];
 
-  // Load balancer: always 1 request, uniform random
-  if (loadBalancerNodes.has(currentNode)) {
-    const target = unvisited[Math.floor(Math.random() * unvisited.length)];
-    return [{ target, count: 1 }];
-  }
-
-  // Check if any outgoing edge has routing rules for this tag
-  let hasRulesForTag = false;
-  const hops: NextHop[] = [];
-
+  // Build candidates with per-tag coefficient
+  const candidates: { target: string; coeff: number; outTag?: string }[] = [];
   for (const neighbor of unvisited) {
     const conn = connectionLookup.get(`${currentNode}->${neighbor}`);
     const rule = conn?.routingRules?.find(r => r.tag === tag);
-    if (rule && rule.weight > 0) {
-      hasRulesForTag = true;
-      const count = spawnCount(rule.weight);
-      if (count > 0) hops.push({ target: neighbor, count, outTag: rule.outTag });
+    const coeff = rule != null ? rule.weight : 1; // explicit rule or default 1
+    if (coeff > 0) {
+      candidates.push({ target: neighbor, coeff, outTag: rule?.outTag });
     }
   }
 
-  // No rules for this tag: backward compat — 1 random neighbor
-  if (!hasRulesForTag) {
-    const target = unvisited[Math.floor(Math.random() * unvisited.length)];
-    return [{ target, count: 1 }];
-  }
+  if (candidates.length === 0) return [];
 
-  return hops;
+  // Weighted random selection: 1 request → 1 target proportional to coefficients
+  const totalCoeff = candidates.reduce((s, c) => s + c.coeff, 0);
+  let rand = Math.random() * totalCoeff;
+  for (const c of candidates) {
+    rand -= c.coeff;
+    if (rand <= 0) return [{ target: c.target, count: 1, outTag: c.outTag }];
+  }
+  return [{ target: candidates[candidates.length - 1].target, count: 1 }];
 }

@@ -242,7 +242,7 @@ function EdgeProperties() {
           />
         </div>
 
-        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} />
+        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} sourceNode={sourceNode} bandwidth={data?.bandwidthMbps ?? 1000} allEdges={edges} />
       </div>
 
       <div className="p-4 border-t border-[var(--color-border)]">
@@ -257,108 +257,183 @@ function EdgeProperties() {
   );
 }
 
-function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
+interface TagWeightSource {
+  tag: string;
+  weight: number;
+  requestSizeKb?: number;
+}
+
+function fmtEdgeRps(v: number): string {
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return v.toFixed(0);
+}
+
+function fmtEdgeBw(kbps: number): string {
+  if (kbps >= 1024 * 1024) return `${(kbps / (1024 * 1024)).toFixed(1)} GB/s`;
+  if (kbps >= 1024) return `${(kbps / 1024).toFixed(1)} MB/s`;
+  return `${kbps.toFixed(1)} KB/s`;
+}
+
+function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, bandwidth, allEdges }: {
   edgeId: string;
   rules: EdgeRoutingRule[];
   updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+  sourceNode: import('../../types/index.ts').ComponentNode | undefined;
+  bandwidth: number;
+  allEdges: import('../../types/index.ts').ComponentEdge[];
 }) {
   const [newTag, setNewTag] = useState('');
+
+  // Collect all tags from source node's tagDistribution
+  const srcConfig = sourceNode?.data.config ?? {};
+  const srcTags = (srcConfig.tagDistribution as TagWeightSource[] | undefined) ?? [];
+  const srcUsersK = (srcConfig.concurrent_users_k as number) ?? 1;
+  const srcRpu = (srcConfig.requests_per_user as number) ?? 0.1;
+  const srcTotalRps = srcUsersK * 1000 * srcRpu;
+  const srcTotalWeight = srcTags.reduce((s, t) => s + t.weight, 0);
+
+  // Merge: auto-populate tags from source, preserve existing rule weights
+  const allTags = new Set([...srcTags.map(t => t.tag), ...rules.map(r => r.tag)]);
+  const sortedTags = [...allTags].sort();
+
+  const getRule = (tag: string) => rules.find(r => r.tag === tag);
+  const getCoeff = (tag: string) => getRule(tag)?.weight ?? 1;
+  const getOutTag = (tag: string) => getRule(tag)?.outTag;
 
   const update = (updated: EdgeRoutingRule[]) => {
     updateEdgeData(edgeId, { routingRules: updated.length > 0 ? updated : undefined });
   };
 
-  const addRule = () => {
-    const tag = newTag.trim() || 'default';
-    if (rules.some(r => r.tag === tag)) return;
-    update([...rules, { tag, weight: 1.0 }]);
+  const setCoeff = (tag: string, coeff: number) => {
+    const existing = rules.filter(r => r.tag !== tag);
+    if (coeff === 1) {
+      // Default — remove rule (implicit 1)
+      update(existing);
+    } else {
+      const oldRule = getRule(tag);
+      update([...existing, { tag, weight: coeff, ...(oldRule?.outTag ? { outTag: oldRule.outTag } : {}) }]);
+    }
+  };
+
+  const setOutTagVal = (tag: string, outTag: string) => {
+    const existing = rules.filter(r => r.tag !== tag);
+    const coeff = getCoeff(tag);
+    if (!outTag && coeff === 1) {
+      update(existing);
+    } else {
+      update([...existing, { tag, weight: coeff, ...(outTag ? { outTag } : {}) }]);
+    }
+  };
+
+  const addTag = () => {
+    const tag = newTag.trim();
+    if (!tag || allTags.has(tag)) return;
+    update([...rules, { tag, weight: 1 }]);
     setNewTag('');
   };
 
-  const removeRule = (idx: number) => {
-    update(rules.filter((_, i) => i !== idx));
+  // Compute proportional split: this edge's share among all sibling edges from same source
+  const siblingEdges = sourceNode ? allEdges.filter(e => e.source === sourceNode.id) : [];
+
+  const getTagShare = (tag: string): number => {
+    // Coefficient on THIS edge for the tag
+    const thisCoeff = getCoeff(tag);
+    if (thisCoeff <= 0) return 0;
+    // Sum of coefficients across ALL sibling edges for the same tag
+    let totalCoeff = 0;
+    for (const se of siblingEdges) {
+      const seRules = (se.data?.routingRules as EdgeRoutingRule[] | undefined) ?? [];
+      const seRule = seRules.find(r => r.tag === tag);
+      const seCoeff = seRule != null ? seRule.weight : 1; // default 1
+      totalCoeff += seCoeff;
+    }
+    return totalCoeff > 0 ? thisCoeff / totalCoeff : 0;
   };
 
-  const updateRule = (idx: number, field: 'tag' | 'weight' | 'outTag', value: string | number) => {
-    const updated = rules.map((r, i) => {
-      if (i !== idx) return r;
-      if (field === 'outTag' && value === '') {
-        const { outTag: _, ...rest } = r;
-        return rest;
-      }
-      return { ...r, [field]: value };
-    });
-    update(updated);
+  const getTagRps = (tag: string): number => {
+    const srcTag = srcTags.find(t => t.tag === tag);
+    if (!srcTag || srcTotalWeight <= 0) return 0;
+    const tagFraction = srcTag.weight / srcTotalWeight;
+    return srcTotalRps * tagFraction * getTagShare(tag);
   };
+
+  const getTagBw = (tag: string): number => {
+    const srcTag = srcTags.find(t => t.tag === tag);
+    const reqKb = srcTag?.requestSizeKb ?? 0.1;
+    return getTagRps(tag) * reqKb;
+  };
+
+  const totalRps = sortedTags.reduce((s, t) => s + getTagRps(t), 0);
+  const totalBw = sortedTags.reduce((s, t) => s + getTagBw(t), 0);
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className={labelClass}>Routing Rules</label>
-        <button
-          onClick={addRule}
-          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
-        >
-          + Add Rule
-        </button>
-      </div>
-      {rules.length === 0 ? (
-        <p className="text-xs text-slate-400">No rules — equal distribution</p>
+      <label className={labelClass}>Traffic Tags</label>
+      {sortedTags.length === 0 ? (
+        <p className="text-xs text-slate-400">No tags defined on source</p>
       ) : (
-        <div className="space-y-2">
-          {rules.map((rule, idx) => (
-            <div key={idx} className="space-y-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  id={`edge-${edgeId}-rule-${idx}-tag`}
-                  value={rule.tag}
-                  placeholder="tag"
-                  aria-label={`Rule ${idx + 1} tag`}
-                  onChange={(e) => updateRule(idx, 'tag', e.target.value)}
-                  className={`flex-1 min-w-0 px-2 py-1.5 text-xs ${compactInputClass}`}
-                />
-                <input
-                  type="number"
-                  id={`edge-${edgeId}-rule-${idx}-weight`}
-                  min={0}
-                  step={0.1}
-                  value={rule.weight}
-                  aria-label={`Rule ${idx + 1} weight`}
-                  onChange={(e) => updateRule(idx, 'weight', Number(e.target.value))}
-                  className={`w-16 px-2 py-1.5 text-xs ${compactInputClass}`}
-                />
-                <button
-                  onClick={() => removeRule(idx)}
-                  aria-label={`Remove rule ${idx + 1}`}
-                  className="text-slate-500 hover:text-rose-300 text-xs px-1"
-                >
-                  x
-                </button>
-              </div>
-              <div className="flex items-center gap-1 pl-1">
-                <span className="text-[10px] text-slate-400">→</span>
-                <input
-                  type="text"
-                  value={rule.outTag ?? ''}
-                  placeholder="rewrite tag"
-                  onChange={(e) => updateRule(idx, 'outTag', e.target.value)}
-                  className={`flex-1 min-w-0 px-2 py-1.5 text-xs ${compactInputClass}`}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+        <table className="w-full border-collapse table-fixed mt-1">
+          <colgroup>
+            <col />
+            <col className="w-12" />
+            <col className="w-16" />
+            <col className="w-[4.5rem]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-[var(--color-border)]">
+              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-left">Tag</th>
+              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">Coef</th>
+              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">RPS</th>
+              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">BW</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedTags.map((tag) => {
+              const coeff = getCoeff(tag);
+              const outTag = getOutTag(tag);
+              return (
+                <tr key={tag} className="border-b border-[rgba(138,167,198,0.08)] group">
+                  <td className="px-1 py-1">
+                    <div className="text-xs font-medium text-slate-200">{tag}</div>
+                    {outTag != null && (
+                      <div className="text-[10px] text-slate-500">→ {outTag}</div>
+                    )}
+                  </td>
+                  <td className="px-1 py-1 text-right">
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={coeff}
+                      onChange={(e) => setCoeff(tag, Number(e.target.value))}
+                      className={`w-full px-1 py-0.5 text-xs text-right ${compactInputClass}`}
+                    />
+                  </td>
+                  <td className="px-1 py-1 text-xs font-mono text-right text-slate-300">{fmtEdgeRps(getTagRps(tag))}</td>
+                  <td className="px-1 py-1 text-[10px] font-mono text-right text-slate-400">{fmtEdgeBw(getTagBw(tag))}</td>
+                </tr>
+              );
+            })}
+            <tr className="bg-blue-500/8 border-t border-blue-500/20">
+              <td className="px-1 py-1 text-xs font-semibold text-blue-400">Total</td>
+              <td />
+              <td className="px-1 py-1 text-xs font-mono text-right text-blue-300 font-semibold">{fmtEdgeRps(totalRps)}</td>
+              <td className="px-1 py-1 text-[10px] font-mono text-right text-blue-400/60">{fmtEdgeBw(totalBw)}</td>
+            </tr>
+          </tbody>
+        </table>
       )}
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex items-center gap-1.5 mt-2">
         <input
           type="text"
           value={newTag}
-          placeholder="new tag name"
+          placeholder="tag"
           onChange={(e) => setNewTag(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addRule()}
-          className={`flex-1 px-2 py-1.5 text-xs ${compactInputClass}`}
+          onKeyDown={(e) => e.key === 'Enter' && addTag()}
+          className={`w-20 px-1.5 py-1 text-xs ${compactInputClass}`}
         />
+        <button onClick={addTag} className="text-xs px-2 py-1 text-slate-400 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)]">+</button>
       </div>
     </div>
   );
