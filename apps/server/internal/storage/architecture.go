@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/system-design-sandbox/server/internal/compress"
 	"github.com/system-design-sandbox/server/internal/model"
@@ -51,6 +52,25 @@ func (s *Storage) GetArchitecture(ctx context.Context, id pgtype.UUID) (model.Ar
 	return a, nil
 }
 
+func (s *Storage) GetArchitectureForUser(ctx context.Context, id, userID pgtype.UUID) (model.Architecture, error) {
+	var a model.Architecture
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id, user_id, name, description, scenario_id, data, thumbnail_url, is_public, tags, created_at, updated_at
+		 FROM architectures WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&a.ID, &a.UserID, &a.Name, &a.Description, &a.ScenarioID, &a.Data, &a.ThumbnailURL, &a.IsPublic, &a.Tags, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		return model.Architecture{}, err
+	}
+
+	raw, err := compress.Gunzip(a.Data)
+	if err != nil {
+		return model.Architecture{}, err
+	}
+	a.RawData = json.RawMessage(raw)
+	return a, nil
+}
+
 func (s *Storage) ListArchitecturesByUser(ctx context.Context, userID pgtype.UUID) ([]model.ArchitectureListItem, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT id, user_id, name, description, scenario_id, thumbnail_url, is_public, tags, created_at, updated_at
@@ -71,6 +91,29 @@ func (s *Storage) ListArchitecturesByUser(ctx context.Context, userID pgtype.UUI
 		items = append(items, a)
 	}
 	return items, rows.Err()
+}
+
+func (s *Storage) UpdateArchitectureForUser(ctx context.Context, id, userID pgtype.UUID, name string, description string, data json.RawMessage, isPublic bool, tags []string) (model.Architecture, error) {
+	gz, err := compress.Gzip(data)
+	if err != nil {
+		return model.Architecture{}, err
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+
+	var a model.Architecture
+	err = s.Pool.QueryRow(ctx,
+		`UPDATE architectures SET name = $3, description = $4, data = $5, is_public = $6, tags = $7, updated_at = now()
+		 WHERE id = $1 AND user_id = $2
+		 RETURNING id, user_id, name, description, scenario_id, thumbnail_url, is_public, tags, created_at, updated_at`,
+		id, userID, name, description, gz, isPublic, tags,
+	).Scan(&a.ID, &a.UserID, &a.Name, &a.Description, &a.ScenarioID, &a.ThumbnailURL, &a.IsPublic, &a.Tags, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		return model.Architecture{}, err
+	}
+	a.RawData = json.RawMessage(data)
+	return a, nil
 }
 
 func (s *Storage) UpdateArchitecture(ctx context.Context, id pgtype.UUID, name string, description string, data json.RawMessage, isPublic bool, tags []string) (model.Architecture, error) {
@@ -94,6 +137,17 @@ func (s *Storage) UpdateArchitecture(ctx context.Context, id pgtype.UUID, name s
 	}
 	a.RawData = json.RawMessage(data)
 	return a, nil
+}
+
+func (s *Storage) DeleteArchitectureForUser(ctx context.Context, id, userID pgtype.UUID) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM architectures WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Storage) DeleteArchitecture(ctx context.Context, id pgtype.UUID) error {

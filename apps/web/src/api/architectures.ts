@@ -19,7 +19,6 @@ export interface ArchitectureDetail extends ArchitectureListItem {
 }
 
 export function createArchitecture(
-  userId: string,
   name: string,
   description: string,
   data: ArchitectureSchema,
@@ -28,7 +27,7 @@ export function createArchitecture(
 ): Promise<ArchitectureDetail> {
   return apiFetch<ArchitectureDetail>('/api/v1/architectures/', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, name, description, data, is_public: isPublic, tags }),
+    body: JSON.stringify({ name, description, data, is_public: isPublic, tags }),
   });
 }
 
@@ -50,8 +49,8 @@ export function getArchitecture(id: string): Promise<ArchitectureDetail> {
   return apiFetch<ArchitectureDetail>(`/api/v1/architectures/${id}`);
 }
 
-export function listArchitectures(userId: string): Promise<ArchitectureListItem[]> {
-  return apiFetch<ArchitectureListItem[]>(`/api/v1/architectures/user/${userId}`);
+export function listArchitectures(): Promise<ArchitectureListItem[]> {
+  return apiFetch<ArchitectureListItem[]>('/api/v1/architectures/mine');
 }
 
 export function deleteArchitecture(id: string): Promise<void> {

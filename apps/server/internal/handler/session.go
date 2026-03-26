@@ -37,6 +37,11 @@ type sessionsResponse struct {
 // Query params: ?limit=N (0 = all, default 6 = current + 5 recent)
 // All data comes from Redis (no PostgreSQL).
 func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
@@ -87,6 +92,11 @@ func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 
 // RevokeSession handles DELETE /api/v1/auth/sessions/{sessionID}
 func (h *SessionHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
@@ -125,6 +135,11 @@ func (h *SessionHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 
 // RevokeOtherSessions handles POST /api/v1/auth/sessions/revoke-others
 func (h *SessionHandler) RevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")

@@ -176,7 +176,7 @@ export function Toolbar() {
         await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
         notify.success('Saved');
       } else {
-        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        const result = await createArchitecture(schemaName, schemaDescription, data, isPublic, schemaTags);
         setArchitectureId(result.id);
         notify.success('Saved');
       }
@@ -192,7 +192,7 @@ export function Toolbar() {
     const { schemaDescription, schemaTags } = useCanvasStore.getState();
     try {
       const data = buildSchemaForSave();
-      const result = await createArchitecture(user.id, name, schemaDescription, data, isPublic, schemaTags);
+      const result = await createArchitecture(name, schemaDescription, data, isPublic, schemaTags);
       setArchitectureId(result.id);
       setSchemaName(name);
       notify.success('Saved as new copy');

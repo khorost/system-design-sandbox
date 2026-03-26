@@ -737,7 +737,7 @@ function SchemaProperties() {
         await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
         notify.success('Saved');
       } else {
-        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        const result = await createArchitecture(schemaName, schemaDescription, data, isPublic, schemaTags);
         setArchitectureId(result.id);
         notify.success('Saved');
       }
@@ -753,7 +753,7 @@ function SchemaProperties() {
     setSaving(true);
     try {
       const data = buildSchema(nodes, edges, saveAsName);
-      const result = await createArchitecture(user.id, saveAsName, schemaDescription, data, isPublic, schemaTags);
+      const result = await createArchitecture(saveAsName, schemaDescription, data, isPublic, schemaTags);
       setArchitectureId(result.id);
       setSchemaName(saveAsName);
       setShowSaveAs(false);

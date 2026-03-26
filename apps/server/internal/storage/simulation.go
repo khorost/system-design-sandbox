@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/system-design-sandbox/server/internal/model"
 )
@@ -13,6 +14,19 @@ func (s *Storage) CreateSimulationResult(ctx context.Context, archID, userID pgt
 	err := s.Pool.QueryRow(ctx,
 		`INSERT INTO simulation_results (architecture_id, user_id, scenario_id, score, report, metrics, duration_sec)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING id, architecture_id, user_id, scenario_id, score, report, metrics, duration_sec, created_at`,
+		archID, userID, scenarioID, score, report, metrics, durationSec,
+	).Scan(&r.ID, &r.ArchitectureID, &r.UserID, &r.ScenarioID, &r.Score, &r.Report, &r.Metrics, &r.DurationSec, &r.CreatedAt)
+	return r, err
+}
+
+func (s *Storage) CreateSimulationResultForUser(ctx context.Context, archID, userID pgtype.UUID, scenarioID *string, score *int, report, metrics json.RawMessage, durationSec *int) (model.SimulationResult, error) {
+	var r model.SimulationResult
+	err := s.Pool.QueryRow(ctx,
+		`INSERT INTO simulation_results (architecture_id, user_id, scenario_id, score, report, metrics, duration_sec)
+		 SELECT $1, $2, $3, $4, $5, $6, $7
+		 FROM architectures
+		 WHERE id = $1 AND user_id = $2
 		 RETURNING id, architecture_id, user_id, scenario_id, score, report, metrics, duration_sec, created_at`,
 		archID, userID, scenarioID, score, report, metrics, durationSec,
 	).Scan(&r.ID, &r.ArchitectureID, &r.UserID, &r.ScenarioID, &r.Score, &r.Report, &r.Metrics, &r.DurationSec, &r.CreatedAt)
@@ -29,11 +43,43 @@ func (s *Storage) GetSimulationResult(ctx context.Context, id pgtype.UUID) (mode
 	return r, err
 }
 
+func (s *Storage) GetSimulationResultForUser(ctx context.Context, id, userID pgtype.UUID) (model.SimulationResult, error) {
+	var r model.SimulationResult
+	err := s.Pool.QueryRow(ctx,
+		`SELECT id, architecture_id, user_id, scenario_id, score, report, metrics, duration_sec, created_at
+		 FROM simulation_results WHERE id = $1 AND user_id = $2`,
+		id, userID,
+	).Scan(&r.ID, &r.ArchitectureID, &r.UserID, &r.ScenarioID, &r.Score, &r.Report, &r.Metrics, &r.DurationSec, &r.CreatedAt)
+	return r, err
+}
+
 func (s *Storage) ListSimulationResultsByArchitecture(ctx context.Context, archID pgtype.UUID) ([]model.SimulationResult, error) {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT id, architecture_id, user_id, scenario_id, score, report, metrics, duration_sec, created_at
 		 FROM simulation_results WHERE architecture_id = $1 ORDER BY created_at DESC`,
 		archID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []model.SimulationResult
+	for rows.Next() {
+		var r model.SimulationResult
+		if err := rows.Scan(&r.ID, &r.ArchitectureID, &r.UserID, &r.ScenarioID, &r.Score, &r.Report, &r.Metrics, &r.DurationSec, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+func (s *Storage) ListSimulationResultsByArchitectureForUser(ctx context.Context, archID, userID pgtype.UUID) ([]model.SimulationResult, error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id, architecture_id, user_id, scenario_id, score, report, metrics, duration_sec, created_at
+		 FROM simulation_results WHERE architecture_id = $1 AND user_id = $2 ORDER BY created_at DESC`,
+		archID, userID,
 	)
 	if err != nil {
 		return nil, err

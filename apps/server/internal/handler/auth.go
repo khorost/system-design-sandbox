@@ -53,6 +53,11 @@ type authResponse struct {
 // SendCode handles POST /api/v1/auth/send-code
 // Unified entry point: creates user if not exists, sends auth code.
 func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req sendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -113,6 +118,11 @@ func (h *AuthHandler) AuthConfig(w http.ResponseWriter, r *http.Request) {
 
 // Verify handles POST /api/v1/auth/verify (magic link)
 func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req verifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -139,6 +149,11 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // VerifyCode handles POST /api/v1/auth/verify-code
 func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req verifyCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -176,6 +191,11 @@ func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 // Logout handles POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")

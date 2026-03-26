@@ -59,58 +59,59 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 		r.Get("/auth/verify", authH.VerifyPage)
 
 		r.Route("/api/v1", func(r chi.Router) {
-		// Public auth endpoints (no middleware)
-		r.Route("/auth", func(r chi.Router) {
-			r.Post("/send-code", authH.SendCode)
-			r.Get("/config", authH.AuthConfig)
-			r.Post("/verify", authH.Verify)
-			r.Post("/verify-code", authH.VerifyCode)
-		})
-
-		// Protected endpoints
-		r.Group(func(r chi.Router) {
-			r.Use(RequireAuth(redisAuth))
-
-			r.Post("/auth/logout", authH.Logout)
-
-			r.Route("/auth/sessions", func(r chi.Router) {
-				r.Get("/", sessH.ListSessions)
-				r.Delete("/{sessionID}", sessH.RevokeSession)
-				r.Post("/revoke-others", sessH.RevokeOtherSessions)
+			// Public auth endpoints (no middleware)
+			r.Route("/auth", func(r chi.Router) {
+				r.Post("/send-code", authH.SendCode)
+				r.Get("/config", authH.AuthConfig)
+				r.Post("/verify", authH.Verify)
+				r.Post("/verify-code", authH.VerifyCode)
 			})
 
-			r.Get("/users/me", uh.Me)
-			r.Patch("/users/me", uh.UpdateMe)
-		})
+			// Existing public endpoints
+			r.Route("/users", func(r chi.Router) {
+				r.Get("/", uh.List)
+				r.Post("/", uh.Create)
+				r.Get("/{id}", uh.Get)
+				r.Get("/{id}/public", uh.GetPublic)
+			})
 
-		// Existing public endpoints
-		r.Route("/users", func(r chi.Router) {
-			r.Get("/", uh.List)
-			r.Post("/", uh.Create)
-			r.Get("/{id}", uh.Get)
-			r.Get("/{id}/public", uh.GetPublic)
-		})
+			r.Route("/scenarios", func(r chi.Router) {
+				r.Get("/", sh.List)
+				r.Get("/{id}", sh.Get)
+			})
 
-		r.Route("/architectures", func(r chi.Router) {
-			r.Post("/", ah.Create)
-			r.Get("/{id}", ah.Get)
-			r.Put("/{id}", ah.Update)
-			r.Delete("/{id}", ah.Delete)
-			r.Get("/user/{userID}", ah.ListByUser)
-		})
+			r.Get("/simulations/leaderboard/{scenarioID}", simh.Leaderboard)
 
-		r.Route("/scenarios", func(r chi.Router) {
-			r.Get("/", sh.List)
-			r.Get("/{id}", sh.Get)
-		})
+			// Protected endpoints
+			r.Group(func(r chi.Router) {
+				r.Use(RequireAuth(redisAuth))
 
-		r.Route("/simulations", func(r chi.Router) {
-			r.Post("/", simh.Create)
-			r.Get("/{id}", simh.Get)
-			r.Get("/architecture/{architectureID}", simh.ListByArchitecture)
-			r.Get("/leaderboard/{scenarioID}", simh.Leaderboard)
+				r.Post("/auth/logout", authH.Logout)
+
+				r.Route("/auth/sessions", func(r chi.Router) {
+					r.Get("/", sessH.ListSessions)
+					r.Delete("/{sessionID}", sessH.RevokeSession)
+					r.Post("/revoke-others", sessH.RevokeOtherSessions)
+				})
+
+				r.Get("/users/me", uh.Me)
+				r.Patch("/users/me", uh.UpdateMe)
+
+				r.Route("/architectures", func(r chi.Router) {
+					r.Get("/mine", ah.ListMine)
+					r.Post("/", ah.Create)
+					r.Get("/{id}", ah.Get)
+					r.Put("/{id}", ah.Update)
+					r.Delete("/{id}", ah.Delete)
+				})
+
+				r.Route("/simulations", func(r chi.Router) {
+					r.Post("/", simh.Create)
+					r.Get("/{id}", simh.Get)
+					r.Get("/architecture/{architectureID}", simh.ListByArchitecture)
+				})
+			})
 		})
-	})
 	}) // end r.Group (HTTP routes)
 
 	return r

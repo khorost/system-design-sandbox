@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
 
@@ -15,7 +16,6 @@ type SimulationHandler struct {
 
 type createSimulationRequest struct {
 	ArchitectureID string          `json:"architecture_id"`
-	UserID         string          `json:"user_id"`
 	ScenarioID     *string         `json:"scenario_id,omitempty"`
 	Score          *int            `json:"score,omitempty"`
 	Report         json.RawMessage `json:"report"`
@@ -24,67 +24,101 @@ type createSimulationRequest struct {
 }
 
 func (h *SimulationHandler) Create(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
 	var req createSimulationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	archID, err := parseUUID(req.ArchitectureID)
 	if err != nil {
-		http.Error(w, "invalid architecture_id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid architecture_id")
 		return
 	}
 
-	userID, err := parseUUID(req.UserID)
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
-	result, err := h.Store.CreateSimulationResult(r.Context(), archID, userID, req.ScenarioID, req.Score, req.Report, req.Metrics, req.DurationSec)
+	result, err := h.Store.CreateSimulationResultForUser(r.Context(), archID, userID, req.ScenarioID, req.Score, req.Report, req.Metrics, req.DurationSec)
 	if err != nil {
-		http.Error(w, "failed to create simulation result", http.StatusInternalServerError)
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not_found", "architecture not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "failed to create simulation result")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(result)
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *SimulationHandler) Get(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
 	id, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
 
-	result, err := h.Store.GetSimulationResult(r.Context(), id)
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "simulation result not found", http.StatusNotFound)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(result)
+	result, err := h.Store.GetSimulationResultForUser(r.Context(), id, userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not_found", "simulation result not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "failed to get simulation result")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *SimulationHandler) ListByArchitecture(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
 	archID, err := parseUUID(chi.URLParam(r, "architectureID"))
 	if err != nil {
-		http.Error(w, "invalid architecture_id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid architecture_id")
 		return
 	}
 
-	results, err := h.Store.ListSimulationResultsByArchitecture(r.Context(), archID)
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "failed to list simulation results", http.StatusInternalServerError)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(results)
+	results, err := h.Store.ListSimulationResultsByArchitectureForUser(r.Context(), archID, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "failed to list simulation results")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, results)
 }
 
 func (h *SimulationHandler) Leaderboard(w http.ResponseWriter, r *http.Request) {
