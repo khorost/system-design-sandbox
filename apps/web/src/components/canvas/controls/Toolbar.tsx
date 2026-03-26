@@ -125,6 +125,8 @@ const IconUndo = <svg {...s}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15
 const IconRedo = <svg {...s}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>;
 const IconCloud = <svg {...s}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>;
 const IconCopy = <svg {...s}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+const IconClipboardCopy = <svg {...s}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><polyline points="17 8 12 3 7 8"/></svg>;
+const IconClipboardPaste = <svg {...s}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><polyline points="7 14 12 19 17 14"/></svg>;
 const IconFolder = <svg {...s}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
 
 function buildSchemaForSave(): ArchitectureSchema {
@@ -262,6 +264,26 @@ export function Toolbar() {
     e.target.value = '';
   };
 
+  const handleCopyToClipboard = async () => {
+    const json = exportSchema();
+    await navigator.clipboard.writeText(json);
+    notify.success('Schema copied to clipboard');
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const result = importSchema(text);
+      if (!result.ok) {
+        notify.error(`Paste failed: ${result.error}`);
+      } else {
+        notify.success('Schema imported from clipboard');
+      }
+    } catch {
+      notify.error('Cannot read clipboard. Check browser permissions.');
+    }
+  };
+
   const handleClear = () => {
     if (window.confirm('Clear canvas? You can undo with Ctrl+Z.')) {
       clear();
@@ -297,6 +319,10 @@ export function Toolbar() {
     [
       { icon: IconExport, label: 'Export JSON', hint: 'Full schema with positions (.json)', onClick: handleExport },
       { icon: IconImport, label: 'Import JSON', hint: 'Restore from .json file', onClick: handleImport },
+    ],
+    [
+      { icon: IconClipboardCopy, label: 'Copy to clipboard', hint: 'Copy schema as JSON', onClick: handleCopyToClipboard },
+      { icon: IconClipboardPaste, label: 'Paste from clipboard', hint: 'Import schema from clipboard', onClick: handlePasteFromClipboard },
     ],
     [
       { icon: IconExport, label: 'Export DSL', hint: 'Compact text format (.sds)', onClick: handleDslExport },

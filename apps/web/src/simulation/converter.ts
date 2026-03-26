@@ -5,6 +5,17 @@ import { CLIENT_TYPES } from '../constants/componentTypes.ts';
 import type { ComponentEdge, ComponentNode, EdgeRoutingRule } from '../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES } from '../utils/networkLatency.ts';
 
+const DEFAULT_MAX_CONNECTIONS: Record<string, number> = {
+  postgresql: 100, mysql: 150, mongodb: 500, cassandra: 256,
+  elasticsearch: 500, clickhouse: 200,
+  redis: 10000, memcached: 10000,
+  service: 5000, api_gateway: 10000, load_balancer: 50000,
+  cdn: 100000, dns: 100000,
+  kafka: 5000, rabbitmq: 2000, sqs: 10000, nats: 50000,
+  s3: 100000, nfs: 500, local_ssd: 1000, nvme: 10000, network_disk: 1000,
+  web_client: Infinity, mobile_client: Infinity, external_api: Infinity,
+};
+
 export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, ComponentModel> {
   const components = new Map<string, ComponentModel>();
 
@@ -39,11 +50,14 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
     }
 
     const tagDist = config.tagDistribution as TagWeight[] | undefined;
+    const maxConnections = (config.max_connections as number) || DEFAULT_MAX_CONNECTIONS[compType] || 1000;
     components.set(node.id, {
       id: node.id,
       type: compType,
       maxRps,
       currentLoad: 0,
+      maxConnections,
+      concurrentConnections: 0,
       generatedRps,
       baseLatencyMs,
       loadLatencyFactor: 0.001,

@@ -35,6 +35,9 @@ function fmtK(n: number): string {
   return String(n);
 }
 
+function formatComponentName(componentType: string): string {
+  return componentType.replaceAll('_', ' ');
+}
 
 function getNodeSummary(componentType: string, config: Record<string, unknown>): string[] {
   const def = getDefinition(componentType as Parameters<typeof getDefinition>[0]);
@@ -100,27 +103,34 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
 
   const customColor = data.config.color as string | undefined;
   const customTextColor = data.config.textColor as string | undefined;
+  const displayName = ((data.config.name as string | undefined)?.trim()) || data.label;
   const language = data.config.language as string | undefined;
   const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
   const utilColor = isRunning ? getUtilColor(maxEma) : '';
-  const activeBorder = selected ? '#3b82f6' : utilColor || customColor || borderColor;
+  const activeBorder = utilColor || customColor || borderColor;
+  const frameBorder = selected ? '#7ddcff' : activeBorder;
   const summaryLines = getNodeSummary(data.componentType, data.config);
 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="min-w-[188px] cursor-pointer transition-all relative rounded-xl overflow-hidden"
+      className="min-w-[214px] cursor-pointer transition-all relative rounded-xl overflow-hidden"
       style={{
         background: `linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.10)), ${bgColor}`,
-        border: `2px solid ${activeBorder}`,
+        border: `1px solid ${frameBorder}`,
         boxShadow: selected
-          ? '0 0 0 2px rgba(110,220,255,0.26), 0 20px 34px rgba(3,8,14,0.28)'
+          ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 6px rgba(110,220,255,0.14), 0 0 28px rgba(92,141,255,0.28), 0 16px 30px rgba(3,8,14,0.28)'
           : utilColor
-            ? `0 0 0 1px ${utilColor}20, 0 14px 24px ${utilColor}18`
-            : '0 12px 26px rgba(3,8,14,0.22)',
+            ? `0 0 0 1px ${utilColor}10, 0 10px 18px ${utilColor}10`
+            : '0 10px 22px rgba(3,8,14,0.20)',
       }}
     >
-      <div className="h-1.5 w-full" style={{ background: activeBorder }} />
+      {selected ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
+          style={{ boxShadow: 'inset 0 0 0 1px rgba(244,251,255,0.26)' }}
+        />
+      ) : null}
       {isRunning && ema && maxEma > 0 && (
         <div
           className="absolute -top-3 right-3 rounded-md flex items-center gap-1.5 px-3 py-1.5 text-white z-10 shadow-md"
@@ -139,54 +149,45 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2.5 !h-2.5 !rounded-full !bg-teal-500 !border-teal-400 hover:!bg-teal-300 hover:!border-teal-200 !transition-colors"
+          className={`${selected ? '!w-2.5 !h-2.5 !bg-[rgba(153,246,228,0.98)] !border-[rgba(236,253,245,1)]' : '!w-2 !h-2 !bg-[rgba(109,215,216,0.86)] !border-[rgba(167,243,208,0.78)]'} !rounded-full hover:!bg-[rgba(153,246,228,0.95)] hover:!border-[rgba(204,251,241,0.95)] !transition-colors`}
         />
       )}
-      <div className="p-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[rgba(110,220,255,0.12)] bg-[rgba(110,220,255,0.08)] text-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+      <div className="pl-6 pr-8 pt-4 pb-4.5">
+        <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 gap-y-1 [grid-template-areas:'icon_name''icon_summary''icon_class'] items-start">
+          <span className="[grid-area:icon] flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden text-[1.15rem] leading-none self-start">
             {data.icon}
           </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#edf4fb' }}>
-                {data.label}
+          <div className="[grid-area:name] flex items-center gap-2 min-w-0 self-center pr-2">
+            <span className="max-w-full text-[18px] font-semibold leading-none truncate" style={{ color: customTextColor || '#edf4fb' }}>
+              {displayName}
+            </span>
+            {language && LANGUAGE_ICONS[language] && (
+              <span
+                className="shrink-0 text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-md"
+                style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
+                title={language}
+              >
+                {LANGUAGE_ICONS[language]}
               </span>
-              {language && LANGUAGE_ICONS[language] && (
-                <span
-                  className="text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-md"
-                  style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
-                  title={language}
-                >
-                  {LANGUAGE_ICONS[language]}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.componentType.replaceAll('_', ' ')}</div>
+            )}
           </div>
-        </div>
-        {summaryLines.length > 0 && (
-          <div className="mt-3 rounded-xl border border-[rgba(110,220,255,0.10)] bg-[rgba(5,10,16,0.24)] px-3 py-2.5">
-            <div className="space-y-1">
-              {summaryLines.map((line, i) => (
-                <div key={i} className="text-[11px] font-mono text-slate-300 leading-snug">{line}</div>
-              ))}
+          {summaryLines.length > 0 ? (
+            <div className="[grid-area:summary] max-w-full pr-2 pt-0.5 text-[10px] font-mono text-slate-200 leading-tight break-words">
+              {summaryLines.join('  ·  ')}
             </div>
+          ) : (
+            <div className="[grid-area:summary] max-w-full pr-2 pt-0.5 text-[10px] text-slate-500">Ready for configuration</div>
+          )}
+          <div className="[grid-area:class] max-w-full pr-2 pt-0.5 text-[9px] uppercase tracking-[0.16em] text-slate-500 truncate">
+            {formatComponentName(data.componentType)}
           </div>
-        )}
-        {summaryLines.length === 0 && (
-          <div className="mt-3 text-[11px] text-slate-500">Ready for configuration</div>
-        )}
-        <div className="mt-3 flex items-center justify-between">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Flow Node</div>
-          <div className="h-px flex-1 ml-3 bg-[linear-gradient(90deg,rgba(110,220,255,0.22),rgba(110,220,255,0))]" />
         </div>
       </div>
       {/* Source (output) — diamond, amber */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !rounded-sm !rotate-45 !bg-amber-500 !border-amber-400 hover:!bg-amber-300 hover:!border-amber-200 !transition-colors"
+        className={`${selected ? '!w-3 !h-3 !bg-[rgba(252,211,77,0.98)] !border-[rgba(254,240,138,1)]' : '!w-2.5 !h-2.5 !bg-[rgba(251,191,36,0.88)] !border-[rgba(253,224,71,0.80)]'} !rounded-sm !rotate-45 hover:!bg-[rgba(252,211,77,0.96)] hover:!border-[rgba(254,240,138,0.95)] !transition-colors`}
       />
     </div>
   );

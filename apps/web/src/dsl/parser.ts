@@ -284,7 +284,7 @@ function parseNodeBlock(
         type: NODE_TYPE_MAP[componentType] ?? 'serviceNode',
         position: { x: 0, y: 0 },
         data,
-        ...(parentId ? { parentId, extent: 'parent' as const } : {}),
+        ...(parentId ? { parentId } : {}),
         ...(isContainer ? {
           style: { width: 400, height: 300 },
           dragHandle: '.container-drag-handle',

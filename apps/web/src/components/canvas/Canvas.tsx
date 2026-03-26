@@ -80,9 +80,47 @@ function pickInnermostContainer(containers: ComponentNode[]): ComponentNode {
   });
 }
 
+function getNodeBounds(node: ComponentNode, nodeMap: Map<string, ComponentNode>) {
+  const abs = getAbsolutePosition(node, nodeMap);
+  const width = (node.style?.width as number) ?? node.measured?.width ?? node.width ?? (CONTAINER_TYPES.has(node.data.componentType) ? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH : 280);
+  const height = (node.style?.height as number) ?? node.measured?.height ?? node.height ?? (CONTAINER_TYPES.has(node.data.componentType) ? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT : 90);
+  return { x: abs.x, y: abs.y, width, height };
+}
+
+function isPointInsideContainerArea(
+  container: ComponentNode,
+  point: { x: number; y: number },
+  nodeMap: Map<string, ComponentNode>,
+  contentOnly: boolean,
+) {
+  const { x, y, width, height } = getNodeBounds(container, nodeMap);
+  const left = x + (contentOnly ? CONFIG.CANVAS.CONTAINER_PADDING_LEFT : 0);
+  const top = y + (contentOnly ? CONFIG.CANVAS.CONTAINER_PADDING_TOP : 0);
+  const right = x + width - (contentOnly ? 12 : 0);
+  const bottom = y + height - 12;
+
+  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
+}
+
+function getValidContainersAtPoint(
+  componentType: ComponentNode['data']['componentType'],
+  nodeId: string,
+  point: { x: number; y: number },
+  currentNodes: ComponentNode[],
+  nodeMap: Map<string, ComponentNode>,
+) {
+  return currentNodes.filter((n) => {
+    return n.id !== nodeId &&
+      CONTAINER_TYPES.has(n.data.componentType) &&
+      isValidNesting(componentType, n.data.componentType) &&
+      isPointInsideContainerArea(n, point, nodeMap, true);
+  }) as ComponentNode[];
+}
+
 function CanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, getIntersectingNodes, setCenter, getZoom } = useReactFlow();
+  const { screenToFlowPosition, setCenter, getZoom } = useReactFlow();
+
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -140,38 +178,101 @@ function CanvasInner() {
     [selectEdge],
   );
 
-  const onNodeDragStart = useCallback(() => {
-    useCanvasStore.getState().pushSnapshot();
-  }, []);
+  const onNodeDragStart = useCallback((event: React.MouseEvent, draggedNode: ComponentNode) => {
+    const state = useCanvasStore.getState();
+    const nodeMap = new Map(state.nodes.map((n) => [n.id, n]));
+    const pointer = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const nodeAbs = getAbsolutePosition(draggedNode, nodeMap);
+    const grabOffset = { x: pointer.x - nodeAbs.x, y: pointer.y - nodeAbs.y };
+    state.pushSnapshot();
+    state.setActiveDrag(draggedNode.id, draggedNode.parentId ?? null, grabOffset);
+    state.setDragContainerHints(draggedNode.parentId ?? null, null, null);
+  }, [screenToFlowPosition]);
+
+  const onNodeDrag = useCallback((event: React.MouseEvent, draggedNode: ComponentNode) => {
+    const state = useCanvasStore.getState();
+    const { nodes: currentNodes, setDragContainerHints } = state;
+    const currentNode = currentNodes.find((n) => n.id === draggedNode.id) ?? draggedNode;
+    const nodeMap = new Map(currentNodes.map((n) => [n.id, n]));
+    const pointer = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const grabOff = state.dragGrabOffset ?? { x: 0, y: 0 };
+    const nodeAbsPos = { x: pointer.x - grabOff.x, y: pointer.y - grabOff.y };
+    const validContainers = getValidContainersAtPoint(currentNode.data.componentType, currentNode.id, pointer, currentNodes, nodeMap);
+    const targetContainer = validContainers.length > 0 ? pickInnermostContainer(validContainers) : null;
+
+    // Helper: set node position directly
+    const setPos = (pos: { x: number; y: number }, extraProps?: Partial<ComponentNode>) => {
+      useCanvasStore.setState((s) => ({
+        nodes: s.nodes.map((n) => {
+          if (n.id !== currentNode.id) return n;
+          return { ...n, ...extraProps, position: pos };
+        }),
+      }));
+    };
+
+    // Helper: detach node (remove parentId/extent)
+    const detachWithPos = (pos: { x: number; y: number }) => {
+      useCanvasStore.setState((s) => ({
+        nodes: s.nodes.map((n) => {
+          if (n.id !== currentNode.id) return n;
+          const { parentId: _p, extent: _e, ...rest } = n as ComponentNode & { extent?: string };
+          void _p; void _e;
+          return { ...rest, position: pos } as ComponentNode;
+        }),
+      }));
+    };
+
+    // --- Node is on canvas (no parent) ---
+    if (!currentNode.parentId) {
+      setPos(nodeAbsPos);
+      if (targetContainer) {
+        // Cursor inside a container → live-attach
+        const tAbs = getAbsolutePosition(targetContainer, nodeMap);
+        setPos({ x: nodeAbsPos.x - tAbs.x, y: nodeAbsPos.y - tAbs.y }, { parentId: targetContainer.id });
+        setDragContainerHints(targetContainer.id, null, null);
+      } else {
+        setPos(nodeAbsPos);
+        setDragContainerHints(null, null, null);
+      }
+      return;
+    }
+
+    // --- Node is inside a container ---
+    const parent = currentNodes.find((n) => n.id === currentNode.parentId);
+    if (!parent) return;
+
+    const sourceContainerId = currentNode.parentId;
+    const parentAbs = getAbsolutePosition(parent, nodeMap);
+    const relPos = { x: nodeAbsPos.x - parentAbs.x, y: nodeAbsPos.y - parentAbs.y };
+
+    if (targetContainer && targetContainer.id !== sourceContainerId) {
+      // Cursor moved to a different container → live-reparent
+      const tAbs = getAbsolutePosition(targetContainer, nodeMap);
+      setPos({ x: nodeAbsPos.x - tAbs.x, y: nodeAbsPos.y - tAbs.y }, { parentId: targetContainer.id });
+      setDragContainerHints(targetContainer.id, null, null);
+    } else if (!targetContainer) {
+      // Cursor outside all containers → live-detach
+      detachWithPos(nodeAbsPos);
+      setDragContainerHints(null, null, null);
+    } else {
+      // Still in same container → update relative position freely
+      setPos(relPos);
+      setDragContainerHints(sourceContainerId, null, null);
+    }
+  }, [screenToFlowPosition]);
 
   const onNodeDragStop = useCallback(
-    (_event: React.MouseEvent, draggedNode: ComponentNode) => {
-      const { setNodeParent } = useCanvasStore.getState();
-      const intersecting = getIntersectingNodes(draggedNode);
+    (_event: React.MouseEvent, _draggedNode: ComponentNode) => {
+      const store = useCanvasStore.getState();
+      const { clearDragContainerHints, clearActiveDrag } = store;
 
-      const validContainers = intersecting.filter((n) => {
-        const nd = n as ComponentNode;
-        return nd.id !== draggedNode.id &&
-          CONTAINER_TYPES.has(nd.data.componentType) &&
-          isValidNesting(draggedNode.data.componentType, nd.data.componentType);
-      }) as ComponentNode[];
-
-      if (validContainers.length === 0) {
-        // Detach if currently parented and outside all valid containers
-        if (draggedNode.parentId) {
-          setNodeParent(draggedNode.id, null);
-        }
-        return;
-      }
-
-      // Pick innermost container (deepest nesting)
-      const target = pickInnermostContainer(validContainers);
-
-      if (target.id !== draggedNode.parentId) {
-        setNodeParent(draggedNode.id, target.id);
-      }
+      // onNodeDrag already handled all reparenting/detaching live.
+      // Just normalize (auto-expand containers) and clean up.
+        store.normalizeNodes();
+      clearDragContainerHints();
+      clearActiveDrag();
     },
-    [getIntersectingNodes],
+    [],
   );
 
   const onDragOver = useCallback((event: DragEvent) => {
@@ -205,6 +306,9 @@ function CanvasInner() {
         for (const p of def.params) {
           defaultConfig[p.key] = p.default;
         }
+        if (def.defaultConfig) {
+          Object.assign(defaultConfig, def.defaultConfig);
+        }
       }
 
       // Auto-parent: find container under the drop point
@@ -214,11 +318,7 @@ function CanvasInner() {
       const hitContainers = currentNodes.filter(n => {
         if (!CONTAINER_TYPES.has(n.data.componentType)) return false;
         if (!isValidNesting(componentType, n.data.componentType)) return false;
-        const abs = getAbsolutePosition(n, nodeMap);
-        const w = (n.style?.width as number) ?? n.width ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH;
-        const h = (n.style?.height as number) ?? n.height ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT;
-        return position.x >= abs.x && position.x <= abs.x + w &&
-               position.y >= abs.y && position.y <= abs.y + h;
+        return isPointInsideContainerArea(n, position, nodeMap, true);
       });
 
       let parentId: string | undefined;
@@ -246,7 +346,7 @@ function CanvasInner() {
           config: defaultConfig,
         } satisfies ComponentNodeData,
         ...(isContainer ? { style: { width: CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH, height: CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT }, dragHandle: '.container-drag-handle', zIndex: CONTAINER_Z_INDEX[componentType] ?? -1 } : {}),
-        ...(parentId ? { parentId, extent: 'parent' as const } : {}),
+        ...(parentId ? { parentId } : {}),
       };
 
       addNode(newNode);
@@ -293,6 +393,7 @@ function CanvasInner() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -312,6 +413,7 @@ function CanvasInner() {
           type: 'flow',
           style: { stroke: '#3b82f6', strokeWidth: CONFIG.CANVAS.DEFAULT_EDGE_STROKE_WIDTH },
         }}
+        elevateNodesOnSelect={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgba(110,220,255,0.22)" />

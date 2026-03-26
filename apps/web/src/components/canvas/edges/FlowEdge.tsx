@@ -26,6 +26,14 @@ function getAnimationByThroughput(rps: number): { dasharray: string; duration: s
   return { dasharray: '4 2', duration: '0.25s' };
 }
 
+function formatRps(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1000).toFixed(1)}K`;
+  if (v >= 100) return `${v.toFixed(0)}`;
+  if (v >= 10) return `${v.toFixed(1)}`;
+  return `${v.toFixed(2)}`;
+}
+
 function formatBytes(bytesPerSec: number): string {
   if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} GB/s`;
   if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} MB/s`;
@@ -124,7 +132,7 @@ export function FlowEdge(props: EdgeProps) {
   const protocolLine = <>{protocol} &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>;
   const hasTrafficData = throughput > 0;
   const trafficLine = hasTrafficData
-    ? <>{Math.round(throughput)} rps &middot; {formatBytes(totalBytesPerSec)}</>
+    ? <>{formatRps(throughput)} rps &middot; {formatBytes(totalBytesPerSec)}</>
     : <span className="text-slate-400">&mdash; rps &middot; &mdash; KB/s</span>;
 
   let labelContent: React.ReactNode = null;

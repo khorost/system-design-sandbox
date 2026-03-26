@@ -56,6 +56,8 @@ export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' |
 export interface TagWeight {
   tag: string;
   weight: number; // relative weight, normalized to probability
+  requestSizeKb?: number;  // outgoing request payload size for this tag
+  responseSizeKb?: number; // response payload size for this tag (used by leaf/CDN nodes)
 }
 
 export interface ComponentModel {
@@ -72,6 +74,10 @@ export interface ComponentModel {
   // Latency model: baseLatency + loadFactor * load^2
   baseLatencyMs: number;
   loadLatencyFactor: number;
+
+  // Connection pool
+  maxConnections: number;
+  concurrentConnections: number;
 
   // Reliability
   failureRate: number;
@@ -126,7 +132,10 @@ export interface SimulationMetrics {
   latencyP99: number;
   throughput: number;
   errorRate: number;
+  totalInboundKBps: number;   // Total inbound traffic across all nodes (KB/s)
+  totalOutboundKBps: number;  // Total outbound traffic across all nodes (KB/s)
   componentUtilization: Record<string, number>;
+  connectionUtilization: Record<string, number>;
   queueDepths: Record<string, number>;
   edgeThroughput: Record<string, number>;
   edgeLatency: Record<string, number>;

@@ -69,13 +69,198 @@ function sortNodesParentFirst(nodes: ComponentNode[]): ComponentNode[] {
   return [...cleaned].sort((a, b) => depthOf(a) - depthOf(b));
 }
 
+function clampPositionToContainer(_node: ComponentNode, _parent: ComponentNode, position: { x: number; y: number }) {
+  // Only enforce minimum left/top padding; auto-expand handles right/bottom overflow.
+  return {
+    x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, position.x),
+    y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, position.y),
+  };
+}
+
+function getNodeDimensions(node: ComponentNode): { w: number; h: number } {
+  const isContainer = CONTAINER_TYPES.has(node.data.componentType);
+  // Prefer measured (actual DOM size) over fallback. Fallback 280x90 is a safe upper bound for BaseNode.
+  return {
+    w: (node.style?.width as number) ?? node.measured?.width ?? node.width ?? (isContainer ? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH : 280),
+    h: (node.style?.height as number) ?? node.measured?.height ?? node.height ?? (isContainer ? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT : 90),
+  };
+}
+
+const CONTAINER_PADDING_RIGHT = 12;
+const CONTAINER_PADDING_BOTTOM = 12;
+
+/** Expand parent containers so all children fit inside. Cascades up the tree. */
+function expandContainersToFitChildren(nodes: ComponentNode[]): ComponentNode[] {
+  const result = nodes.map(n => ({ ...n }));
+  const map = new Map(result.map(n => [n.id, n]));
+
+  // Iterate until stable (max 10 passes for deeply nested hierarchies)
+  for (let pass = 0; pass < 10; pass++) {
+    let changed = false;
+
+    // Group children by parentId
+    const childrenOf = new Map<string, ComponentNode[]>();
+    for (const n of result) {
+      if (!n.parentId) continue;
+      const arr = childrenOf.get(n.parentId) ?? [];
+      arr.push(n);
+      childrenOf.set(n.parentId, arr);
+    }
+
+    for (const [parentId, children] of childrenOf) {
+      const parent = map.get(parentId);
+      if (!parent) continue;
+
+      const { w: pw, h: ph } = getNodeDimensions(parent);
+
+      let requiredW = pw;
+      let requiredH = ph;
+
+      for (const child of children) {
+        const { w: cw, h: ch } = getNodeDimensions(child);
+        requiredW = Math.max(requiredW, child.position.x + cw + CONTAINER_PADDING_RIGHT);
+        requiredH = Math.max(requiredH, child.position.y + ch + CONTAINER_PADDING_BOTTOM);
+      }
+
+      if (requiredW > pw || requiredH > ph) {
+        const newW = Math.max(requiredW, CONFIG.CANVAS.CONTAINER_MIN_WIDTH);
+        const newH = Math.max(requiredH, CONFIG.CANVAS.CONTAINER_MIN_HEIGHT);
+        parent.style = { ...parent.style, width: newW, height: newH };
+        parent.width = newW;
+        parent.height = newH;
+        if (parent.measured) {
+          parent.measured = { ...parent.measured, width: newW, height: newH };
+        }
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  return result;
+}
+
+function clampNodesToContainerPadding(nodes: ComponentNode[]): ComponentNode[] {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+
+  // 1. Clamp positions (left/top minimum only)
+  const clamped = nodes.map((node) => {
+    if (!node.parentId) return node;
+    const parent = nodeMap.get(node.parentId);
+    if (!parent) return node;
+    return {
+      ...node,
+      position: clampPositionToContainer(node, parent, node.position),
+    };
+  });
+
+  // 2. Expand containers to fit children (cascades up)
+  const expanded = expandContainersToFitChildren(clamped);
+
+  // 3. Assign z-index by depth
+  const expandedMap = new Map(expanded.map((node) => [node.id, node]));
+  return expanded.map((node) => {
+    let depth = 0;
+    let current = node;
+    while (current.parentId) {
+      depth++;
+      const parent = expandedMap.get(current.parentId);
+      if (!parent) break;
+      current = parent;
+    }
+
+    return {
+      ...node,
+      zIndex: CONTAINER_TYPES.has(node.data.componentType) ? -100 + depth * 10 : 100 + depth * 10,
+    };
+  });
+}
+
+/** Find free space inside a container for panel-based reparenting. */
+function findFreeSpaceInContainer(
+  node: ComponentNode,
+  parent: ComponentNode,
+  allNodes: ComponentNode[],
+): { x: number; y: number } {
+  const { w: nw, h: nh } = getNodeDimensions(node);
+  const { w: pw, h: ph } = getNodeDimensions(parent);
+  const gap = 15;
+  const padL = CONFIG.CANVAS.CONTAINER_PADDING_LEFT;
+  const padT = CONFIG.CANVAS.CONTAINER_PADDING_TOP;
+
+  // Existing children (excluding the node being moved)
+  const siblings = allNodes.filter(n => n.parentId === parent.id && n.id !== node.id);
+  const rects = siblings.map(n => {
+    const { w, h } = getNodeDimensions(n);
+    return { x: n.position.x, y: n.position.y, w, h };
+  });
+
+  const overlaps = (x: number, y: number) =>
+    rects.some(r =>
+      x < r.x + r.w + gap && x + nw + gap > r.x &&
+      y < r.y + r.h + gap && y + nh + gap > r.y,
+    );
+
+  // Scan grid positions within current container bounds
+  for (let y = padT; y + nh <= ph - CONTAINER_PADDING_BOTTOM; y += gap) {
+    for (let x = padL; x + nw <= pw - CONTAINER_PADDING_RIGHT; x += gap) {
+      if (!overlaps(x, y)) return { x, y };
+    }
+  }
+
+  // No space inside current bounds — place at bottom of content, auto-expand will handle it
+  const maxBottom = rects.reduce((max, r) => Math.max(max, r.y + r.h + gap), padT);
+  return { x: padL, y: maxBottom };
+}
+
+function attachNodeAtCanvasPosition(
+  nodes: ComponentNode[],
+  nodeId: string,
+  parentId: string,
+  position: { x: number; y: number },
+): ComponentNode[] {
+  const nodeMap = new Map(nodes.map(nd => [nd.id, nd]));
+
+  return nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+
+    const newParent = nodeMap.get(parentId);
+    if (!newParent) return n;
+
+    const parentAbs = getAbsolutePosition(newParent, nodeMap);
+    return {
+      ...n,
+      parentId,
+      position: clampPositionToContainer(n, newParent, {
+        x: position.x - parentAbs.x,
+        y: position.y - parentAbs.y,
+      }),
+    };
+  });
+}
+
+function detachNodeAtCanvasPosition(
+  nodes: ComponentNode[],
+  nodeId: string,
+  position: { x: number; y: number },
+): ComponentNode[] {
+  return nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+    const { parentId: _p, extent: _e, ...rest } = n as ComponentNode & { extent?: string };
+    void _p; void _e;
+    return { ...rest, position } as ComponentNode;
+  });
+}
+
 function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; schemaName: string; schemaDescription: string; schemaTags: string[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { nodes: [], edges: [], schemaName: '', schemaDescription: '', schemaTags: [] };
     const schema: ArchitectureSchema = JSON.parse(raw);
+    const normalizedNodes = clampNodesToContainerPadding(sortNodesParentFirst(schema.nodes ?? []));
     return {
-      nodes: sortNodesParentFirst(schema.nodes ?? []),
+      nodes: normalizedNodes,
       edges: schema.edges ?? [],
       schemaName: schema.metadata?.name ?? '',
       schemaDescription: schema.metadata?.description ?? '',
@@ -144,6 +329,13 @@ interface CanvasState {
   schemaName: string;
   schemaDescription: string;
   schemaTags: string[];
+  dragSourceContainerId: string | null;
+  dragTargetContainerId: string | null;
+  dragBlockedContainerId: string | null;
+  activeDragNodeId: string | null;
+  dragOriginParentId: string | null;
+  dragGrabOffset: { x: number; y: number } | null;
+  dragBoundaryLocked: boolean;
   architectureId: string | null;
   isPublic: boolean;
   _history: { past: Snapshot[]; future: Snapshot[] };
@@ -162,6 +354,16 @@ interface CanvasState {
   selectEdge: (id: string | null) => void;
   updateEdgeData: (id: string, data: Partial<EdgeData>) => void;
   setNodeParent: (nodeId: string, parentId: string | null) => void;
+  setNodeParentAtCanvasPosition: (nodeId: string, parentId: string, position: { x: number; y: number }) => void;
+  liveSetNodeParentAtCanvasPosition: (nodeId: string, parentId: string, position: { x: number; y: number }) => void;
+  detachNodeToCanvasPosition: (nodeId: string, position: { x: number; y: number }) => void;
+  liveDetachNodeToCanvasPosition: (nodeId: string, position: { x: number; y: number }) => void;
+  setDragContainerHints: (sourceId: string | null, targetId: string | null, blockedId?: string | null) => void;
+  clearDragContainerHints: () => void;
+  setActiveDrag: (nodeId: string, originParentId: string | null, grabOffset: { x: number; y: number }) => void;
+  setDragBoundaryLocked: (locked: boolean) => void;
+  clearActiveDrag: () => void;
+  normalizeNodes: () => void;
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
   cycleEdgeLabelMode: () => void;
@@ -197,13 +399,33 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   schemaName: initial.schemaName,
   schemaDescription: initial.schemaDescription,
   schemaTags: initial.schemaTags,
+  dragSourceContainerId: null,
+  dragTargetContainerId: null,
+  dragBlockedContainerId: null,
+  activeDragNodeId: null,
+  dragOriginParentId: null,
+  dragGrabOffset: null,
+  dragBoundaryLocked: false,
   architectureId: null,
   isPublic: false,
   _history: { past: [], future: [] },
   _skipAutoSave: false,
 
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) });
+    const { activeDragNodeId } = get();
+    if (activeDragNodeId) {
+      // Suppress ALL position changes for the dragged node — we handle position in onNodeDrag
+      changes = changes.filter(c =>
+        !(c.type === 'position' && c.id === activeDragNodeId && c.position),
+      );
+    }
+    let updated = applyNodeChanges(changes, get().nodes);
+    // Re-run clamp/expand/z-index on structural changes
+    const needsClamp = changes.some(c => c.type === 'select' || c.type === 'dimensions' || c.type === 'position');
+    if (needsClamp) {
+      updated = clampNodesToContainerPadding(updated);
+    }
+    set({ nodes: updated });
   },
 
   onEdgesChange: (changes) => {
@@ -244,11 +466,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           insertIdx++;
         }
         updated.splice(insertIdx, 0, node);
-        set({ ...hist, nodes: updated });
+        set({ ...hist, nodes: clampNodesToContainerPadding(updated) });
         return;
       }
     }
-    set({ ...hist, nodes: [...nodes, node] });
+    set({ ...hist, nodes: clampNodesToContainerPadding([...nodes, node]) });
   },
 
   removeNode: (id) => {
@@ -326,28 +548,61 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         return { ...rest, position: { x: abs.x, y: abs.y } } as ComponentNode;
       }
 
-      // Attach: compute position relative to new parent's absolute position
+      // Attach via panel: find free space inside the container
       const newParent = nodeMap.get(parentId);
       if (!newParent) return n;
-      const parentAbs = getAbsolutePosition(newParent, nodeMap);
-      const relX = abs.x - parentAbs.x;
-      const relY = abs.y - parentAbs.y;
-      // Clamp inside parent with some padding (35px top for header)
-      const pw = (newParent.style?.width as number) ?? (newParent.width ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH);
-      const ph = (newParent.style?.height as number) ?? (newParent.height ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT);
-      return {
-        ...n,
-        parentId,
-        extent: 'parent' as const,
-        position: {
-          x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, Math.min(relX, pw - 100)),
-          y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, Math.min(relY, ph - 80)),
-        },
-      };
+      const pos = findFreeSpaceInContainer(n, newParent, nodes);
+      return { ...n, parentId, position: pos };
     });
 
     // Re-sort to maintain parent-before-child ordering
-    set({ nodes: sortNodesParentFirst(updated) });
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  setNodeParentAtCanvasPosition: (nodeId, parentId, position) => {
+    set({ ...pushHistory(get) });
+    const updated = attachNodeAtCanvasPosition(get().nodes, nodeId, parentId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  liveSetNodeParentAtCanvasPosition: (nodeId, parentId, position) => {
+    const updated = attachNodeAtCanvasPosition(get().nodes, nodeId, parentId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  detachNodeToCanvasPosition: (nodeId, position) => {
+    set({ ...pushHistory(get) });
+    const updated = detachNodeAtCanvasPosition(get().nodes, nodeId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  liveDetachNodeToCanvasPosition: (nodeId, position) => {
+    const updated = detachNodeAtCanvasPosition(get().nodes, nodeId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  setDragContainerHints: (sourceId, targetId, blockedId = null) => {
+    set({ dragSourceContainerId: sourceId, dragTargetContainerId: targetId, dragBlockedContainerId: blockedId });
+  },
+
+  clearDragContainerHints: () => {
+    set({ dragSourceContainerId: null, dragTargetContainerId: null, dragBlockedContainerId: null });
+  },
+
+  setActiveDrag: (nodeId, originParentId, grabOffset) => {
+    set({ activeDragNodeId: nodeId, dragOriginParentId: originParentId, dragGrabOffset: grabOffset, dragBoundaryLocked: false });
+  },
+
+  setDragBoundaryLocked: (locked) => {
+    set({ dragBoundaryLocked: locked });
+  },
+
+  clearActiveDrag: () => {
+    set({ activeDragNodeId: null, dragOriginParentId: null, dragGrabOffset: null, dragBoundaryLocked: false });
+  },
+
+  normalizeNodes: () => {
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(get().nodes)) });
   },
 
   getChildren: (nodeId) => {
@@ -509,7 +764,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     set({
       ...pushHistory(get),
-      nodes: sortNodesParentFirst(nodes),
+      nodes: clampNodesToContainerPadding(sortNodesParentFirst(nodes)),
       edges: validEdges,
       selectedNodeId: null,
       selectedEdgeId: null,

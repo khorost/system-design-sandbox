@@ -23,46 +23,42 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.30em] text-[var(--color-accent)]">Workspace Access</div>
-          <h1 className="mt-2 text-2xl font-bold text-slate-100">System Design Sandbox</h1>
-          <p className="text-sm text-slate-400 mt-2">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-9">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Workspace Access</div>
+          <h1 className="mt-3 text-[1.9rem] leading-tight font-bold text-slate-100">System Design Sandbox</h1>
+          <p className="mt-3 text-base leading-relaxed text-slate-400">
             Sign in or create an account
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-[linear-gradient(180deg,rgba(19,32,44,0.96),rgba(14,23,34,0.98))] border border-[var(--color-border)] rounded-xl p-6 space-y-4 shadow-[var(--shadow-panel)]">
-          <div>
-            <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400 mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                clearError();
-              }}
-              placeholder="you@example.com"
-              autoFocus
-              className="w-full px-3 py-2.5 bg-[rgba(7,12,19,0.56)] border border-[var(--color-border)] rounded-md text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[rgba(110,220,255,0.24)]"
-            />
-          </div>
+        <form onSubmit={handleSubmit} className="bg-[linear-gradient(180deg,rgba(19,32,44,0.96),rgba(14,23,34,0.98))] border border-[rgba(138,167,198,0.16)] rounded-2xl px-8 py-8 shadow-[0_18px_42px_rgba(2,8,14,0.28)]">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearError();
+            }}
+            placeholder="you@example.com"
+            autoFocus
+            className="w-full h-14 rounded-xl border border-[rgba(138,167,198,0.14)] bg-[rgba(7,12,19,0.54)] pl-7 pr-5 text-base leading-none text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[rgba(110,220,255,0.18)]"
+          />
 
           {error && <p className="text-red-400 text-xs">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={submitting || !email.trim()}
-            className="w-full py-2.5 bg-[#5f6f89] hover:bg-[#6c7ea0] disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-md transition-colors"
-          >
-            {submitting ? 'Sending...' : 'Continue'}
-          </button>
-
-          <div className="text-center">
+          <div className="mt-8 space-y-4">
+            <button
+              type="submit"
+              disabled={submitting || !email.trim()}
+              className="w-full h-13 px-4 bg-[linear-gradient(180deg,#7a89a7,#67748f)] hover:bg-[linear-gradient(180deg,#8697b6,#72809d)] disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-base leading-none font-semibold rounded-xl shadow-[0_10px_24px_rgba(9,20,32,0.18)] transition-colors"
+            >
+              {submitting ? 'Sending...' : 'Continue'}
+            </button>
             <button
               type="button"
               onClick={() => useAuthStore.getState().setView('anonymous')}
-              className="text-xs text-slate-500 hover:text-slate-400"
+              className="w-full min-h-11 rounded-xl px-4 py-3 text-sm leading-none text-slate-300 transition-colors hover:bg-[rgba(255,255,255,0.03)] hover:text-slate-100"
             >
               Continue without signing in
             </button>

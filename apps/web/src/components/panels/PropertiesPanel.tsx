@@ -19,6 +19,8 @@ import { NumberInput } from '../ui/NumberInput.tsx';
 interface TagWeightEntry {
   tag: string;
   weight: number;
+  requestSizeKb?: number;
+  responseSizeKb?: number;
 }
 
 function getDefaultColor(componentType: string, nodeType?: string): string {
@@ -113,7 +115,26 @@ const COMPONENT_PARAMS: Record<string, ParamDef[]> = {
   ],
 };
 
-const inputClass = "w-full mt-1 px-3 py-2 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500";
+const inputClass = "w-full mt-1 px-3 py-2 text-sm bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md text-slate-200 focus:outline-none focus:border-[rgba(110,220,255,0.35)]";
+const compactInputClass = "bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md text-slate-200 focus:outline-none focus:border-[rgba(110,220,255,0.35)]";
+const labelClass = "text-[11px] font-medium text-slate-400";
+const sectionClass = "rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] p-3";
+const secondaryButtonClass = "w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[rgba(255,255,255,0.03)] rounded-md transition-colors";
+const primaryButtonClass = "w-full px-3 py-2 text-sm text-slate-100 bg-[#4f6382] hover:bg-[#5b7193] disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors";
+const destructiveButtonClass = "w-full px-4 py-2 text-sm text-rose-300 border border-rose-500/20 bg-transparent hover:bg-rose-500/8 transition-colors rounded-md";
+
+function formatComponentName(componentType: string): string {
+  return componentType.replaceAll('_', ' ');
+}
+
+function getNodeDisplayName(node: { data: { label: string; config: Record<string, unknown> } }): string {
+  const configuredName = typeof node.data.config.name === 'string' ? node.data.config.name.trim() : '';
+  return configuredName || node.data.label;
+}
+
+function formatContainerOptionLabel(node: { data: { label: string; componentType: string; config: Record<string, unknown> } }): string {
+  return `${getNodeDisplayName(node)} (${formatComponentName(node.data.componentType)})`;
+}
 
 function EdgeProperties() {
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
@@ -160,7 +181,7 @@ function EdgeProperties() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label htmlFor={`edge-${edge.id}-protocol`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Protocol</label>
+          <label htmlFor={`edge-${edge.id}-protocol`} className={labelClass}>Protocol</label>
           <select
             id={`edge-${edge.id}-protocol`}
             value={effectiveProtocol}
@@ -174,7 +195,7 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label htmlFor={`edge-${edge.id}-latency`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
+          <label htmlFor={`edge-${edge.id}-latency`} className={labelClass}>Latency Override (ms)</label>
           <NumberInput
             id={`edge-${edge.id}-latency`}
             value={data?.latencyMs ?? 1}
@@ -188,15 +209,17 @@ function EdgeProperties() {
         {(() => {
           const effLatency = computeEffectiveLatency(edge.source, edge.target, nodes);
           return effLatency > 0 ? (
-            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20">
-              <span className="text-xs font-semibold text-slate-300">Effective Latency (auto)</span>
-              <span className="text-sm font-mono font-bold text-blue-400">{effLatency.toFixed(2)} ms</span>
+            <div className={sectionClass}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">Effective latency</span>
+                <span className="text-sm font-mono font-semibold text-slate-200">{effLatency.toFixed(2)} ms</span>
+              </div>
             </div>
           ) : null;
         })()}
 
         <div>
-          <label htmlFor={`edge-${edge.id}-bandwidth`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
+          <label htmlFor={`edge-${edge.id}-bandwidth`} className={labelClass}>Bandwidth (Mbps)</label>
           <NumberInput
             id={`edge-${edge.id}-bandwidth`}
             value={data?.bandwidthMbps ?? 1000}
@@ -208,7 +231,7 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label htmlFor={`edge-${edge.id}-timeout`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeout (ms)</label>
+          <label htmlFor={`edge-${edge.id}-timeout`} className={labelClass}>Timeout (ms)</label>
           <NumberInput
             id={`edge-${edge.id}-timeout`}
             value={data?.timeoutMs ?? 5000}
@@ -225,7 +248,7 @@ function EdgeProperties() {
       <div className="p-4 border-t border-[var(--color-border)]">
         <button
           onClick={handleDelete}
-          className="w-full px-4 py-2 text-sm text-red-400 border border-red-400/30 rounded hover:bg-red-400/10 transition-colors"
+          className={destructiveButtonClass}
         >
           Delete Connection
         </button>
@@ -271,10 +294,10 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Routing Rules</label>
+        <label className={labelClass}>Routing Rules</label>
         <button
           onClick={addRule}
-          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
         >
           + Add Rule
         </button>
@@ -293,7 +316,7 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
                   placeholder="tag"
                   aria-label={`Rule ${idx + 1} tag`}
                   onChange={(e) => updateRule(idx, 'tag', e.target.value)}
-                  className="flex-1 min-w-0 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`flex-1 min-w-0 px-2 py-1.5 text-xs ${compactInputClass}`}
                 />
                 <input
                   type="number"
@@ -303,12 +326,12 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
                   value={rule.weight}
                   aria-label={`Rule ${idx + 1} weight`}
                   onChange={(e) => updateRule(idx, 'weight', Number(e.target.value))}
-                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`w-16 px-2 py-1.5 text-xs ${compactInputClass}`}
                 />
                 <button
                   onClick={() => removeRule(idx)}
                   aria-label={`Remove rule ${idx + 1}`}
-                  className="text-red-400 hover:text-red-300 text-xs px-1"
+                  className="text-slate-500 hover:text-rose-300 text-xs px-1"
                 >
                   x
                 </button>
@@ -320,7 +343,7 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
                   value={rule.outTag ?? ''}
                   placeholder="rewrite tag"
                   onChange={(e) => updateRule(idx, 'outTag', e.target.value)}
-                  className="flex-1 min-w-0 px-2 py-0.5 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`flex-1 min-w-0 px-2 py-1.5 text-xs ${compactInputClass}`}
                 />
               </div>
             </div>
@@ -334,18 +357,29 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
           placeholder="new tag name"
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addRule()}
-          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+          className={`flex-1 px-2 py-1.5 text-xs ${compactInputClass}`}
         />
       </div>
     </div>
   );
 }
 
-function NodeLink({ node, onClick }: { node: { data: { icon: string; label: string } }; onClick: () => void }) {
+function NodeLink({
+  node,
+  onClick,
+  subtitle,
+}: {
+  node: { data: { icon: string; label: string } };
+  onClick: () => void;
+  subtitle?: string;
+}) {
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
+    <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
       <span>{node.data.icon}</span>
-      <span className="flex-1 text-left truncate">{node.data.label}</span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate">{node.data.label}</span>
+        {subtitle ? <span className="block text-[10px] uppercase tracking-[0.16em] text-slate-500">{subtitle}</span> : null}
+      </span>
       <span className="text-slate-400">&rarr;</span>
     </button>
   );
@@ -386,17 +420,17 @@ function NodeProperties() {
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="px-4 py-3 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{paletteItem?.icon || selectedNode.data.icon}</span>
+          <span className="text-[1.75rem] leading-none">{paletteItem?.icon || selectedNode.data.icon}</span>
           <div>
             <h2 className="text-base font-bold text-slate-200">{selectedNode.data.label}</h2>
-            <p className="text-xs text-slate-400">{selectedNode.data.componentType}</p>
+            <p className="text-xs text-slate-400">{formatComponentName(selectedNode.data.componentType)}</p>
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label htmlFor={`node-${selectedNode.id}-name`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+          <label htmlFor={`node-${selectedNode.id}-name`} className={labelClass}>Name</label>
           <input
             type="text"
             id={`node-${selectedNode.id}-name`}
@@ -411,10 +445,20 @@ function NodeProperties() {
           const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
           const defaultTextColor = '#e2e8f0';
           return (
-            <div>
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Colors</label>
-              <div className="flex items-center gap-3 mt-1">
-                <div className="flex items-center gap-1.5">
+            <div className={sectionClass}>
+              <div className="flex items-center justify-between gap-3">
+                <label className={labelClass}>Colors</label>
+                {(config.color != null || config.textColor != null) && (
+                  <button
+                    onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
+                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 flex items-center gap-4">
+                <div className="flex items-center gap-2">
                   <input
                     type="color"
                     id={`node-${selectedNode.id}-borderColor`}
@@ -422,11 +466,11 @@ function NodeProperties() {
                     onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
                     title="Border color"
                     aria-label="Border color"
-                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
+                    className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
                   />
-                  <span className="text-[10px] text-slate-400">Border</span>
+                  <span className="text-[11px] text-slate-400">Border</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <input
                     type="color"
                     id={`node-${selectedNode.id}-textColor`}
@@ -434,18 +478,10 @@ function NodeProperties() {
                     onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
                     title="Text color"
                     aria-label="Text color"
-                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
+                    className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
                   />
-                  <span className="text-[10px] text-slate-400">Text</span>
+                  <span className="text-[11px] text-slate-400">Text</span>
                 </div>
-                {(config.color != null || config.textColor != null) && (
-                  <button
-                    onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
-                    className="ml-auto text-xs text-slate-400 hover:text-slate-300 transition-colors"
-                  >
-                    Reset
-                  </button>
-                )}
               </div>
             </div>
           );
@@ -453,7 +489,7 @@ function NodeProperties() {
 
         {params.map((param) => (
           <div key={param.key}>
-            <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className={labelClass}>
               {param.label}
             </label>
             {param.type === 'select' ? (
@@ -494,13 +530,13 @@ function NodeProperties() {
         {CONTAINER_TYPES.has(selectedNode.data.componentType) && (() => {
           const children = nodes.filter(n => n.parentId === selectedNode.id);
           return (
-            <div className="rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-xs font-semibold text-slate-300">Children</span>
-                <span className="text-sm font-mono font-bold text-purple-400">{children.length}</span>
+                <span className="text-[11px] text-slate-400">Children</span>
+                <span className="text-sm font-mono font-semibold text-slate-200">{children.length}</span>
               </div>
               {children.length > 0 && (
-                <div className="border-t border-purple-500/20">
+                <div className="border-t border-[var(--color-border)]">
                   {children.map(child => (
                     <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
                   ))}
@@ -520,10 +556,14 @@ function NodeProperties() {
           const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
           return validParents.length > 0 ? (
             <div>
-              <label htmlFor={`node-${selectedNode.id}-parent`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
+              <label htmlFor={`node-${selectedNode.id}-parent`} className={labelClass}>Parent Container</label>
               {parentNode && (
-                <div className="mt-1 mb-1 rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
-                  <NodeLink node={parentNode} onClick={() => focusNode(parentNode.id)} />
+                <div className="mt-1 mb-1 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
+                  <NodeLink
+                    node={parentNode}
+                    subtitle={formatComponentName(parentNode.data.componentType)}
+                    onClick={() => focusNode(parentNode.id)}
+                  />
                 </div>
               )}
               <select
@@ -534,7 +574,7 @@ function NodeProperties() {
               >
                 <option value="">None (top-level)</option>
                 {validParents.map((c) => (
-                  <option key={c.id} value={c.id}>{c.data.icon} {c.data.label} ({c.data.componentType})</option>
+                  <option key={c.id} value={c.id}>{c.data.icon} {formatContainerOptionLabel(c)}</option>
                 ))}
               </select>
             </div>
@@ -546,9 +586,11 @@ function NodeProperties() {
           const rpu = (configVal('requests_per_user') as number) ?? 0.1;
           const effectiveRps = usersK * 1000 * rpu;
           return (
-            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20">
-              <span className="text-xs font-semibold text-slate-300">Effective RPS</span>
-              <span className="text-sm font-mono font-bold text-blue-400">{Math.round(effectiveRps)}/s</span>
+            <div className={sectionClass}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">Effective RPS</span>
+                <span className="text-sm font-mono font-semibold text-slate-200">{Math.round(effectiveRps)}/s</span>
+              </div>
             </div>
           );
         })()}
@@ -569,7 +611,7 @@ function NodeProperties() {
       <div className="p-4 border-t border-[var(--color-border)]">
         <button
           onClick={() => removeNode(selectedNode.id)}
-          className="w-full px-4 py-2 text-sm text-red-400 border border-red-400/30 rounded hover:bg-red-400/10 transition-colors"
+          className={destructiveButtonClass}
         >
           Delete Component
         </button>
@@ -589,10 +631,12 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
     updateNodeConfig(nodeId, { tagDistribution: updated.length > 0 ? updated : undefined });
   };
 
+  const isClient = true; // TagDistributionEditor is only rendered for CLIENT_TYPES
+
   const addTag = () => {
     const tag = newTag.trim() || 'read';
     if (tags.some(t => t.tag === tag)) return;
-    update([...tags, { tag, weight: 1.0 }]);
+    update([...tags, { tag, weight: 1.0, ...(isClient ? { requestSizeKb: 0.1 } : {}) }]);
     setNewTag('');
   };
 
@@ -600,7 +644,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
     update(tags.filter((_, i) => i !== idx));
   };
 
-  const updateTag = (idx: number, field: 'tag' | 'weight', value: string | number) => {
+  const updateTag = (idx: number, field: keyof TagWeightEntry, value: string | number) => {
     const updated = tags.map((t, i) => i === idx ? { ...t, [field]: value } : t);
     update(updated);
   };
@@ -610,10 +654,10 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Traffic Tags</label>
+        <label className={labelClass}>Traffic Tags</label>
         <button
           onClick={addTag}
-          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
         >
           + Add Tag
         </button>
@@ -625,7 +669,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
           {tags.map((entry, idx) => {
             const pct = totalWeight > 0 ? ((entry.weight / totalWeight) * 100).toFixed(0) : '0';
             return (
-              <div key={idx} className="flex items-center gap-2">
+              <div key={idx} className="flex items-center gap-1.5">
                 <input
                   type="text"
                   id={`node-${nodeId}-dist-tag-${idx}`}
@@ -633,7 +677,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
                   placeholder="tag"
                   aria-label={`Tag ${idx + 1} name`}
                   onChange={(e) => updateTag(idx, 'tag', e.target.value)}
-                  className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
                 />
                 <input
                   type="number"
@@ -643,13 +687,27 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
                   value={entry.weight}
                   aria-label={`Tag ${idx + 1} weight`}
                   onChange={(e) => updateTag(idx, 'weight', Number(e.target.value))}
-                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`w-12 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
                 />
-                <span className="text-xs text-slate-400 w-10 text-right">{pct}%</span>
+                <span className="text-[10px] text-slate-500 w-8 shrink-0 text-right">{pct}%</span>
+                {entry.requestSizeKb != null && (
+                  <>
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.1}
+                      value={entry.requestSizeKb}
+                      aria-label={`Tag ${idx + 1} request size KB`}
+                      onChange={(e) => updateTag(idx, 'requestSizeKb', Number(e.target.value))}
+                      className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+                    />
+                    <span className="text-[10px] text-slate-500 shrink-0">KB</span>
+                  </>
+                )}
                 <button
                   onClick={() => removeTag(idx)}
                   aria-label={`Remove tag ${idx + 1}`}
-                  className="text-red-400 hover:text-red-300 text-xs px-1"
+                  className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
                 >
                   x
                 </button>
@@ -658,16 +716,16 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
           })}
         </div>
       )}
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex items-center gap-1.5 mt-2">
         <input
           type="text"
           id={`node-${nodeId}-dist-new-tag`}
           value={newTag}
-          placeholder="new tag name"
+          placeholder="tag name"
           aria-label="New tag name"
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTag()}
-          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+          className={`w-14 px-1.5 py-1 text-xs ${compactInputClass}`}
         />
       </div>
     </div>
@@ -784,7 +842,7 @@ function SchemaProperties() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
-          <label htmlFor="schema-name" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+          <label htmlFor="schema-name" className={labelClass}>Name</label>
           <input
             type="text"
             id="schema-name"
@@ -797,7 +855,7 @@ function SchemaProperties() {
         </div>
 
         <div>
-          <label htmlFor="schema-description" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</label>
+          <label htmlFor="schema-description" className={labelClass}>Description</label>
           <textarea
             id="schema-description"
             value={schemaDescription}
@@ -810,12 +868,12 @@ function SchemaProperties() {
         </div>
 
         <div>
-          <label htmlFor="schema-tags" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tags</label>
-          <div className="mt-1 flex flex-wrap gap-1 p-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded min-h-[34px]">
+          <label htmlFor="schema-tags" className={labelClass}>Tags</label>
+          <div className="mt-1 flex flex-wrap gap-1 p-1.5 bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md min-h-[34px]">
             {schemaTags.map((tag) => (
-              <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded">
+              <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded-md border border-[rgba(110,220,255,0.12)] bg-[rgba(110,220,255,0.08)] text-slate-200">
                 {tag}
-                <button onClick={() => removeTag(tag)} className="text-blue-400/60 hover:text-blue-300 ml-0.5">&times;</button>
+                <button onClick={() => removeTag(tag)} className="text-slate-500 hover:text-slate-200 ml-0.5">&times;</button>
               </span>
             ))}
             <input
@@ -829,7 +887,7 @@ function SchemaProperties() {
               className="flex-1 min-w-[60px] bg-transparent text-xs text-slate-200 outline-none px-1 py-0.5"
             />
           </div>
-          <p className="text-[10px] text-slate-500 mt-0.5">Press Enter or comma to add</p>
+          <p className="text-[10px] text-slate-500 mt-1">Press Enter or comma to add</p>
         </div>
 
         {isAuthenticated && (
@@ -845,20 +903,20 @@ function SchemaProperties() {
           </div>
         )}
 
-        <div className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]">
-            <span className="text-xs font-semibold text-slate-400">Nodes</span>
-            <span className="text-sm font-mono font-bold text-slate-200">{nodes.length}</span>
+            <span className="text-[11px] text-slate-400">Nodes</span>
+            <span className="text-sm font-mono font-semibold text-slate-200">{nodes.length}</span>
           </div>
           <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-xs font-semibold text-slate-400">Connections</span>
-            <span className="text-sm font-mono font-bold text-slate-200">{edges.length}</span>
+            <span className="text-[11px] text-slate-400">Connections</span>
+            <span className="text-sm font-mono font-semibold text-slate-200">{edges.length}</span>
           </div>
         </div>
 
         {isAuthenticated ? (
           <div className="space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cloud Storage</div>
+            <div className={labelClass}>Cloud Storage</div>
 
             {architectureId && (
               <p className="text-xs text-slate-400 truncate" title={architectureId}>
@@ -869,7 +927,7 @@ function SchemaProperties() {
             <button
               onClick={handleSave}
               disabled={!canSave || saving}
-              className="w-full px-3 py-2 text-sm text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+              className={primaryButtonClass}
             >
               {saving ? 'Saving...' : architectureId ? 'Save' : 'Save to server'}
             </button>
@@ -879,7 +937,7 @@ function SchemaProperties() {
             )}
 
             {showSaveAs ? (
-              <div className="space-y-2 p-2 rounded border border-[var(--color-border)] bg-[var(--color-bg)]">
+              <div className="space-y-2 p-2 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)]">
                 <input
                   type="text"
                   value={saveAsName}
@@ -894,13 +952,13 @@ function SchemaProperties() {
                   <button
                     onClick={handleSaveAs}
                     disabled={!saveAsName.trim() || saving}
-                    className="flex-1 px-2 py-1.5 text-xs text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+                    className="flex-1 px-2 py-1.5 text-xs text-slate-100 bg-[#4f6382] hover:bg-[#5b7193] disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
                   >
                     Save copy
                   </button>
                   <button
                     onClick={() => setShowSaveAs(false)}
-                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-[var(--color-border)] rounded transition-colors"
+                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-[var(--color-border)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
@@ -909,7 +967,7 @@ function SchemaProperties() {
             ) : (
               <button
                 onClick={() => { setSaveAsName(schemaName); setShowSaveAs(true); }}
-                className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+                className={secondaryButtonClass}
               >
                 Save As...
               </button>
@@ -917,13 +975,13 @@ function SchemaProperties() {
 
             <button
               onClick={() => setShowOpenModal(true)}
-              className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+              className={secondaryButtonClass}
             >
               Open from server...
             </button>
           </div>
         ) : (
-          <div className="px-3 py-3 rounded border border-blue-500/20 bg-blue-500/5">
+          <div className="px-3 py-3 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)]">
             <p className="text-xs text-slate-400">Sign in to save to cloud</p>
           </div>
         )}

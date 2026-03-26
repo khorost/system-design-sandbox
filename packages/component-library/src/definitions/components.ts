@@ -35,6 +35,8 @@ export interface ComponentDefinition {
     baseLatencyMs: number;
     replicas: number;
   };
+  /** Extra config values applied when the node is first created (e.g. tagDistribution). */
+  defaultConfig?: Record<string, unknown>;
 }
 
 export const componentDefinitions: ComponentDefinition[] = [
@@ -47,10 +49,16 @@ export const componentDefinitions: ComponentDefinition[] = [
     description: 'Browser-based client generating HTTP requests',
     params: [
       { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', default: 1, min: 0.001, max: 100000 },
-      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 0.1, min: 0.001, max: 1000 },
-      { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', default: 10, min: 0.1, max: 102400 },
+      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 5, min: 0.001, max: 1000 },
     ],
     defaults: { maxRps: 10000, baseLatencyMs: 0, replicas: 1 },
+    defaultConfig: {
+      tagDistribution: [
+        { tag: 'web', weight: 25, requestSizeKb: 0.1 },
+        { tag: 'api', weight: 40, requestSizeKb: 0.2 },
+        { tag: 'content', weight: 35, requestSizeKb: 0.1 },
+      ],
+    },
   },
   {
     type: 'mobile_client',
@@ -59,11 +67,17 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📱',
     description: 'Mobile app generating HTTP/WebSocket requests',
     params: [
-      { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', default: 5, min: 0.001, max: 100000 },
-      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 0.01, min: 0.001, max: 1000 },
-      { key: 'payload_size_kb', label: 'Payload (KB)', type: 'number', default: 5, min: 0.1, max: 102400 },
+      { key: 'concurrent_users_k', label: 'Concurrent Users (K)', type: 'number', default: 1, min: 0.001, max: 100000 },
+      { key: 'requests_per_user', label: 'Requests/User/sec', type: 'number', default: 5, min: 0.001, max: 1000 },
     ],
     defaults: { maxRps: 5000, baseLatencyMs: 0, replicas: 1 },
+    defaultConfig: {
+      tagDistribution: [
+        { tag: 'web', weight: 5, requestSizeKb: 0.1 },
+        { tag: 'api', weight: 65, requestSizeKb: 0.2 },
+        { tag: 'content', weight: 30, requestSizeKb: 0.1 },
+      ],
+    },
   },
   {
     type: 'external_api',
@@ -77,6 +91,11 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'auth_type', label: 'Auth Type', type: 'select', default: 'api_key', options: ['api_key', 'oauth2', 'basic'] },
     ],
     defaults: { maxRps: 50000, baseLatencyMs: 0, replicas: 1 },
+    defaultConfig: {
+      tagDistribution: [
+        { tag: 'api', weight: 100, requestSizeKb: 0.2 },
+      ],
+    },
   },
 
   // --- External Services (downstream) ---
@@ -136,6 +155,12 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'ttl_sec', label: 'TTL (sec)', type: 'number', default: 3600, min: 0, max: 31536000 },
     ],
     defaults: { maxRps: 500000, baseLatencyMs: 10, replicas: 1 },
+    defaultConfig: {
+      response_size_kb: 400,
+      tagDistribution: [
+        { tag: 'content', weight: 100, responseSizeKb: 400 },
+      ],
+    },
   },
   {
     type: 'dns',

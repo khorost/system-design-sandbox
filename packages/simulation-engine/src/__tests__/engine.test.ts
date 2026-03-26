@@ -17,6 +17,8 @@ function mkComponent(overrides: Partial<ComponentModel> = {}): ComponentModel {
     queueSize: 0,
     queueCapacity: 10000,
     processingRate: 1000,
+    maxConnections: 10000,
+    concurrentConnections: 0,
     payloadSizeKb: 0,
     responseSizeKb: 0,
     ...overrides,

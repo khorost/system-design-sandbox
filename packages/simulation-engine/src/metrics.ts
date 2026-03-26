@@ -19,6 +19,7 @@ export function aggregateMetrics(
 
   const CLIENT_TYPES = new Set(['web_client', 'mobile_client', 'external_api']);
   const componentUtilization: Record<string, number> = {};
+  const connectionUtilization: Record<string, number> = {};
   const queueDepths: Record<string, number> = {};
 
   for (const [id, comp] of components) {
@@ -26,6 +27,9 @@ export function aggregateMetrics(
     componentUtilization[id] = CLIENT_TYPES.has(comp.type)
       ? 0
       : comp.maxRps > 0 ? comp.currentLoad / comp.maxRps : 0;
+    connectionUtilization[id] = CLIENT_TYPES.has(comp.type)
+      ? 0
+      : comp.maxConnections > 0 && isFinite(comp.maxConnections) ? comp.concurrentConnections / comp.maxConnections : 0;
     queueDepths[id] = comp.queueSize;
   }
 
@@ -36,7 +40,10 @@ export function aggregateMetrics(
     latencyP99: percentile(latencies, 0.99),
     throughput: tickDurationSec > 0 ? succeeded / tickDurationSec : 0,
     errorRate: total > 0 ? failed / total : 0,
+    totalInboundKBps: 0,
+    totalOutboundKBps: 0,
     componentUtilization,
+    connectionUtilization,
     queueDepths,
     edgeThroughput,
     edgeLatency,

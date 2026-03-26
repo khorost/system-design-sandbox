@@ -11,6 +11,12 @@ const DEFAULT_RESPONSE_SIZE_KB: Record<string, number> = {
   local_ssd: 20, nvme: 20, network_disk: 20,
 };
 
+/** Transmission delay (ms) for payload over a link: KB→Kbit / Mbps = ms */
+function transmissionDelayMs(payloadKb: number, bandwidthMbps: number): number {
+  if (bandwidthMbps <= 0) return 0;
+  return (payloadKb * 8) / bandwidthMbps;
+}
+
 export function calculateLatency(component: ComponentModel): number {
   const utilization = component.currentLoad / component.maxRps;
   if (utilization >= 1.0) return Infinity;
@@ -100,6 +106,7 @@ export function createSimulationEngine(
   function resetLoads() {
     for (const comp of components.values()) {
       comp.currentLoad = 0;
+      comp.concurrentConnections = 0;
     }
   }
 
@@ -132,7 +139,8 @@ export function createSimulationEngine(
           timestamp: Date.now(),
           latencyP50: 0, latencyP95: 0, latencyP99: 0,
           throughput: 0, errorRate: 0,
-          componentUtilization: {}, queueDepths: {},
+          totalInboundKBps: 0, totalOutboundKBps: 0,
+          componentUtilization: {}, connectionUtilization: {}, queueDepths: {},
           edgeThroughput: {}, edgeLatency: {},
           nodeTagTraffic: {}, edgeTagTraffic: {},
         };
@@ -162,6 +170,9 @@ export function createSimulationEngine(
 
         for (let i = 0; i < newCount; i++) {
           const tag = pickTag(comp.tagDistribution);
+          // Use per-tag requestSizeKb if available, else fall back to component-level payload
+          const tagEntry = comp.tagDistribution?.find(t => t.tag === tag);
+          const pKb = tagEntry?.requestSizeKb ?? (comp.payloadSizeKb || DEFAULT_PAYLOAD_SIZE_KB);
           activeRequests.push({
             id: `req-${++requestCounter}`,
             tag,
@@ -169,7 +180,7 @@ export function createSimulationEngine(
             visited: [entryId],
             totalLatencyMs: 0,
             failed: false,
-            payloadSizeKb: comp.payloadSizeKb || DEFAULT_PAYLOAD_SIZE_KB,
+            payloadSizeKb: pKb,
           });
         }
         generated += newCount;
@@ -178,12 +189,13 @@ export function createSimulationEngine(
       // 2. Reset current loads for this tick
       resetLoads();
 
-      // Count load per node from all active requests
+      // Count load and concurrent connections per node from all active requests
       for (const req of activeRequests) {
         if (req.failed) continue;
         const comp = components.get(req.currentNode);
         if (comp) {
           comp.currentLoad += 1 / TICK_DURATION_SEC; // Convert per-tick count to RPS
+          comp.concurrentConnections += 1; // Each active request = 1 connection
         }
       }
 
@@ -225,6 +237,14 @@ export function createSimulationEngine(
 
         // Client nodes are traffic sources — skip capacity/latency checks
         if (!isClientType(comp.type)) {
+          // Check connection pool exhaustion
+          if (comp.concurrentConnections > comp.maxConnections) {
+            req.failed = true;
+            req.failureReason = `Node ${req.currentNode} connections exhausted (${comp.concurrentConnections}/${comp.maxConnections})`;
+            completed.push(req);
+            continue;
+          }
+
           // Check if overloaded
           if (comp.currentLoad > comp.maxRps) {
             // Probabilistic failure based on overload degree
@@ -288,7 +308,7 @@ export function createSimulationEngine(
               tag: spawnedTag,
               currentNode: hop.target,
               visited: [...req.visited, hop.target],
-              totalLatencyMs: req.totalLatencyMs + edgeLat,
+              totalLatencyMs: req.totalLatencyMs + edgeLat + transmissionDelayMs(pKb, conn?.bandwidthMbps ?? 1000),
               failed: false,
               payloadSizeKb: pKb,
             });
@@ -323,24 +343,39 @@ export function createSimulationEngine(
         const visited = req.visited;
         if (visited.length < 2) continue;
         const leafComp = components.get(visited[visited.length - 1]);
-        const respKb = leafComp?.responseSizeKb
-          || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
-          || DEFAULT_RESPONSE_FALLBACK_KB;
         const tag = req.tag;
+        // Per-tag responseSizeKb takes priority, then component-level, then type default
+        const tagRespEntry = leafComp?.tagDistribution?.find(t => t.tag === tag);
+        const respKb = tagRespEntry?.responseSizeKb
+          ?? (leafComp?.responseSizeKb
+          || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
+          || DEFAULT_RESPONSE_FALLBACK_KB);
 
+        // Response latency: traverse reverse path
+        let responseLat = 0;
         for (let i = visited.length - 1; i > 0; i--) {
           const from = visited[i - 1];
           const to = visited[i];
           const ek = `${from}->${to}`; // use forward edge key
-          // Response edge
+          const conn = connectionMap.get(ek);
+          // Edge latency + transmission delay for response payload
+          responseLat += (conn?.latencyMs ?? 0) + transmissionDelayMs(respKb, conn?.bandwidthMbps ?? 1000);
+          // Intermediate node base latency (not leaf, not origin)
+          if (i > 1) {
+            const intermediary = components.get(from);
+            if (intermediary && !CLIENT_TYPES.has(intermediary.type)) {
+              responseLat += intermediary.baseLatencyMs;
+            }
+          }
+          // Response byte tracking
           (respEdgeCount[ek] ??= {})[tag] = ((respEdgeCount[ek])?.[tag] ?? 0) + 1;
           (respEdgeBytes[ek] ??= {})[tag] = ((respEdgeBytes[ek])?.[tag] ?? 0) + respKb;
-          // Response: outgoing from `to`, incoming to `from`
           (respNodeOutCount[to] ??= {})[tag] = ((respNodeOutCount[to])?.[tag] ?? 0) + 1;
           (respNodeOutBytes[to] ??= {})[tag] = ((respNodeOutBytes[to])?.[tag] ?? 0) + respKb;
           (respNodeInCount[from] ??= {})[tag] = ((respNodeInCount[from])?.[tag] ?? 0) + 1;
           (respNodeInBytes[from] ??= {})[tag] = ((respNodeInBytes[from])?.[tag] ?? 0) + respKb;
         }
+        req.totalLatencyMs += responseLat;
       }
 
       // Build per-tag traffic maps
@@ -395,6 +430,19 @@ export function createSimulationEngine(
       result.engineStats = engineStats;
       result.nodeTagTraffic = nodeTagTraffic;
       result.edgeTagTraffic = edgeTagTraffic;
+
+      // Compute total inbound/outbound bandwidth across all nodes
+      let totalIn = 0;
+      let totalOut = 0;
+      for (const ntt of Object.values(nodeTagTraffic)) {
+        for (const t of Object.values(ntt.incoming)) totalIn += t.bytesPerSec;
+        for (const t of Object.values(ntt.responseIncoming)) totalIn += t.bytesPerSec;
+        for (const t of Object.values(ntt.outgoing)) totalOut += t.bytesPerSec;
+        for (const t of Object.values(ntt.responseOutgoing)) totalOut += t.bytesPerSec;
+      }
+      result.totalInboundKBps = totalIn;
+      result.totalOutboundKBps = totalOut;
+
       return result;
     },
 

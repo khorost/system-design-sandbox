@@ -84,6 +84,32 @@ body {
   display: none !important;
 }
 
+.react-flow__resize-control.container-resize-line {
+  border-color: rgba(110, 220, 255, 0.88) !important;
+  border-width: 2px !important;
+}
+
+.react-flow__resize-control.container-resize-handle {
+  width: 18px !important;
+  height: 18px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.react-flow__resize-control.container-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 999px;
+  background: #6edcff;
+  border: 1px solid #3b82f6;
+  box-shadow:
+    0 0 0 1px rgba(8, 16, 24, 0.55),
+    0 0 14px rgba(110, 220, 255, 0.24);
+}
+
 @keyframes flowAnimation {
   from { stroke-dashoffset: 20; }
   to { stroke-dashoffset: 0; }
