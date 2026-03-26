@@ -109,20 +109,21 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="rounded shadow-lg min-w-[170px] cursor-pointer transition-all relative"
+      className="min-w-[188px] cursor-pointer transition-all relative rounded-xl overflow-hidden"
       style={{
-        background: bgColor,
+        background: `linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.10)), ${bgColor}`,
         border: `2px solid ${activeBorder}`,
         boxShadow: selected
-          ? '0 0 0 2px rgba(59,130,246,0.5)'
+          ? '0 0 0 2px rgba(110,220,255,0.26), 0 20px 34px rgba(3,8,14,0.28)'
           : utilColor
-            ? `0 0 8px ${utilColor}40`
-            : undefined,
+            ? `0 0 0 1px ${utilColor}20, 0 14px 24px ${utilColor}18`
+            : '0 12px 26px rgba(3,8,14,0.22)',
       }}
     >
+      <div className="h-1.5 w-full" style={{ background: activeBorder }} />
       {isRunning && ema && maxEma > 0 && (
         <div
-          className="absolute -top-5 -right-5 rounded flex items-center gap-1.5 px-3 py-2 text-white z-10 shadow-md"
+          className="absolute -top-3 right-3 rounded-md flex items-center gap-1.5 px-3 py-1.5 text-white z-10 shadow-md"
           style={{ background: utilColor }}
         >
           <span className="font-mono text-[9px] font-bold leading-none whitespace-nowrap">
@@ -142,29 +143,44 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
         />
       )}
       <div className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-lg">{data.icon}</span>
-          <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#e2e8f0' }}>
-            {data.label}
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[rgba(110,220,255,0.12)] bg-[rgba(110,220,255,0.08)] text-xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
+            {data.icon}
           </span>
-          {language && LANGUAGE_ICONS[language] && (
-            <span
-              className="text-[9px] font-bold leading-none px-1.5 py-0.5 rounded"
-              style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
-              title={language}
-            >
-              {LANGUAGE_ICONS[language]}
-            </span>
-          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#edf4fb' }}>
+                {data.label}
+              </span>
+              {language && LANGUAGE_ICONS[language] && (
+                <span
+                  className="text-[9px] font-bold leading-none px-1.5 py-0.5 rounded-md"
+                  style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
+                  title={language}
+                >
+                  {LANGUAGE_ICONS[language]}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.componentType.replaceAll('_', ' ')}</div>
+          </div>
         </div>
         {summaryLines.length > 0 && (
-          <div className="space-y-1 mb-2 pl-1">
-            {summaryLines.map((line, i) => (
-              <div key={i} className="text-[11px] font-mono text-slate-400 leading-snug">{line}</div>
-            ))}
+          <div className="mt-3 rounded-xl border border-[rgba(110,220,255,0.10)] bg-[rgba(5,10,16,0.24)] px-3 py-2.5">
+            <div className="space-y-1">
+              {summaryLines.map((line, i) => (
+                <div key={i} className="text-[11px] font-mono text-slate-300 leading-snug">{line}</div>
+              ))}
+            </div>
           </div>
         )}
-        <div className="text-[10px] text-slate-400 mt-1">{data.componentType}</div>
+        {summaryLines.length === 0 && (
+          <div className="mt-3 text-[11px] text-slate-500">Ready for configuration</div>
+        )}
+        <div className="mt-3 flex items-center justify-between">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Flow Node</div>
+          <div className="h-px flex-1 ml-3 bg-[linear-gradient(90deg,rgba(110,220,255,0.22),rgba(110,220,255,0))]" />
+        </div>
       </div>
       {/* Source (output) — diamond, amber */}
       <Handle

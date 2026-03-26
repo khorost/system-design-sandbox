@@ -29,11 +29,12 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
 
   return (
     <div
-      className="w-full h-full rounded-lg relative"
+      className="w-full h-full rounded-xl relative overflow-hidden"
       style={{
-        background: style.bg,
+        background: `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), ${style.bg}`,
+        backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), repeating-linear-gradient(135deg, rgba(255,255,255,0.02) 0 14px, rgba(255,255,255,0.00) 14px 28px)`,
         border: `2px ${selected ? 'solid' : 'dashed'} ${selected ? '#3b82f6' : style.border}`,
-        boxShadow: selected ? '0 0 0 2px rgba(59,130,246,0.5)' : undefined,
+        boxShadow: selected ? '0 0 0 2px rgba(110,220,255,0.26), 0 18px 30px rgba(3,8,14,0.22)' : 'inset 0 0 0 1px rgba(255,255,255,0.02)',
         minWidth: CONFIG.CANVAS.CONTAINER_MIN_WIDTH,
         minHeight: CONFIG.CANVAS.CONTAINER_MIN_HEIGHT,
       }}
@@ -52,18 +53,25 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
           e.stopPropagation();
           selectNode(id);
         }}
-        className="container-drag-handle flex items-center gap-2 px-3 py-2 rounded-t-md cursor-grab active:cursor-grabbing"
+        className="container-drag-handle flex items-center gap-2 px-3 py-3 cursor-grab active:cursor-grabbing border-b border-[rgba(255,255,255,0.04)]"
         style={{ background: style.headerBg }}
       >
-        <span className="text-base">{data.icon}</span>
-        <span className="text-xs font-semibold truncate" style={{ color: (data.config.textColor as string) || '#e2e8f0' }}>{data.label}</span>
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[rgba(255,255,255,0.10)] bg-[rgba(255,255,255,0.06)] text-base">
+          {data.icon}
+        </span>
+        <span className="min-w-0 flex flex-col">
+          <span className="text-xs font-semibold truncate" style={{ color: (data.config.textColor as string) || '#edf4fb' }}>{data.label}</span>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.componentType.replaceAll('_', ' ')}</span>
+        </span>
         <span
-          className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded"
+          className="ml-auto text-[10px] font-mono px-2 py-1 rounded-md"
           style={{ background: style.border + '30', color: style.border }}
         >
           {latencyMs}ms
         </span>
       </div>
+
+      <div className="pointer-events-none absolute inset-x-4 bottom-4 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0))]" />
 
     </div>
   );

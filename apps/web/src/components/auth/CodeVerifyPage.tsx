@@ -85,16 +85,17 @@ export function CodeVerifyPage() {
   }, [email, requestCode, clearError]);
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.30em] text-[var(--color-accent)]">Email Verification</div>
           <h1 className="text-2xl font-bold text-slate-100">Check your email</h1>
           <p className="text-sm text-slate-400 mt-2">
             We sent a code to <span className="text-blue-400">{email}</span>
           </p>
         </div>
 
-        <div className="bg-[#1e293b] rounded-xl p-6">
+        <div className="bg-[linear-gradient(180deg,rgba(19,32,44,0.96),rgba(14,23,34,0.98))] border border-[var(--color-border)] rounded-xl p-6 shadow-[var(--shadow-panel)]">
           <div className="flex justify-center gap-2 mb-4" onPaste={handlePaste}>
             {digits.map((digit, i) => (
               <span key={i} className="contents">
@@ -107,7 +108,7 @@ export function CodeVerifyPage() {
                   onChange={(e) => handleChange(i, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(i, e)}
                   disabled={submitting}
-                  className="w-11 h-13 text-center text-xl font-bold bg-[#0f172a] border border-slate-600 rounded-lg text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-11 h-13 text-center text-xl font-bold bg-[rgba(7,12,19,0.56)] border border-[var(--color-border)] rounded-md text-slate-100 focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[rgba(110,220,255,0.24)] disabled:opacity-50"
                 />
                 {i === 2 && <span className="flex items-center text-slate-500 text-xl font-bold">-</span>}
               </span>

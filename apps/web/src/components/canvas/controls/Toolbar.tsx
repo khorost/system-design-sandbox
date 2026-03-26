@@ -309,8 +309,11 @@ export function Toolbar() {
 
   return (
     <>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
-        <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(19,32,44,0.88)] px-3 py-1.5 shadow-[var(--shadow-panel)] backdrop-blur">
+        <span className="mr-2 flex flex-col">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Workbench</span>
+          <span className="text-sm font-bold text-slate-100">Canvas Tools</span>
+        </span>
         <div className="w-px h-5 bg-[var(--color-border)]" />
         <FileMenu items={menuItems} />
         <div className="w-px h-5 bg-[var(--color-border)]" />

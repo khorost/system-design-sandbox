@@ -276,7 +276,14 @@ function CanvasInner() {
   }, [selectNode, selectEdge]);
 
   return (
-    <div ref={reactFlowWrapper} className="w-full h-full relative">
+    <div
+      ref={reactFlowWrapper}
+      className="w-full h-full relative"
+      style={{
+        backgroundImage:
+          'radial-gradient(circle at top, rgba(110,220,255,0.08), transparent 24%), radial-gradient(circle at 80% 18%, rgba(255,180,84,0.06), transparent 18%)',
+      }}
+    >
       <Toolbar />
       <ReactFlow
         nodes={nodes}
@@ -307,12 +314,12 @@ function CanvasInner() {
         }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#334155" />
-        <Controls className="!bg-[var(--color-surface)] !border-[var(--color-border)] !rounded-lg [&>button]:!bg-[var(--color-surface)] [&>button]:!border-[var(--color-border)] [&>button]:!text-slate-300 [&>button:hover]:!bg-[var(--color-surface-hover)]" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgba(110,220,255,0.22)" />
+        <Controls className="!bg-[rgba(19,32,44,0.92)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)] [&>button]:!bg-[rgba(19,32,44,0.92)] [&>button]:!border-[var(--color-border)] [&>button]:!text-slate-300 [&>button:hover]:!bg-[var(--color-surface-hover)]" />
         <MiniMap
-          className="!bg-[var(--color-surface)] !border-[var(--color-border)] !rounded-lg"
+          className="!bg-[rgba(19,32,44,0.95)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)]"
           nodeColor={(node) => getMiniMapNodeColor(node as ComponentNode)}
-          maskColor="rgba(15,23,42,0.8)"
+          maskColor="rgba(8,16,24,0.84)"
         />
       </ReactFlow>
       <DebugStats />

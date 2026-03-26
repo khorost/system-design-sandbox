@@ -22,18 +22,19 @@ export function LoginPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-100">System Design Sandbox</h1>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.30em] text-[var(--color-accent)]">Workspace Access</div>
+          <h1 className="mt-2 text-2xl font-bold text-slate-100">System Design Sandbox</h1>
           <p className="text-sm text-slate-400 mt-2">
             Sign in or create an account
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-[#1e293b] rounded-xl p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-[linear-gradient(180deg,rgba(19,32,44,0.96),rgba(14,23,34,0.98))] border border-[var(--color-border)] rounded-xl p-6 space-y-4 shadow-[var(--shadow-panel)]">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
+            <label className="block text-xs font-medium uppercase tracking-[0.16em] text-slate-400 mb-2">Email</label>
             <input
               type="email"
               value={email}
@@ -43,7 +44,7 @@ export function LoginPage() {
               }}
               placeholder="you@example.com"
               autoFocus
-              className="w-full px-3 py-2.5 bg-[#0f172a] border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full px-3 py-2.5 bg-[rgba(7,12,19,0.56)] border border-[var(--color-border)] rounded-md text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[rgba(110,220,255,0.24)]"
             />
           </div>
 
@@ -52,7 +53,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={submitting || !email.trim()}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+            className="w-full py-2.5 bg-[#5f6f89] hover:bg-[#6c7ea0] disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-md transition-colors"
           >
             {submitting ? 'Sending...' : 'Continue'}
           </button>

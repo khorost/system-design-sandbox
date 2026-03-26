@@ -49,7 +49,7 @@ export function UserMenu() {
         </button>
 
         {open && (
-          <div className="absolute right-0 top-10 w-48 bg-[#1e293b] border border-slate-600 rounded-lg shadow-xl z-50 py-1">
+          <div className="absolute right-0 top-10 w-48 bg-[#1e293b] border border-slate-600 rounded-md shadow-xl z-50 py-1">
             <div className="px-3 py-2 border-b border-slate-600">
               <p className="text-xs text-slate-200 font-medium truncate">{user?.display_name || user?.name}</p>
               <p className="text-xs text-slate-400 truncate">{user?.email}</p>
@@ -106,7 +106,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1e293b] rounded-xl p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-[#1e293b] rounded-lg p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold text-slate-100 mb-4">Edit Profile</h2>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
@@ -115,7 +115,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
               type="text"
               value={displayName}
               onChange={(e) => { setDisplayName(e.target.value); clearError(); }}
-              className="w-full px-3 py-2.5 bg-[#0f172a] border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2.5 bg-[#0f172a] border border-slate-600 rounded-md text-slate-200 text-sm focus:outline-none focus:border-blue-500"
             />
           </div>
           <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -131,10 +131,10 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
           {error && <p className="text-red-400 text-xs">{error}</p>}
 
           <div className="flex gap-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-slate-300 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors">
+            <button type="button" onClick={onClose} className="flex-1 py-2 text-sm text-slate-300 bg-slate-700 rounded-md hover:bg-slate-600 transition-colors">
               Cancel
             </button>
-            <button type="submit" disabled={submitting} className="flex-1 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-500 disabled:bg-slate-600 transition-colors font-semibold">
+            <button type="submit" disabled={submitting} className="flex-1 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-500 disabled:bg-slate-600 transition-colors font-semibold">
               {submitting ? 'Saving...' : 'Save'}
             </button>
           </div>
@@ -206,7 +206,7 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1e293b] rounded-xl p-6 w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-[#1e293b] rounded-lg p-6 w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-slate-100">
             Active Sessions
@@ -220,7 +220,7 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
         ) : (
           <div className="space-y-2">
             {sessions.map((s) => (
-              <div key={s.session_id} className="bg-[#0f172a] rounded-lg p-3 flex items-center justify-between">
+              <div key={s.session_id} className="bg-[#0f172a] rounded-md p-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-200">
                     {s.geo || s.ip}

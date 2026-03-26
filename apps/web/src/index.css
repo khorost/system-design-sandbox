@@ -1,17 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
-  --color-text: #e2e8f0;
-  --color-text-secondary: #94a3b8;
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
+  --font-ui: "Aptos", "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Aptos Display", "Aptos", "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", "JetBrains Mono", monospace;
+
+  --color-bg: #081018;
+  --color-bg-elevated: #0d1722;
+  --color-surface: #13202c;
+  --color-surface-strong: #182736;
+  --color-surface-hover: #223447;
+  --color-border: #294055;
+  --color-border-strong: #45627c;
+  --color-text: #edf4fb;
+  --color-text-secondary: #97aabd;
+  --color-accent: #6edcff;
+  --color-accent-hover: #a4eeff;
+  --color-accent-warm: #ffb454;
+  --color-success: #54d39a;
+  --color-warning: #ffc76b;
+  --color-error: #ff7d7d;
+  --shadow-panel: 0 18px 40px rgba(3, 8, 14, 0.42);
 }
 
 * {
@@ -21,17 +30,54 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
   background: var(--color-bg);
   color: var(--color-text);
   overflow: hidden;
   height: 100dvh;
   width: 100%;
+  letter-spacing: -0.01em;
+  background-image:
+    radial-gradient(circle at top left, rgba(110, 220, 255, 0.12), transparent 26%),
+    radial-gradient(circle at 85% 18%, rgba(255, 180, 84, 0.10), transparent 20%),
+    linear-gradient(180deg, #081018 0%, #0b141d 52%, #081018 100%);
 }
 
 #root {
   height: 100dvh;
   width: 100%;
+}
+
+::selection {
+  background: rgba(110, 220, 255, 0.24);
+  color: var(--color-text);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(110, 220, 255, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(110, 220, 255, 0.18);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(110, 220, 255, 0.28);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .react-flow__attribution {

@@ -46,30 +46,50 @@ type TopTab = (typeof TOP_TABS)[number];
 const BOTTOM_TABS = ['Simulation', 'Metrics'] as const;
 type BottomTab = (typeof BOTTOM_TABS)[number];
 
+function tabClass(active: boolean) {
+  return `flex-1 px-3 py-2 text-[11px] uppercase tracking-[0.22em] font-semibold rounded-lg transition-all ${
+    active
+      ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
+      : 'text-slate-400 hover:text-slate-200'
+  }`;
+}
+
+function WorkspaceBadge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'accent' | 'warm' }) {
+  const toneClass = tone === 'accent'
+    ? 'border-[rgba(110,220,255,0.28)] bg-[rgba(110,220,255,0.10)] text-[var(--color-accent)]'
+    : tone === 'warm'
+      ? 'border-[rgba(255,180,84,0.24)] bg-[rgba(255,180,84,0.10)] text-[var(--color-accent-warm)]'
+      : 'border-[var(--color-border)] bg-[rgba(255,255,255,0.03)] text-slate-300';
+
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${toneClass}`}>
+      {children}
+    </span>
+  );
+}
+
 function RightPanel() {
   const [activeTopTab, setActiveTopTab] = useState<TopTab>('Properties');
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('Simulation');
 
   return (
-    <div className="bg-[var(--color-surface)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
-      {/* Top zone: Properties / Cost */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="flex border-b border-[var(--color-border)]">
-          {TOP_TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTopTab(tab)}
-              className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
-                activeTopTab === tab
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+    <div className="border-l border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(24,39,54,0.98),rgba(13,23,34,0.98))] flex flex-col overflow-hidden">
+      <div className="flex flex-col min-h-0 flex-[1.08] overflow-hidden border-b border-[var(--color-border)]">
+        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(110,220,255,0.07),rgba(0,0,0,0))]">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent)]">Inspector</div>
+          <div className="mt-3 flex gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-1">
+            {TOP_TABS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTopTab(tab)}
+                className={tabClass(activeTopTab === tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto bg-[rgba(19,32,44,0.7)]">
           <ErrorBoundary key={activeTopTab}>
             {activeTopTab === 'Properties' && <PropertiesPanel />}
             {activeTopTab === 'Traffic' && <TrafficPanel />}
@@ -77,24 +97,23 @@ function RightPanel() {
           </ErrorBoundary>
         </div>
       </div>
-      {/* Bottom zone: Simulation / Metrics */}
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden border-t border-[var(--color-border)]">
-        <div className="flex border-b border-[var(--color-border)]">
-          {BOTTOM_TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveBottomTab(tab)}
-              className={`flex-1 px-2 py-2.5 text-xs uppercase tracking-wider font-semibold transition-colors ${
-                activeBottomTab === tab
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+
+      <div className="flex flex-col min-h-0 flex-[0.92] overflow-hidden">
+        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(255,180,84,0.08),rgba(0,0,0,0))]">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent-warm)]">Telemetry</div>
+          <div className="mt-3 flex gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-1">
+            {BOTTOM_TABS.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveBottomTab(tab)}
+                className={tabClass(activeBottomTab === tab)}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto bg-[rgba(13,23,34,0.76)]">
           <ErrorBoundary key={activeBottomTab}>
             {activeBottomTab === 'Simulation' && <SimulationPanel />}
             {activeBottomTab === 'Metrics' && <MetricsPanel />}
@@ -111,6 +130,9 @@ function MainApp() {
   const { updateAvailable, reload } = useVersionCheck();
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const schemaName = useCanvasStore((s) => s.schemaName);
+  const architectureId = useCanvasStore((s) => s.architectureId);
+  const isPublic = useCanvasStore((s) => s.isPublic);
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -154,40 +176,66 @@ function MainApp() {
     [selectNode],
   );
 
+  const workspaceName = schemaName.trim() || 'Untitled Architecture';
+  const storageLabel = architectureId
+    ? 'Cloud Saved'
+    : user
+      ? 'Local Draft'
+      : 'Anonymous Local';
+
   return (
     <div className="h-screen overflow-hidden bg-[var(--color-bg)] flex flex-col">
-      {/* Top navigation bar */}
-      <div className="h-12 flex items-center justify-between px-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
-        <div className="flex items-center gap-1 bg-[var(--color-bg)] rounded-lg p-1">
-          <button
-            onClick={() => setViewMode('canvas')}
-            className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
-              viewMode === 'canvas'
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Designer
-          </button>
-          <button
-            onClick={() => setViewMode('table')}
-            className={`px-5 py-2 text-sm font-semibold rounded-md transition-colors ${
-              viewMode === 'table'
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Inventory
-          </button>
+      <div className="h-16 flex items-center justify-between px-4 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(19,32,44,0.94),rgba(13,23,34,0.96))] shrink-0 shadow-[0_10px_26px_rgba(2,8,14,0.35)]">
+        <div className="min-w-0 flex items-center gap-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-[var(--color-accent)]">
+              System Design Sandbox
+            </div>
+            <div className="mt-1 flex items-center gap-2 min-w-0">
+              <span
+                className="truncate text-sm font-semibold text-[var(--color-text)]"
+                style={{ fontFamily: 'var(--font-display)' }}
+                title={workspaceName}
+              >
+                {workspaceName}
+              </span>
+              <WorkspaceBadge tone={architectureId ? 'accent' : 'neutral'}>{storageLabel}</WorkspaceBadge>
+              {isPublic && <WorkspaceBadge tone="warm">Public</WorkspaceBadge>}
+              {!user && <WorkspaceBadge tone="warm">Guest</WorkspaceBadge>}
+            </div>
+          </div>
         </div>
+
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.54)] p-1">
+            <button
+              onClick={() => setViewMode('canvas')}
+              className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] rounded-lg transition-all ${
+                viewMode === 'canvas'
+                  ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Designer
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] rounded-lg transition-all ${
+                viewMode === 'table'
+                  ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Inventory
+            </button>
+          </div>
           <PlatformStatus />
           {user ? (
             <UserMenu />
           ) : (
             <button
               onClick={() => useAuthStore.getState().setView('login')}
-              className="px-3 py-1.5 text-xs font-medium text-slate-300 bg-blue-500/20 rounded-md hover:bg-blue-500/30 transition-colors"
+              className="px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)] border border-[rgba(110,220,255,0.28)] bg-[rgba(110,220,255,0.08)] rounded-lg hover:bg-[rgba(110,220,255,0.14)] transition-colors"
             >
               Sign in
             </button>
@@ -199,7 +247,7 @@ function MainApp() {
       {viewMode === 'canvas' ? (
         <div
           className="flex-1 min-h-0 overflow-hidden"
-          style={{ display: 'grid', gridTemplateColumns: '16rem 1fr 20rem' }}
+          style={{ display: 'grid', gridTemplateColumns: 'clamp(16rem, 18vw, 18rem) minmax(0, 1fr) clamp(20rem, 23vw, 22rem)' }}
         >
           <ComponentPalette />
           <div className="min-w-0 min-h-0 overflow-hidden">
@@ -213,9 +261,9 @@ function MainApp() {
         </div>
       )}
       {updateAvailable && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-6 py-2.5 bg-blue-600 text-white text-sm rounded-lg shadow-lg">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-6 py-2.5 border border-[rgba(110,220,255,0.32)] bg-[rgba(19,32,44,0.94)] text-white text-sm rounded-xl shadow-[var(--shadow-panel)] backdrop-blur">
           <span>New version available</span>
-          <button onClick={reload} className="px-3 py-1 bg-white/20 rounded hover:bg-white/30 font-medium transition-colors">
+          <button onClick={reload} className="px-3 py-1 rounded-lg bg-[rgba(110,220,255,0.18)] text-[var(--color-accent-hover)] hover:bg-[rgba(110,220,255,0.24)] font-medium transition-colors">
             Refresh
           </button>
         </div>
