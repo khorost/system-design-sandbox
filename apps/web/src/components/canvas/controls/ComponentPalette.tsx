@@ -52,7 +52,7 @@ export function ComponentPalette() {
         {paletteCategories.map((cat) => {
           const query = search.toLowerCase();
           const items = paletteItems.filter((i) => i.category === cat.key && (!query || i.label.toLowerCase().includes(query) || i.type.toLowerCase().includes(query)));
-          if (query && items.length === 0) return null;
+          if (items.length === 0) return null;
           const isExpanded = query ? true : expandedCategory === cat.key;
           return (
             <div key={cat.key} className={`rounded-lg border ${isExpanded ? 'border-[rgba(110,220,255,0.22)] bg-[rgba(24,36,50,0.72)]' : 'border-[rgba(138,167,198,0.16)] bg-[rgba(24,36,50,0.6)]'}`}>

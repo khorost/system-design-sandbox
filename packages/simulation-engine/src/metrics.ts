@@ -50,6 +50,7 @@ export function aggregateMetrics(
     nodeTagTraffic: {},
     edgeTagTraffic: {},
     nodeCacheStats: {},
+    circuitBreakerStates: {},
   };
 }
 

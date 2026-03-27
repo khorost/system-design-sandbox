@@ -140,4 +140,66 @@ describe('resolveNextHops', () => {
     const hops = resolveNextHops('a', 'default', ['a'], adj, connMap, lbNodes);
     expect(hops).toEqual([]);
   });
+
+  it('least_conn picks target with lowest utilization', () => {
+    const adj = new Map([['lb', ['s1', 's2']]]);
+    const connMap = new Map<string, ConnectionModel>();
+    const lbNodes = new Set(['lb']);
+    const components = new Map<string, ComponentModel>([
+      ['lb', mkComponent({ id: 'lb', type: 'load_balancer', lbAlgorithm: 'least_conn' })],
+      ['s1', mkComponent({ id: 's1', currentLoad: 800, maxRps: 1000 })],
+      ['s2', mkComponent({ id: 's2', currentLoad: 200, maxRps: 1000 })],
+    ]);
+
+    // Run multiple times — least_conn should always pick s2 (lower load)
+    for (let i = 0; i < 10; i++) {
+      const hops = resolveNextHops('lb', 'default', ['lb'], adj, connMap, lbNodes, components);
+      expect(hops).toHaveLength(1);
+      expect(hops[0].target).toBe('s2');
+    }
+  });
+
+  it('blockedTags prevents routing for blocked tag', () => {
+    const adj = new Map([['lb', ['s1']]]);
+    const connMap = new Map<string, ConnectionModel>();
+    const lbNodes = new Set(['lb']);
+    const components = new Map<string, ComponentModel>([
+      ['lb', mkComponent({ id: 'lb', type: 'load_balancer', blockedTags: ['api'] })],
+      ['s1', mkComponent({ id: 's1' })],
+    ]);
+
+    const hops = resolveNextHops('lb', 'api', ['lb'], adj, connMap, lbNodes, components);
+    expect(hops).toEqual([]);
+
+    // Non-blocked tag should pass
+    const hops2 = resolveNextHops('lb', 'web', ['lb'], adj, connMap, lbNodes, components);
+    expect(hops2).toHaveLength(1);
+  });
+
+  it('supportedTags filters targets', () => {
+    const adj = new Map([['gw', ['cdn', 'svc']]]);
+    const connMap = new Map<string, ConnectionModel>();
+    const lbNodes = new Set<string>();
+    const components = new Map<string, ComponentModel>([
+      ['gw', mkComponent({ id: 'gw', type: 'api_gateway' })],
+      ['cdn', mkComponent({ id: 'cdn', type: 'cdn', supportedTags: ['web', 'content'] })],
+      ['svc', mkComponent({ id: 'svc', type: 'service' })],
+    ]);
+
+    // 'api' tag not in cdn's supportedTags → only svc is candidate
+    const hops = resolveNextHops('gw', 'api', ['gw'], adj, connMap, lbNodes, components);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].target).toBe('svc');
+  });
+
+  it('weight 0 blocks tag on connection', () => {
+    const adj = new Map([['a', ['b']]]);
+    const connMap = new Map<string, ConnectionModel>([
+      ['a->b', mkConn('a', 'b', { routingRules: [{ tag: 'api', weight: 0 }] })],
+    ]);
+    const lbNodes = new Set<string>();
+
+    const hops = resolveNextHops('a', 'api', ['a'], adj, connMap, lbNodes);
+    expect(hops).toEqual([]);
+  });
 });

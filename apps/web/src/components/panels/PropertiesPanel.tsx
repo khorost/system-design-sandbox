@@ -11,7 +11,7 @@ import type { ArchitectureSchema } from '../../types/index.ts';
 import type { EdgeRoutingRule, ProtocolType } from '../../types/index.ts';
 import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS, NETWORK_PROTOCOLS } from '../../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES, isValidNesting } from '../../utils/networkLatency.ts';
-import { getConnectionTags } from '../../utils/nodeTags.ts';
+import { getConnectionTags, getNodeTags } from '../../utils/nodeTags.ts';
 import { notify } from '../../utils/notifications.ts';
 import { getComponentIcon, paletteItems } from '../canvas/controls/paletteData.ts';
 import { SavedArchitecturesModal } from '../SavedArchitecturesModal.tsx';
@@ -264,7 +264,12 @@ function EdgeProperties() {
           />
         </div>
 
-        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} sourceNode={sourceNode} targetNode={targetNode} allEdges={edges} />
+        {/* Tag routing moved to Tags tab */}
+
+        {/* Circuit Breaker */}
+        <CircuitBreakerEditor edgeId={edge.id} cb={data?.circuitBreaker as { enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number } | undefined} updateEdgeData={updateEdgeData} />
+
+        <RetryPolicyEditor edgeId={edge.id} retry={data?.retryPolicy as { enabled: boolean; maxRetries: number; backoffMs: number } | undefined} updateEdgeData={updateEdgeData} />
       </div>
 
       <div className="p-3 border-t border-[var(--color-border)]">
@@ -280,7 +285,7 @@ function EdgeProperties() {
 }
 
 
-function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, targetNode, allEdges }: {
+export function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, targetNode, allEdges }: {
   edgeId: string;
   rules: EdgeRoutingRule[];
   updateEdgeData: (id: string, data: Record<string, unknown>) => void;
@@ -305,6 +310,21 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, tar
     } else {
       const oldRule = getRule(tag);
       update([...existing, { tag, weight: coeff, ...(oldRule?.outTag ? { outTag: oldRule.outTag } : {}) }]);
+    }
+  };
+
+  // Block: store previous weight as negative; Unblock: restore from negative
+  const toggleBlock = (tag: string) => {
+    const rule = getRule(tag);
+    const currentWeight = rule?.weight ?? 1;
+    if (currentWeight <= 0) {
+      // Unblock — restore previous weight (stored as negative, or default 1)
+      const prevWeight = (rule as Record<string, unknown> | undefined)?._prevWeight as number | undefined;
+      setCoeff(tag, prevWeight && prevWeight > 0 ? prevWeight : 1);
+    } else {
+      // Block — save current weight, set to 0
+      const existing = rules.filter(r => r.tag !== tag);
+      update([...existing, { tag, weight: 0, _prevWeight: currentWeight, ...(rule?.outTag ? { outTag: rule.outTag } : {}) } as EdgeRoutingRule]);
     }
   };
 
@@ -337,16 +357,23 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, tar
             const blocked = coeff <= 0;
             return (
               <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${blocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
-                <span className={`text-xs font-medium w-16 shrink-0 truncate ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={coeff}
-                  aria-label={`Weight for tag ${tag}`}
-                  onChange={(e) => setCoeff(tag, Number(e.target.value))}
-                  className={`w-12 shrink-0 px-1.5 py-0.5 text-xs text-right ${compactInputClass}`}
-                />
+                <button
+                  onClick={() => toggleBlock(tag)}
+                  title={blocked ? 'Unblock tag' : 'Block tag'}
+                  className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${blocked ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'}`}
+                >{blocked ? '✕' : '✓'}</button>
+                <span className={`text-xs font-medium w-14 shrink-0 truncate ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
+                {!blocked && (
+                  <input
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    value={coeff}
+                    aria-label={`Weight for tag ${tag}`}
+                    onChange={(e) => { const v = Number(e.target.value); if (v > 0) setCoeff(tag, v); }}
+                    className={`w-12 shrink-0 px-1.5 py-0.5 text-xs text-right ${compactInputClass}`}
+                  />
+                )}
                 {blocked ? (
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>
                 ) : (
@@ -447,69 +474,37 @@ function NodeProperties() {
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div className={sectionClass}>
-          <div className="mb-3">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-accent)]">Presentation</div>
-            <div className="mt-1 text-[11px] text-slate-500">Identity, colors and placement in the scheme</div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <label htmlFor={`node-${selectedNode.id}-name`} className={labelClass}>Name</label>
+          <div className="space-y-2">
+            {/* Name + Colors — compact row */}
+            <div className="flex items-center gap-2">
               <input
                 type="text"
                 id={`node-${selectedNode.id}-name`}
                 value={(config.name as string) || selectedNode.data.label}
                 onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
                 maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
-                className={inputClass}
+                className={`flex-1 ${inputClass}`}
+                placeholder="Name"
               />
+              {(() => {
+                const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
+                const defaultTextColor = '#e2e8f0';
+                return (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input type="color" value={(config.color as string) || defaultColor}
+                      onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
+                      title="Border color" aria-label="Border color"
+                      className="w-6 h-6 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded-sm"
+                    />
+                    <input type="color" value={(config.textColor as string) || defaultTextColor}
+                      onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
+                      title="Text color" aria-label="Text color"
+                      className="w-6 h-6 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded-sm"
+                    />
+                  </div>
+                );
+              })()}
             </div>
-
-            {(() => {
-              const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
-              const defaultTextColor = '#e2e8f0';
-              return (
-                <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <label className={labelClass}>Colors</label>
-                    {(config.color != null || config.textColor != null) && (
-                      <button
-                        onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
-                        className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-2 flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        id={`node-${selectedNode.id}-borderColor`}
-                        value={(config.color as string) || defaultColor}
-                        onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
-                        title="Border color"
-                        aria-label="Border color"
-                        className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
-                      />
-                      <span className="text-[11px] text-slate-400">Border</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="color"
-                        id={`node-${selectedNode.id}-textColor`}
-                        value={(config.textColor as string) || defaultTextColor}
-                        onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
-                        title="Text color"
-                        aria-label="Text color"
-                        className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
-                      />
-                      <span className="text-[11px] text-slate-400">Text</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
 
             {validParents.length > 0 ? (
               <div>
@@ -631,29 +626,7 @@ function NodeProperties() {
               </div>
             ) : null}
 
-            {selectedNode.data.componentType === 'cdn' && (
-              <CacheRulesEditor
-                nodeId={selectedNode.id}
-                rules={(config.cacheRules as CacheRuleEntry[] | undefined) ?? (def?.defaultConfig?.cacheRules as CacheRuleEntry[] | undefined) ?? []}
-                updateNodeConfig={updateNodeConfig}
-              />
-            )}
-
-            {(Boolean(def?.defaultConfig?.responseRules) || Boolean(config.responseRules)) && (
-              <ResponseRulesEditor
-                nodeId={selectedNode.id}
-                rules={(config.responseRules as ResponseRuleEntry[] | undefined) ?? (def?.defaultConfig?.responseRules as ResponseRuleEntry[] | undefined) ?? []}
-                updateNodeConfig={updateNodeConfig}
-              />
-            )}
-
-            {CLIENT_TYPES.has(selectedNode.data.componentType) && (
-              <TagDistributionEditor
-                nodeId={selectedNode.id}
-                tags={(config.tagDistribution as TagWeightEntry[] | undefined) ?? []}
-                updateNodeConfig={updateNodeConfig}
-              />
-            )}
+            {/* Tag editors moved to Tags tab */}
 
             {!showStandaloneReplicas && modelParams.length === 0 && effectiveRps == null && (
               <p className="text-sm text-slate-400">No simulation parameters for this component type.</p>
@@ -674,7 +647,7 @@ function NodeProperties() {
   );
 }
 
-function CacheRulesEditor({ nodeId, rules, updateNodeConfig }: {
+export function CacheRulesEditor({ nodeId, rules, updateNodeConfig }: {
   nodeId: string;
   rules: CacheRuleEntry[];
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
@@ -773,7 +746,7 @@ function CacheRulesEditor({ nodeId, rules, updateNodeConfig }: {
   );
 }
 
-function ResponseRulesEditor({ nodeId, rules, updateNodeConfig }: {
+export function ResponseRulesEditor({ nodeId, rules, updateNodeConfig }: {
   nodeId: string;
   rules: ResponseRuleEntry[];
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
@@ -861,7 +834,7 @@ function ResponseRulesEditor({ nodeId, rules, updateNodeConfig }: {
   );
 }
 
-function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
+export function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   nodeId: string;
   tags: TagWeightEntry[];
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
@@ -1244,4 +1217,183 @@ export function PropertiesPanel() {
   }
 
   return <SchemaProperties />;
+}
+
+
+export function TagFilterEditor({ nodeId, blockedTags, updateNodeConfig }: {
+  nodeId: string;
+  blockedTags: string[];
+  updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
+}) {
+  // Compute tags flowing through this LB from incoming edges' sources and outgoing targets
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+
+  const incomingTags = new Set<string>();
+  const outgoingTags = new Set<string>();
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  for (const e of edges) {
+    if (e.target === nodeId) {
+      const src = nodeMap.get(e.source);
+      if (src) {
+        const tags = getNodeTags(src);
+        if (tags) tags.forEach(t => incomingTags.add(t));
+      }
+    }
+    if (e.source === nodeId) {
+      const tgt = nodeMap.get(e.target);
+      if (tgt) {
+        const tags = getNodeTags(tgt);
+        if (tags) tags.forEach(t => outgoingTags.add(t));
+      }
+    }
+  }
+
+  // Passthrough tags = union of all discovered tags (LB is wildcard, passes what sources send)
+  const allTags = new Set([...incomingTags, ...outgoingTags]);
+  if (allTags.size === 0) return null;
+
+  const blockedSet = new Set(blockedTags);
+
+  const toggleTag = (tag: string) => {
+    const newBlocked = blockedSet.has(tag)
+      ? blockedTags.filter(t => t !== tag)
+      : [...blockedTags, tag];
+    updateNodeConfig(nodeId, { blockedTags: newBlocked.length > 0 ? newBlocked : undefined });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Tag Filter</div>
+      <div className="space-y-1">
+        {[...allTags].sort().map(tag => {
+          const blocked = blockedSet.has(tag);
+          return (
+            <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${blocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
+              <button
+                onClick={() => toggleTag(tag)}
+                title={blocked ? 'Unblock tag' : 'Block tag'}
+                className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${blocked ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'}`}
+              >{blocked ? '✕' : '✓'}</button>
+              <span className={`text-xs font-medium ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
+              {blocked && <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+function CircuitBreakerEditor({ edgeId, cb, updateEdgeData }: {
+  edgeId: string;
+  cb?: { enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number };
+  updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+}) {
+  const enabled = cb?.enabled ?? false;
+  const errorThreshold = cb?.errorThreshold ?? 50;
+  const timeoutMs = cb?.timeoutMs ?? 30000;
+  const halfOpenRequests = cb?.halfOpenRequests ?? 3;
+
+  const update = (patch: Partial<{ enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number }>) => {
+    updateEdgeData(edgeId, {
+      circuitBreaker: { enabled, errorThreshold, timeoutMs, halfOpenRequests, ...patch },
+    });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Circuit Breaker</span>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <span className="text-xs text-slate-400">{enabled ? 'On' : 'Off'}</span>
+        </label>
+      </div>
+      {enabled && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Error Threshold (%)</label>
+            <input type="number" value={errorThreshold} min={1} max={100} step={1}
+              onChange={(e) => update({ errorThreshold: Math.max(1, Math.min(100, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Timeout (ms)</label>
+            <input type="number" value={timeoutMs} min={100} max={300000} step={1000}
+              onChange={(e) => update({ timeoutMs: Math.max(100, Math.min(300000, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Half-Open Requests</label>
+            <input type="number" value={halfOpenRequests} min={1} max={100} step={1}
+              onChange={(e) => update({ halfOpenRequests: Math.max(1, Math.min(100, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function RetryPolicyEditor({ edgeId, retry, updateEdgeData }: {
+  edgeId: string;
+  retry?: { enabled: boolean; maxRetries: number; backoffMs: number };
+  updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+}) {
+  const enabled = retry?.enabled ?? false;
+  const maxRetries = retry?.maxRetries ?? 2;
+  const backoffMs = retry?.backoffMs ?? 100;
+
+  const update = (patch: Partial<{ enabled: boolean; maxRetries: number; backoffMs: number }>) => {
+    updateEdgeData(edgeId, {
+      retryPolicy: { enabled, maxRetries, backoffMs, ...patch },
+    });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Retry Policy</span>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <span className="text-xs text-slate-400">{enabled ? 'On' : 'Off'}</span>
+        </label>
+      </div>
+      {enabled && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Max Retries</label>
+            <input type="number" value={maxRetries} min={1} max={10} step={1}
+              onChange={(e) => update({ maxRetries: Math.max(1, Math.min(10, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Backoff (ms)</label>
+            <input type="number" value={backoffMs} min={10} max={10000} step={50}
+              onChange={(e) => update({ backoffMs: Math.max(10, Math.min(10000, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

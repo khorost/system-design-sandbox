@@ -99,6 +99,10 @@ export function resolveNextHops(
   const neighbors = adjacency.get(currentNode);
   if (!neighbors || neighbors.length === 0) return [];
 
+  // Check if current node blocks this tag
+  const srcComp = components?.get(currentNode);
+  if (srcComp?.blockedTags?.includes(tag)) return [];
+
   const visitedSet = new Set(visited);
   const unvisited = neighbors.filter(n => !visitedSet.has(n));
   if (unvisited.length === 0) return [];
@@ -122,7 +126,36 @@ export function resolveNextHops(
 
   if (candidates.length === 0) return [];
 
-  // Weighted random selection: 1 request → 1 target proportional to coefficients
+  // Load balancer algorithm-aware selection
+  const currentComp = components?.get(currentNode);
+  const algo = currentComp?.lbAlgorithm;
+
+  if (algo === 'least_conn' && components && candidates.length > 1) {
+    // least_conn: pick the target with lowest utilization (currentLoad / maxRps)
+    let bestTarget = candidates[0];
+    let bestUtil = Infinity;
+    for (const c of candidates) {
+      const comp = components.get(c.target);
+      const util = comp ? comp.currentLoad / (comp.maxRps || 1) : 0;
+      if (util < bestUtil) {
+        bestUtil = util;
+        bestTarget = c;
+      }
+    }
+    return [{ target: bestTarget.target, count: 1, outTag: bestTarget.outTag }];
+  }
+
+  if (algo === 'ip_hash' && candidates.length > 1) {
+    // ip_hash: deterministic selection based on tag hash → sticky routing
+    // Simulates uneven distribution (some backends get more traffic)
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++) hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
+    const idx = Math.abs(hash) % candidates.length;
+    const c = candidates[idx];
+    return [{ target: c.target, count: 1, outTag: c.outTag }];
+  }
+
+  // round_robin / default: weighted random selection
   const totalCoeff = candidates.reduce((s, c) => s + c.coeff, 0);
   let rand = Math.random() * totalCoeff;
   for (const c of candidates) {

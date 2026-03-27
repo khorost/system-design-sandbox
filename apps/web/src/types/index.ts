@@ -93,6 +93,18 @@ export interface EdgeData {
   bandwidthMbps: number;
   timeoutMs: number;
   routingRules?: EdgeRoutingRule[];
+  waypoints?: Array<{ x: number; y: number }>;
+  circuitBreaker?: {
+    enabled: boolean;
+    errorThreshold: number;    // % errors to trip (default 50)
+    timeoutMs: number;         // time in OPEN state (default 30000)
+    halfOpenRequests: number;  // probe requests in HALF_OPEN (default 3)
+  };
+  retryPolicy?: {
+    enabled: boolean;
+    maxRetries: number;        // max retry attempts (default 2)
+    backoffMs: number;         // backoff between retries (default 100)
+  };
   [key: string]: unknown;
 }
 

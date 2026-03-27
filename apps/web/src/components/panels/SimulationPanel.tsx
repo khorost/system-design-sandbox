@@ -202,11 +202,25 @@ export function SimulationPanel() {
             <MetricCard label="P99" value={`${currentMetrics.latencyP99.toFixed(1)} ms`} />
             <MetricCard label="RPS" value={`${formatNumber(currentMetrics.throughput)}/s`} />
             <MetricCard label="Err" value={`${(currentMetrics.errorRate * 100).toFixed(1)}%`} color={currentMetrics.errorRate > 0.05 ? 'text-rose-300' : undefined} />
+            {(currentMetrics.engineStats?.retriesThisTick ?? 0) > 0 && (
+              <MetricCard label="Retry" value={`${currentMetrics.engineStats!.retriesThisTick}/tick`} color="text-amber-300" />
+            )}
           </div>
           <div className="grid grid-cols-1 gap-2">
             <MetricCard label="In" value={formatBandwidth(currentMetrics.totalInboundKBps)} />
             <MetricCard label="Out" value={formatBandwidth(currentMetrics.totalOutboundKBps)} />
           </div>
+          {/* Circuit breaker status */}
+          {Object.entries(currentMetrics.circuitBreakerStates ?? {}).some(([, s]) => s !== 'CLOSED') && (
+            <div className="mt-1 space-y-1">
+              {Object.entries(currentMetrics.circuitBreakerStates ?? {}).filter(([, s]) => s !== 'CLOSED').map(([key, state]) => (
+                <div key={key} className="flex items-center justify-between text-[10px] rounded px-2 py-1 bg-orange-900/20 border border-orange-800/30">
+                  <span className="text-slate-300 truncate">{key.replace('->', ' → ')}</span>
+                  <span className={`font-bold ${state === 'OPEN' ? 'text-red-400' : 'text-orange-400'}`}>CB {state}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

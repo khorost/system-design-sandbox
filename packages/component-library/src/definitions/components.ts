@@ -37,6 +37,8 @@ export interface ComponentDefinition {
   };
   /** Extra config values applied when the node is first created (e.g. tagDistribution). */
   defaultConfig?: Record<string, unknown>;
+  /** Deprecated components are hidden from palette but still importable for backward compatibility. */
+  deprecated?: boolean;
 }
 
 export const componentDefinitions: ComponentDefinition[] = [
@@ -124,8 +126,14 @@ export const componentDefinitions: ComponentDefinition[] = [
     description: 'API Gateway with rate limiting and auth',
     params: [
       { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 25000, min: 1, max: 10000000 },
-      { key: 'rate_limit', label: 'Rate Limit', type: 'number', default: 1000, min: 1, max: 100000000 },
-      { key: 'auth_enabled', label: 'Auth Enabled', type: 'boolean', default: true },
+      { key: 'rate_limit_enabled', label: 'Rate Limit', type: 'boolean', default: false },
+      { key: 'rate_limit', label: 'Rate Limit (req/s)', type: 'number', default: 1000, min: 1, max: 100000000 },
+      { key: 'auth_enabled', label: 'Auth', type: 'boolean', default: true },
+      { key: 'auth_latency_ms', label: 'Auth Latency (ms)', type: 'number', default: 5, min: 0, max: 1000 },
+      { key: 'auth_fail_rate', label: 'Auth Fail Rate (%)', type: 'number', default: 2, min: 0, max: 100 },
+      { key: 'retry_enabled', label: 'Retry', type: 'boolean', default: false },
+      { key: 'retry_max', label: 'Max Retries', type: 'number', default: 2, min: 1, max: 10 },
+      { key: 'retry_backoff_ms', label: 'Retry Backoff (ms)', type: 'number', default: 100, min: 10, max: 10000 },
     ],
     defaults: { maxRps: 25000, baseLatencyMs: 5, replicas: 2 },
   },
@@ -139,6 +147,9 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 50000, min: 1, max: 10000000 },
       { key: 'algorithm', label: 'Algorithm', type: 'select', default: 'round_robin', options: ['round_robin', 'least_conn', 'ip_hash'] },
       { key: 'max_connections', label: 'Max Connections', type: 'number', default: 10000, min: 1, max: 1000000 },
+      { key: 'retry_enabled', label: 'Retry', type: 'boolean', default: true },
+      { key: 'retry_max', label: 'Max Retries', type: 'number', default: 2, min: 1, max: 10 },
+      { key: 'retry_backoff_ms', label: 'Retry Backoff (ms)', type: 'number', default: 100, min: 10, max: 10000 },
     ],
     defaults: { maxRps: 50000, baseLatencyMs: 1, replicas: 2 },
   },
@@ -201,6 +212,8 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 2000, min: 1, max: 10000000 },
       { key: 'base_latency_ms', label: 'Base Latency (ms)', type: 'number', default: 10, min: 0, max: 60000 },
       { key: 'language', label: 'Language', type: 'select', default: '', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
+      { key: 'rate_limit_enabled', label: 'Rate Limit', type: 'boolean', default: false },
+      { key: 'rate_limit', label: 'Rate Limit (req/s)', type: 'number', default: 1000, min: 1, max: 10000000 },
     ],
     defaults: { maxRps: 2000, baseLatencyMs: 10, replicas: 3 },
   },
@@ -230,6 +243,8 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'concurrency', label: 'Concurrency', type: 'number', default: 10, min: 1, max: 10000 },
       { key: 'poll_interval_ms', label: 'Poll Interval (ms)', type: 'number', default: 100, min: 1, max: 60000 },
       { key: 'language', label: 'Language', type: 'select', default: '', options: ['', 'go', 'java', 'python', 'rust', 'typescript', 'csharp', 'kotlin', 'ruby', 'php', 'cpp', 'scala', 'elixir'] },
+      { key: 'rate_limit_enabled', label: 'Rate Limit', type: 'boolean', default: false },
+      { key: 'rate_limit', label: 'Rate Limit (req/s)', type: 'number', default: 1000, min: 1, max: 10000000 },
     ],
     defaults: { maxRps: 200, baseLatencyMs: 100, replicas: 2 },
   },
@@ -575,7 +590,8 @@ export const componentDefinitions: ComponentDefinition[] = [
     label: 'Circuit Breaker',
     category: 'reliability',
     icon: '🔌',
-    description: 'Prevents cascading failures',
+    description: 'Prevents cascading failures (use connection Circuit Breaker instead)',
+    deprecated: true,
     params: [
       { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1, max: 10000000 },
       { key: 'threshold', label: 'Threshold', type: 'number', default: 5, min: 1, max: 1000 },
@@ -589,7 +605,8 @@ export const componentDefinitions: ComponentDefinition[] = [
     label: 'Rate Limiter',
     category: 'reliability',
     icon: '🚦',
-    description: 'Controls request rate',
+    description: 'Controls request rate (use node Rate Limit parameter instead)',
+    deprecated: true,
     params: [
       { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 200000, min: 1, max: 10000000 },
       { key: 'algorithm', label: 'Algorithm', type: 'select', default: 'token_bucket', options: ['token_bucket', 'sliding_window'] },

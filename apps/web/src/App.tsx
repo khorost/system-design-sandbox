@@ -10,6 +10,7 @@ import { InventoryTable } from './components/inventory/InventoryTable.tsx';
 import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
+import { TagsPanel } from './components/panels/TagsPanel.tsx';
 import { TrafficPanel } from './components/panels/TrafficPanel.tsx';
 import { PlatformStatus } from './components/ui/PlatformStatus.tsx';
 import { ToastContainer } from './components/ui/ToastContainer.tsx';
@@ -40,7 +41,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-const TOP_TABS = ['Properties', 'Traffic'] as const;
+const TOP_TABS = ['Properties', 'Traffic', 'Tags'] as const;
 type TopTab = (typeof TOP_TABS)[number];
 
 const BOTTOM_TABS = ['Simulation', 'Metrics'] as const;
@@ -93,6 +94,7 @@ function RightPanel() {
           <ErrorBoundary key={activeTopTab}>
             {activeTopTab === 'Properties' && <PropertiesPanel />}
             {activeTopTab === 'Traffic' && <TrafficPanel />}
+            {activeTopTab === 'Tags' && <TagsPanel />}
           </ErrorBoundary>
         </div>
       </div>

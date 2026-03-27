@@ -49,6 +49,7 @@ interface SimulationState {
   nodeTagTraffic: Record<string, NodeTagTraffic>;
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
   nodeCacheStats: Record<string, Record<string, CacheTagStats>>;
+  circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'>;
 
   setLoadType: (type: 'constant' | 'ramp' | 'spike') => void;
   start: () => Promise<void>;
@@ -73,6 +74,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   nodeTagTraffic: {},
   edgeTagTraffic: {},
   nodeCacheStats: {},
+  circuitBreakerStates: {},
 
   setLoadType: (type) => {
     set({ loadType: type });
@@ -105,14 +107,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     // Reset buffer and set isRunning BEFORE starting worker
     historyBuf = [];
     historyVersion = 0;
-    set({ isRunning: true, isPaused: false, metricsHistory: [], currentMetrics: null, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {} });
+    set({ isRunning: true, isPaused: false, metricsHistory: [], currentMetrics: null, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {}, circuitBreakerStates: {} });
     workerManager.start(profile);
   },
 
   stop: () => {
     workerManager.stop();
     if (tickUnsub) { tickUnsub(); tickUnsub = null; }
-    set({ isRunning: false, isPaused: false, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {} });
+    set({ isRunning: false, isPaused: false, nodeUtilization: {}, nodeEma: {}, edgeThroughput: {}, edgeLatency: {}, edgeEma: {}, nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {}, circuitBreakerStates: {} });
   },
 
   pause: () => {
@@ -213,6 +215,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       nodeTagTraffic: metrics.nodeTagTraffic,
       edgeTagTraffic: newEdgeTagTraffic,
       nodeCacheStats: metrics.nodeCacheStats ?? {},
+      circuitBreakerStates: metrics.circuitBreakerStates ?? {},
     });
   },
 

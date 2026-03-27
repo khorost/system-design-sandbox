@@ -26,6 +26,8 @@ export function getNodeTags(node: ComponentNode): string[] | null {
   const tagDist = (config.tagDistribution ?? def?.defaultConfig?.tagDistribution) as TagEntry[] | undefined;
   if (tagDist && tagDist.length > 0) return tagDist.map(t => t.tag);
 
+  // LB with blockedTags — still wildcard but blocks specific tags
+  // (handled via supportedTags in converter, not here — LB stays wildcard for connection tag display)
   return null; // wildcard — accepts any tag
 }
 

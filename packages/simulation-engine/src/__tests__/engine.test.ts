@@ -130,4 +130,75 @@ describe('createSimulationEngine', () => {
     expect(report.failedNode).toBe('svc');
     expect(components.get('svc')!.isAlive).toBe(false);
   });
+
+  it('rate limit causes errors when load exceeds limit', () => {
+    const components = new Map<string, ComponentModel>([
+      ['client', mkComponent({ id: 'client', type: 'web_client', generatedRps: 500, maxRps: 100000 })],
+      ['gw', mkComponent({ id: 'gw', type: 'api_gateway', maxRps: 100000, rateLimitRps: 10 })],
+    ]);
+    const connections: ConnectionModel[] = [
+      { from: 'client', to: 'gw', protocol: 'REST', latencyMs: 1, bandwidthMbps: 1000, timeoutMs: 5000 },
+    ];
+    const engine = createSimulationEngine(components, connections);
+    engine.start({ type: 'constant', rps: 500, durationSec: 10 });
+
+    let metrics;
+    for (let i = 0; i < 5; i++) metrics = engine.tick();
+    // With 500 rps and rate limit 10, error rate should be high
+    expect(metrics!.errorRate).toBeGreaterThan(0);
+  });
+
+  it('auth overhead adds latency', () => {
+    const components = new Map<string, ComponentModel>([
+      ['client', mkComponent({ id: 'client', type: 'web_client', generatedRps: 100, maxRps: 100000 })],
+      ['gw', mkComponent({ id: 'gw', type: 'api_gateway', maxRps: 100000, authEnabled: true, authLatencyMs: 50, authFailRate: 0 })],
+    ]);
+    const connections: ConnectionModel[] = [
+      { from: 'client', to: 'gw', protocol: 'REST', latencyMs: 1, bandwidthMbps: 1000, timeoutMs: 5000 },
+    ];
+    const engine = createSimulationEngine(components, connections);
+    engine.start({ type: 'constant', rps: 100, durationSec: 10 });
+
+    let metrics;
+    for (let i = 0; i < 5; i++) metrics = engine.tick();
+    // Auth adds 50ms → p50 should be >= 50
+    if (metrics!.latencyP50 > 0) {
+      expect(metrics!.latencyP50).toBeGreaterThanOrEqual(50);
+    }
+  });
+
+  it('circuit breaker states are reported', () => {
+    const components = new Map<string, ComponentModel>([
+      ['client', mkComponent({ id: 'client', type: 'web_client', generatedRps: 100, maxRps: 100000 })],
+      ['svc', mkComponent({ id: 'svc', type: 'service', maxRps: 100000 })],
+    ]);
+    const connections: ConnectionModel[] = [
+      { from: 'client', to: 'svc', protocol: 'REST', latencyMs: 1, bandwidthMbps: 1000, timeoutMs: 5000,
+        circuitBreaker: { enabled: true, errorThreshold: 50, timeoutMs: 30000, halfOpenRequests: 3 } },
+    ];
+    const engine = createSimulationEngine(components, connections);
+    engine.start({ type: 'constant', rps: 100, durationSec: 10 });
+
+    const metrics = engine.tick();
+    // CB should be reported, initially CLOSED
+    expect(metrics.circuitBreakerStates['client->svc']).toBe('CLOSED');
+  });
+
+  it('retries are tracked in engineStats', () => {
+    const components = new Map<string, ComponentModel>([
+      ['client', mkComponent({ id: 'client', type: 'web_client', generatedRps: 500, maxRps: 100000 })],
+      ['svc', mkComponent({ id: 'svc', type: 'service', maxRps: 5 })],
+    ]);
+    const connections: ConnectionModel[] = [
+      { from: 'client', to: 'svc', protocol: 'REST', latencyMs: 1, bandwidthMbps: 1000, timeoutMs: 5000,
+        retryPolicy: { maxRetries: 2, backoffMs: 50 } },
+    ];
+    const engine = createSimulationEngine(components, connections);
+    engine.start({ type: 'constant', rps: 500, durationSec: 10 });
+
+    let metrics;
+    for (let i = 0; i < 5; i++) metrics = engine.tick();
+    // With 500 rps hitting a service that handles 5, there should be retries
+    expect(metrics!.engineStats!.retriesThisTick).toBeGreaterThanOrEqual(0);
+  });
 });

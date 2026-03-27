@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { createArchitecture, updateArchitecture } from '../../../api/architectures.ts';
 import { useAuthStore } from '../../../store/authStore.ts';
-import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
+import type { EdgeLabelMode, EdgeRoutingMode } from '../../../store/canvasStore.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { ArchitectureSchema } from '../../../types/index.ts';
 import { notify } from '../../../utils/notifications.ts';
@@ -33,6 +33,24 @@ const tooltipByMode: Record<EdgeLabelMode, string> = {
   traffic: 'Labels: Throughput & bandwidth',
   full: 'Labels: All info',
 };
+
+const labelByRoutingMode: Record<EdgeRoutingMode, string> = {
+  bezier: 'Curved',
+  straight: 'Straight',
+  polyline: 'Polyline',
+};
+
+const tooltipByRoutingMode: Record<EdgeRoutingMode, string> = {
+  bezier: 'Edges: Bezier curves',
+  straight: 'Edges: Straight lines',
+  polyline: 'Edges: Polyline with waypoints',
+};
+
+const IconRoute = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="4 17 10 11 16 15 20 7" />
+  </svg>
+);
 
 function MenuItem({ onClick, icon, children, hint, variant = 'default', disabled = false }: {
   onClick: () => void;
@@ -167,6 +185,8 @@ export function Toolbar() {
   const importDsl = useCanvasStore((s) => s.importDsl);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
+  const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
+  const cycleEdgeRoutingMode = useCanvasStore((s) => s.cycleEdgeRoutingMode);
   const undo = useCanvasStore((s) => s.undo);
   const redo = useCanvasStore((s) => s.redo);
   const canUndo = useCanvasStore((s) => s._history.past.length > 0);
@@ -376,6 +396,13 @@ export function Toolbar() {
           className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
         >
           {IconTag} {labelByMode[edgeLabelMode]}
+        </button>
+        <button
+          onClick={cycleEdgeRoutingMode}
+          title={tooltipByRoutingMode[edgeRoutingMode]}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          {IconRoute} {labelByRoutingMode[edgeRoutingMode]}
         </button>
         <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
         <input ref={dslFileInputRef} type="file" accept=".sds,.txt" className="hidden" onChange={handleDslFileChange} />

@@ -91,6 +91,15 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
       ...(cacheRules?.length ? { cacheRules: cacheRules as Array<{ tag: string; hitRatio: number; capacityMb: number }> } : {}),
       ...(responseRules?.length ? { responseRules } : {}),
       ...(supportedTags ? { supportedTags } : {}),
+      ...(compType === 'load_balancer' && config.algorithm ? { lbAlgorithm: config.algorithm as 'round_robin' | 'least_conn' | 'ip_hash' } : {}),
+      ...(config.retry_enabled ? { retryEnabled: true, retryMax: (config.retry_max as number) || 2, retryBackoffMs: (config.retry_backoff_ms as number) || 100 } : {}),
+      ...((config.blockedTags as string[] | undefined)?.length ? { blockedTags: config.blockedTags as string[] } : {}),
+      ...(config.rate_limit_enabled && (config.rate_limit as number) > 0 ? { rateLimitRps: config.rate_limit as number } : {}),
+      ...(config.auth_enabled ? {
+        authEnabled: true,
+        authLatencyMs: (config.auth_latency_ms as number) || 5,
+        authFailRate: ((config.auth_fail_rate as number) || 0) / 100,
+      } : {}),
     });
   }
 
@@ -114,6 +123,8 @@ export function convertEdgesToConnections(edges: ComponentEdge[], nodes?: Compon
         bandwidthMbps: e.data?.bandwidthMbps ?? 1000,
         timeoutMs: e.data?.timeoutMs ?? 5000,
         ...(routingRules?.length ? { routingRules } : {}),
+        ...(e.data?.circuitBreaker?.enabled ? { circuitBreaker: e.data.circuitBreaker as { enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number } } : {}),
+        ...(e.data?.retryPolicy?.enabled ? { retryPolicy: { maxRetries: e.data.retryPolicy.maxRetries ?? 2, backoffMs: e.data.retryPolicy.backoffMs ?? 100 } } : {}),
       };
     });
 }

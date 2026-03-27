@@ -48,6 +48,7 @@ const nodeTypes: NodeTypes = {
 
 const edgeTypes: EdgeTypes = {
   flow: FlowEdge,
+  default: FlowEdge,
 };
 
 

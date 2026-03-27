@@ -1,11 +1,13 @@
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps,getBezierPath, useInternalNode } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps, useInternalNode } from '@xyflow/react';
 import { useEffect, useState } from 'react';
 
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { EdgeData } from '../../../types/index.ts';
+import { buildBezierPath, buildPolylinePath, buildStraightPath, getParallelEdgeInfo } from '../../../utils/edgePaths.ts';
 import { getFloatingEdgeParams } from '../../../utils/floatingEdge.ts';
 import { computeEffectiveLatency } from '../../../utils/networkLatency.ts';
+import { WaypointOverlay } from './WaypointOverlay.tsx';
 
 function getWidthByLatency(ms: number): number {
   if (ms <= 0.5) return 1;      // внутри docker/pod
@@ -97,10 +99,14 @@ export function FlowEdge(props: EdgeProps) {
   const edgeTagTraffic = useSimulationStore((s) => s.edgeTagTraffic[id!]);
   const isRunning = useSimulationStore((s) => s.isRunning);
   const isPaused = useSimulationStore((s) => s.isPaused);
+  const cbState = useSimulationStore((s) => s.circuitBreakerStates[`${source}->${target}`]);
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
+  const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
   const nodes = useCanvasStore((s) => s.nodes);
   const isSelected = selected || selectedEdgeId === id!;
+  // Non-hook: reads edges snapshot directly — safe from infinite re-render
+  const parallelInfo = getParallelEdgeInfo(id!, source, target);
 
   // Sum forward (out) and response (in) traffic — must be before early return for hooks
   let fwdRps = 0, fwdBytes = 0, respRps = 0, respBytes = 0;
@@ -137,14 +143,17 @@ export function FlowEdge(props: EdgeProps) {
 
   const { sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode);
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX: sx,
-    sourceY: sy,
-    targetX: tx,
-    targetY: ty,
-    sourcePosition: sourcePos,
-    targetPosition: targetPos,
-  });
+  let edgePath: string, labelX: number, labelY: number;
+  switch (edgeRoutingMode) {
+    case 'straight':
+      [edgePath, labelX, labelY] = buildStraightPath(sx, sy, tx, ty, parallelInfo.index, parallelInfo.total);
+      break;
+    case 'polyline':
+      [edgePath, labelX, labelY] = buildPolylinePath(sx, sy, tx, ty, data?.waypoints);
+      break;
+    default:
+      [edgePath, labelX, labelY] = buildBezierPath(sx, sy, tx, ty, sourcePos, targetPos);
+  }
 
   const protocol = data?.protocol ?? 'REST';
   const userLatency = data?.latencyMs ?? 1;
@@ -210,12 +219,14 @@ export function FlowEdge(props: EdgeProps) {
 
   const showLabel = effectiveMode !== null;
 
-  const effectiveColor = isSelected ? '#7ddcff' : strokeColor;
+  const isCBOpen = cbState === 'OPEN' || cbState === 'HALF_OPEN';
+  const effectiveColor = isCBOpen ? '#f97316' : isSelected ? '#7ddcff' : strokeColor;
   const markerId = `edge-arrow-${id}`;
   const arrowSize = Math.max(8, strokeWidth * 2);
 
   // Build label content
-  const protocolLine = <>{protocol} &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>;
+  const cbLabel = isCBOpen ? <span className="text-orange-400 font-bold">CB {cbState}</span> : null;
+  const protocolLine = <>{protocol} &middot; {Math.round(edgeLatency ?? latencyMs)}ms {cbLabel}</>;
   const hasTrafficData = throughput > 0;
   const hasResponse = respRps > 0;
   const trafficLine = hasTrafficData
@@ -290,6 +301,15 @@ export function FlowEdge(props: EdgeProps) {
           >
             {labelContent}
           </div>
+        </EdgeLabelRenderer>
+      )}
+      {edgeRoutingMode === 'polyline' && isSelected && (
+        <EdgeLabelRenderer>
+          <WaypointOverlay
+            edgeId={id!}
+            sx={sx} sy={sy} tx={tx} ty={ty}
+            waypoints={data?.waypoints ?? []}
+          />
         </EdgeLabelRenderer>
       )}
     </>

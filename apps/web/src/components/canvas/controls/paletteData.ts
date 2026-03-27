@@ -87,10 +87,7 @@ export const paletteItems: PaletteItem[] = [
   { type: 'kubernetes_pod', label: 'K8s Worker Node', icon: '☸️', category: 'infrastructure' },
   { type: 'vm_instance', label: 'VM Instance', icon: '🖥️', category: 'infrastructure' },
 
-  // Reliability
-  { type: 'circuit_breaker', label: 'Circuit Breaker', icon: '🔌', category: 'reliability' },
-  { type: 'rate_limiter', label: 'Rate Limiter', icon: '🚦', category: 'reliability' },
-  { type: 'health_check', label: 'Health Check', icon: '💓', category: 'reliability' },
+  // Reliability — circuit_breaker, rate_limiter, health_check are now node/connection properties
 
   // Security
   { type: 'auth_service', label: 'Auth Service', icon: '🔐', category: 'security' },

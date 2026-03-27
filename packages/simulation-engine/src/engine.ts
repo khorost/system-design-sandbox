@@ -99,6 +99,25 @@ export function createSimulationEngine(
     if (comp.type === 'load_balancer') loadBalancerNodes.add(id);
   }
 
+  // Circuit breaker state machine per connection
+  interface CBState {
+    state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+    failCount: number;
+    successCount: number;
+    totalCount: number;
+    openedAtTick: number;
+    halfOpenPassed: number;
+  }
+  const cbStates = new Map<string, CBState>();
+  for (const conn of connections) {
+    if (conn.circuitBreaker?.enabled) {
+      cbStates.set(`${conn.from}->${conn.to}`, {
+        state: 'CLOSED', failCount: 0, successCount: 0, totalCount: 0,
+        openedAtTick: 0, halfOpenPassed: 0,
+      });
+    }
+  }
+
   let activeRequests: SimRequest[] = [];
   let profile: LoadProfile | null = null;
   let tickCount = 0;
@@ -143,6 +162,7 @@ export function createSimulationEngine(
           componentUtilization: {}, connectionUtilization: {}, queueDepths: {},
           edgeThroughput: {}, edgeLatency: {},
           nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {},
+          circuitBreakerStates: {},
         };
       }
 
@@ -244,6 +264,25 @@ export function createSimulationEngine(
 
         // Client nodes are traffic sources — skip capacity/latency checks
         if (!isClientType(comp.type)) {
+          // Rate limit check — hard threshold (immediate 429), before capacity check
+          if (comp.rateLimitRps && comp.rateLimitRps > 0 && comp.currentLoad > comp.rateLimitRps) {
+            req.failed = true;
+            req.failureReason = `Rate limited (429)`;
+            completed.push(req);
+            continue;
+          }
+
+          // Auth overhead (API Gateway)
+          if (comp.authEnabled) {
+            req.totalLatencyMs += comp.authLatencyMs ?? 5;
+            if (comp.authFailRate && comp.authFailRate > 0 && Math.random() < comp.authFailRate) {
+              req.failed = true;
+              req.failureReason = `Auth failed (401)`;
+              completed.push(req);
+              continue;
+            }
+          }
+
           // Check connection pool exhaustion
           if (comp.concurrentConnections > comp.maxConnections) {
             req.failed = true;
@@ -320,6 +359,52 @@ export function createSimulationEngine(
           const conn = connectionMap.get(edgeKey);
           const edgeLat = conn?.latencyMs ?? 0;
 
+          // Circuit breaker check
+          const cbState = cbStates.get(edgeKey);
+          if (cbState) {
+            const cbConfig = conn?.circuitBreaker;
+            if (cbConfig) {
+              const tickTimeSec = tickCount * TICK_DURATION_SEC;
+              const openDurationSec = (tickTimeSec - cbState.openedAtTick * TICK_DURATION_SEC);
+
+              if (cbState.state === 'OPEN') {
+                if (openDurationSec * 1000 >= cbConfig.timeoutMs) {
+                  cbState.state = 'HALF_OPEN';
+                  cbState.halfOpenPassed = 0;
+                  cbState.successCount = 0;
+                  cbState.failCount = 0;
+                } else {
+                  // Block all requests
+                  req.failed = true;
+                  req.failureReason = `Circuit breaker OPEN on ${edgeKey}`;
+                  completed.push(req);
+                  continue;
+                }
+              }
+
+              if (cbState.state === 'HALF_OPEN') {
+                if (cbState.halfOpenPassed >= cbConfig.halfOpenRequests) {
+                  // All probe requests sent, check results
+                  if (cbState.failCount > 0) {
+                    cbState.state = 'OPEN';
+                    cbState.openedAtTick = tickCount;
+                    req.failed = true;
+                    req.failureReason = `Circuit breaker re-OPENED on ${edgeKey}`;
+                    completed.push(req);
+                    continue;
+                  } else {
+                    cbState.state = 'CLOSED';
+                    cbState.totalCount = 0;
+                    cbState.failCount = 0;
+                    cbState.successCount = 0;
+                  }
+                } else {
+                  cbState.halfOpenPassed++;
+                }
+              }
+            }
+          }
+
           for (let i = 0; i < hop.count; i++) {
             edgeCounts[edgeKey] = (edgeCounts[edgeKey] || 0) + 1;
             edgeLatencySum[edgeKey] = (edgeLatencySum[edgeKey] || 0) + edgeLat;
@@ -337,6 +422,14 @@ export function createSimulationEngine(
             (fwdEdgeCount[edgeKey] ??= {})[spawnedTag] = ((fwdEdgeCount[edgeKey])?.[spawnedTag] ?? 0) + 1;
             (fwdEdgeBytes[edgeKey] ??= {})[spawnedTag] = ((fwdEdgeBytes[edgeKey])?.[spawnedTag] ?? 0) + pKb;
 
+            // Retry policy: connection-level takes priority, then source node-level (LB)
+            const connRetry = conn?.retryPolicy;
+            const srcComp = components.get(req.currentNode);
+            const hasRetry = connRetry
+              ? { retriesLeft: connRetry.maxRetries, retryFromNode: req.currentNode, retryBackoffMs: connRetry.backoffMs }
+              : srcComp?.retryEnabled
+                ? { retriesLeft: srcComp.retryMax ?? 2, retryFromNode: req.currentNode, retryBackoffMs: srcComp.retryBackoffMs ?? 100 }
+                : null;
             nextActive.push({
               id: `req-${++requestCounter}`,
               tag: spawnedTag,
@@ -345,11 +438,40 @@ export function createSimulationEngine(
               totalLatencyMs: req.totalLatencyMs + edgeLat + transmissionDelayMs(pKb, conn?.bandwidthMbps ?? 1000),
               failed: false,
               payloadSizeKb: pKb,
+              ...(hasRetry ?? {}),
             });
           }
         }
         // Original request consumed (not in completed — it branched)
       }
+
+      // Retry logic: re-enqueue failed requests that have retries left
+      const retried: SimRequest[] = [];
+      const finalCompleted: SimRequest[] = [];
+      for (const req of completed) {
+        if (req.failed && req.retriesLeft && req.retriesLeft > 0 && req.retryFromNode) {
+          // Re-enqueue from the source node with decremented retry count
+          retried.push(req);
+          nextActive.push({
+            id: `req-${++requestCounter}`,
+            tag: req.tag,
+            currentNode: req.retryFromNode,
+            visited: req.visited.slice(0, req.visited.indexOf(req.retryFromNode) + 1),
+            totalLatencyMs: req.totalLatencyMs + (req.retryBackoffMs ?? 100),
+            failed: false,
+            payloadSizeKb: req.payloadSizeKb,
+            retriesLeft: req.retriesLeft - 1,
+            retryFromNode: req.retryFromNode,
+            retryBackoffMs: req.retryBackoffMs,
+          });
+        } else {
+          finalCompleted.push(req);
+        }
+      }
+      completed.length = 0;
+      completed.push(...finalCompleted);
+      // Track retry count for metrics
+      const totalRetries = retried.length;
 
       // Safety: cap active requests to prevent exponential blowup
       activeRequests = nextActive.length <= MAX_ACTIVE
@@ -421,6 +543,29 @@ export function createSimulationEngine(
         }
         req.totalLatencyMs += responseLat;
 
+        // Update circuit breaker states based on request outcome
+        for (let i = 0; i < visited.length - 1; i++) {
+          const ek = `${visited[i]}->${visited[i + 1]}`;
+          const cb = cbStates.get(ek);
+          if (cb && cb.state !== 'OPEN') {
+            cb.totalCount++;
+            if (req.failed) {
+              cb.failCount++;
+            } else {
+              cb.successCount++;
+            }
+            // Check threshold in CLOSED state
+            if (cb.state === 'CLOSED' && cb.totalCount >= 10) {
+              const errRate = cb.failCount / cb.totalCount;
+              const threshold = (connectionMap.get(ek)?.circuitBreaker?.errorThreshold ?? 50) / 100;
+              if (errRate >= threshold) {
+                cb.state = 'OPEN';
+                cb.openedAtTick = tickCount;
+              }
+            }
+          }
+        }
+
         // Propagate failed status along the entire path (forward + response)
         if (req.failed) {
           for (const nid of visited) {
@@ -485,6 +630,7 @@ export function createSimulationEngine(
         requestsGenerated: generated,
         requestsCompleted: completed.length,
         tickDurationMs: 0, // measured by worker wrapper
+        retriesThisTick: totalRetries,
       };
 
       const result = aggregateMetrics(completed, components, Date.now(), TICK_DURATION_SEC, edgeThroughput, edgeLatency);
@@ -531,6 +677,13 @@ export function createSimulationEngine(
         nodeCacheStats[nid] = tagStats;
       }
       result.nodeCacheStats = nodeCacheStats;
+
+      // Circuit breaker states
+      const circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'> = {};
+      for (const [key, cb] of cbStates) {
+        circuitBreakerStates[key] = cb.state;
+      }
+      result.circuitBreakerStates = circuitBreakerStates;
 
       return result;
     },

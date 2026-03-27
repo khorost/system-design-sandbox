@@ -47,14 +47,20 @@ export const pricingModels: PricingModel[] = [
   },
   {
     type: 'load_balancer',
-    calculate: () => {
-      return 18; // $/month base + LCU
+    calculate: (config) => {
+      const replicas = (config.replicas as number) || 1;
+      const baseCost = 18; // $/month per instance (ALB base)
+      return replicas * baseCost;
     },
   },
   {
     type: 'cdn',
-    calculate: () => {
-      return 50; // $/month estimate
+    calculate: (config) => {
+      const edgeLocations = (config.edge_locations as number) || 50;
+      // Base cost + per-edge-location overhead
+      const baseCost = 25; // $/month base
+      const perEdge = 0.5; // $/month per edge location
+      return baseCost + edgeLocations * perEdge;
     },
   },
   {
@@ -85,9 +91,16 @@ export const pricingModels: PricingModel[] = [
   {
     type: 'rabbitmq',
     calculate: (config) => {
-      const haMode = (config.ha_mode as boolean) ?? true;
-      const nodes = haMode ? 3 : 1;
+      const nodes = (config.nodes as number) || ((config.ha_mode as boolean) !== false ? 3 : 1);
       const nodePrice = 0.14; // $/hour per node
+      return nodes * nodePrice * HOURS_PER_MONTH;
+    },
+  },
+  {
+    type: 'nats',
+    calculate: (config) => {
+      const nodes = (config.nodes as number) || 3;
+      const nodePrice = 0.08; // $/hour per node (lighter than RabbitMQ)
       return nodes * nodePrice * HOURS_PER_MONTH;
     },
   },
@@ -96,8 +109,12 @@ export const pricingModels: PricingModel[] = [
     calculate: (config) => {
       const storageClass = (config.storage_class as string) || 'standard';
       const storageGb = (config.storage_gb as number) || 100;
+      const replicas = (config.replicas as number) || 1;
       const pricePerGb = storageClass === 'glacier' ? 0.004 : storageClass === 'infrequent' ? 0.0125 : 0.023;
-      return storageGb * pricePerGb;
+      // Storage cost + request throughput cost (replicas = provisioned throughput units)
+      const storageCost = storageGb * pricePerGb;
+      const throughputCost = replicas > 1 ? replicas * 5 : 0; // ~$5/month per provisioned throughput unit
+      return storageCost + throughputCost;
     },
   },
   {

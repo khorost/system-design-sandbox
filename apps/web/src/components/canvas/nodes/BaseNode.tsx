@@ -100,8 +100,12 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
       return [`${nodes ?? 3} nodes, ${v('mode')}`];
     case 'service':
     case 'worker':
-    case 'auth_service':
-      return [`${replicas ?? 1}\u00d7 @ ${fmtK(maxRps ?? 0)} rps`];
+    case 'auth_service': {
+      const rlOn = v('rate_limit_enabled') as boolean | undefined;
+      const rl = v('rate_limit') as number | undefined;
+      const base = `${replicas ?? 1}\u00d7 @ ${fmtK(maxRps ?? 0)} rps`;
+      return rlOn && rl && rl > 0 ? [base, `lim ${fmtK(rl)}`] : [base];
+    }
     case 'serverless_function':
       return [`${fmtK(maxRps ?? 0)} rps, ${v('max_concurrent')} conc`];
     case 'postgresql':
@@ -118,10 +122,24 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
       return [`${brokers ?? 3} brkrs, ${v('partitions')} parts`];
     case 'rabbitmq':
       return [`${nodes ?? 3} nodes, ${v('queues')} queues${v('ha_mode') ? ', HA' : ''}`];
-    case 'load_balancer':
-      return [`${v('algorithm')}`, `${fmtK((v('max_connections') as number) ?? 0)} conn`];
-    case 'api_gateway':
-      return [`${fmtK(maxRps ?? 0)} rps, lim ${fmtK((v('rate_limit') as number) ?? 0)}`];
+    case 'load_balancer': {
+      const retry = v('retry_enabled') as boolean | undefined;
+      const base = `${v('algorithm')}, ${fmtK((v('max_connections') as number) ?? 0)} conn`;
+      return retry ? [base, `retry \u00d7${v('retry_max') ?? 2}`] : [base];
+    }
+    case 'api_gateway': {
+      const rlOn = v('rate_limit_enabled') as boolean | undefined;
+      const rl = v('rate_limit') as number | undefined;
+      const auth = v('auth_enabled') as boolean | undefined;
+      const retry = v('retry_enabled') as boolean | undefined;
+      const parts = [`${fmtK(maxRps ?? 0)} rps`];
+      if (rlOn && rl && rl > 0) parts[0] += `, lim ${fmtK(rl)}`;
+      const flags: string[] = [];
+      if (auth) flags.push(`auth +${v('auth_latency_ms') ?? 5}ms`);
+      if (retry) flags.push(`retry \u00d7${v('retry_max') ?? 2}`);
+      if (flags.length) parts.push(flags.join(', '));
+      return parts;
+    }
     case 'cdn': {
       const rules = (config.cacheRules ?? def?.defaultConfig?.cacheRules) as Array<{ tag: string; hitRatio: number }> | undefined;
       if (rules && rules.length > 0) {

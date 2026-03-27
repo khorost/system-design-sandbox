@@ -113,6 +113,25 @@ export interface ComponentModel {
   // Explicit tags this node accepts (undefined = wildcard, accepts any tag)
   supportedTags?: string[];
 
+  // Load balancer algorithm
+  lbAlgorithm?: 'round_robin' | 'least_conn' | 'ip_hash';
+
+  // Tags explicitly blocked by this node (e.g. LB tag filter)
+  blockedTags?: string[];
+
+  // Node-level retry policy (LB: auto-applies to all outgoing connections)
+  retryEnabled?: boolean;
+  retryMax?: number;
+  retryBackoffMs?: number;
+
+  // Rate limiting (hard threshold — immediate 429, unlike maxRps which is soft capacity)
+  rateLimitRps?: number;
+
+  // Auth overhead (API Gateway)
+  authEnabled?: boolean;
+  authLatencyMs?: number;    // extra latency per request for token validation
+  authFailRate?: number;     // fraction of requests that fail auth (0..1)
+
   // Traffic sizing
   payloadSizeKb: number;
   responseSizeKb: number;
@@ -136,6 +155,12 @@ export interface ConnectionModel {
     backoffMs: number;
   };
   routingRules?: RoutingRule[];
+  circuitBreaker?: {
+    enabled: boolean;
+    errorThreshold: number;
+    timeoutMs: number;
+    halfOpenRequests: number;
+  };
 }
 
 export interface EngineStats {
@@ -144,6 +169,7 @@ export interface EngineStats {
   requestsGenerated: number;
   requestsCompleted: number;
   tickDurationMs: number;
+  retriesThisTick: number;
 }
 
 /** Per-tag cache statistics for CDN nodes */
@@ -172,6 +198,7 @@ export interface SimulationMetrics {
   nodeTagTraffic: Record<string, NodeTagTraffic>;
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
   nodeCacheStats: Record<string, Record<string, CacheTagStats>>; // nodeId → tag → stats
+  circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'>; // edgeKey → state
 }
 
 export interface FailureReport {
@@ -195,6 +222,9 @@ export interface SimRequest {
   failed: boolean;
   failureReason?: string;
   payloadSizeKb: number;
+  retriesLeft?: number;         // remaining retries for this request
+  retryFromNode?: string;       // node to retry from (the source of the failing connection)
+  retryBackoffMs?: number;      // backoff latency per retry
 }
 
 export interface TagTraffic {

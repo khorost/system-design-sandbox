@@ -95,20 +95,22 @@
 .react-flow__resize-control.container-resize-line {
   border-color: transparent !important;
   border-width: 0 !important;
-  z-index: 10 !important;
-  /* Invisible but wide grab zone */
-  padding: 6px !important;
-  margin: -6px !important;
+  z-index: 20 !important;
+  pointer-events: all !important;
+  /* Wide grab zone for easy resize */
+  padding: 10px !important;
+  margin: -10px !important;
 }
 
 .react-flow__resize-control.container-resize-handle {
-  width: 24px !important;
-  height: 24px !important;
+  width: 28px !important;
+  height: 28px !important;
   background: transparent !important;
   border: 0 !important;
   border-radius: 999px !important;
   box-shadow: none !important;
-  z-index: 10 !important;
+  z-index: 20 !important;
+  pointer-events: all !important;
 }
 
 .react-flow__resize-control.container-resize-handle::after {

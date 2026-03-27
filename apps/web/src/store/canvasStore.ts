@@ -318,6 +318,7 @@ function flushSave() {
 }
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
+export type EdgeRoutingMode = 'bezier' | 'straight' | 'polyline';
 
 interface CanvasState {
   nodes: ComponentNode[];
@@ -326,6 +327,7 @@ interface CanvasState {
   selectedEdgeId: string | null;
   focusNodeId: string | null;
   edgeLabelMode: EdgeLabelMode;
+  edgeRoutingMode: EdgeRoutingMode;
   schemaName: string;
   schemaDescription: string;
   schemaTags: string[];
@@ -367,6 +369,8 @@ interface CanvasState {
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
   cycleEdgeLabelMode: () => void;
+  cycleEdgeRoutingMode: () => void;
+  updateEdgeWaypoints: (edgeId: string, waypoints: Array<{ x: number; y: number }>) => void;
 
   setSchemaName: (name: string) => void;
   setSchemaDescription: (desc: string) => void;
@@ -396,6 +400,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedEdgeId: null,
   focusNodeId: null,
   edgeLabelMode: 'auto',
+  edgeRoutingMode: 'bezier',
   schemaName: initial.schemaName,
   schemaDescription: initial.schemaDescription,
   schemaTags: initial.schemaTags,
@@ -435,8 +440,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
+    const sourceNode = get().nodes.find(n => n.id === connection.source);
     const targetNode = get().nodes.find(n => n.id === connection.target);
+    const sourceType = sourceNode?.data.componentType;
     const targetType = targetNode?.data.componentType;
+
+    // Validate LB targets — only compute/gateway nodes
+    if (sourceType === 'load_balancer' && targetType) {
+      const LB_ALLOWED_TARGETS = new Set(['service', 'api_gateway', 'auth_service', 'serverless_function']);
+      if (!LB_ALLOWED_TARGETS.has(targetType)) return;
+    }
+
+    // Validate API Gateway targets — route to services, LB, CDN, auth, serverless
+    if (sourceType === 'api_gateway' && targetType) {
+      const GW_ALLOWED_TARGETS = new Set(['service', 'load_balancer', 'auth_service', 'serverless_function', 'cdn']);
+      if (!GW_ALLOWED_TARGETS.has(targetType)) return;
+    }
+
     let protocol: ProtocolType = 'REST';
     if (targetType && DISK_COMPONENT_TYPES.has(targetType)) {
       protocol = DISK_DEFAULT_PROTOCOL[targetType] ?? 'NVMe';
@@ -649,6 +669,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const cur = get().edgeLabelMode;
     const next = order[(order.indexOf(cur) + 1) % order.length];
     set({ edgeLabelMode: next });
+  },
+
+  cycleEdgeRoutingMode: () => {
+    const order: EdgeRoutingMode[] = ['bezier', 'straight', 'polyline'];
+    const cur = get().edgeRoutingMode;
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    set({ edgeRoutingMode: next });
+  },
+
+  updateEdgeWaypoints: (edgeId, waypoints) => {
+    const edges = get().edges.map(e =>
+      e.id === edgeId ? { ...e, data: { ...(e.data ?? {}), waypoints } as ComponentEdge['data'] } : e,
+    );
+    set({ ...pushHistory(get), edges });
   },
 
   exportSchema: () => {

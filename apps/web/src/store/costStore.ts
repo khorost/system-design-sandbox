@@ -38,6 +38,7 @@ const CATEGORY_MAP: Record<string, string> = {
   waf: 'network',
   kafka: 'messaging',
   rabbitmq: 'messaging',
+  nats: 'messaging',
 };
 
 export const useCostStore = create<CostState>((set) => ({
