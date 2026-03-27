@@ -25,7 +25,6 @@ export type ComponentType =
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
-  | 'event_bus'
   | 'nats'
   | 'circuit_breaker'
   | 'rate_limiter'
@@ -60,6 +59,19 @@ export interface TagWeight {
   responseSizeKb?: number; // response payload size for this tag (used by leaf/CDN nodes)
 }
 
+/** Per-tag cache rule for CDN-like components */
+export interface CacheRule {
+  tag: string;           // traffic tag to match (e.g. 'web', 'content', 'api')
+  hitRatio: number;      // probability of cache hit (0..1)
+  capacityMb: number;    // cache capacity allocated for this tag (MB)
+}
+
+/** Per-tag response rule for storage/origin components — defines what response size to return per tag */
+export interface ResponseRule {
+  tag: string;           // traffic tag to match
+  responseSizeKb: number; // average response size for this tag (KB)
+}
+
 export interface ComponentModel {
   id: string;
   type: ComponentType;
@@ -91,6 +103,15 @@ export interface ComponentModel {
 
   // Tag-based traffic routing (entry/client nodes)
   tagDistribution?: TagWeight[];
+
+  // CDN cache rules — per-tag hit ratio and capacity
+  cacheRules?: CacheRule[];
+
+  // Storage/origin response rules — per-tag response size
+  responseRules?: ResponseRule[];
+
+  // Explicit tags this node accepts (undefined = wildcard, accepts any tag)
+  supportedTags?: string[];
 
   // Traffic sizing
   payloadSizeKb: number;
@@ -125,6 +146,14 @@ export interface EngineStats {
   tickDurationMs: number;
 }
 
+/** Per-tag cache statistics for CDN nodes */
+export interface CacheTagStats {
+  hits: number;      // requests served from cache this tick
+  misses: number;    // requests forwarded to origin this tick
+  hitRate: number;   // actual hit rate (0..1)
+  fillMb: number;    // estimated cache fill (MB)
+}
+
 export interface SimulationMetrics {
   timestamp: number;
   latencyP50: number;
@@ -142,6 +171,7 @@ export interface SimulationMetrics {
   engineStats?: EngineStats;
   nodeTagTraffic: Record<string, NodeTagTraffic>;
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
+  nodeCacheStats: Record<string, Record<string, CacheTagStats>>; // nodeId → tag → stats
 }
 
 export interface FailureReport {

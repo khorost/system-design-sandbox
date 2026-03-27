@@ -49,6 +49,7 @@ export function aggregateMetrics(
     edgeLatency,
     nodeTagTraffic: {},
     edgeTagTraffic: {},
+    nodeCacheStats: {},
   };
 }
 

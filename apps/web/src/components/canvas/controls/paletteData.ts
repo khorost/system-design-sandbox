@@ -1,4 +1,11 @@
-import type { ComponentCategory,ComponentType } from '../../../types/index.ts';
+import apiGatewayIcon from '../../../assets/icons/api-gateway.svg';
+import dnsIcon from '../../../assets/icons/dns.svg';
+import kafkaIcon from '../../../assets/icons/kafka.svg';
+import loadBalancerIcon from '../../../assets/icons/load-balancer.svg';
+import redisIcon from '../../../assets/icons/redis.svg';
+import s3Icon from '../../../assets/icons/s3.svg';
+import wafIcon from '../../../assets/icons/waf.svg';
+import type { ComponentCategory, ComponentType } from '../../../types/index.ts';
 
 export interface PaletteItem {
   type: ComponentType;
@@ -36,11 +43,11 @@ export const paletteItems: PaletteItem[] = [
 
   // Network
   { type: 'external_service', label: 'External Service', icon: '🔌', category: 'network' },
-  { type: 'api_gateway', label: 'API Gateway', icon: '🚪', category: 'network' },
-  { type: 'load_balancer', label: 'Load Balancer', icon: '⚖️', category: 'network' },
+  { type: 'api_gateway', label: 'API Gateway', icon: apiGatewayIcon, category: 'network' },
+  { type: 'load_balancer', label: 'Load Balancer', icon: loadBalancerIcon, category: 'network' },
   { type: 'cdn', label: 'CDN', icon: '🌍', category: 'network' },
-  { type: 'dns', label: 'DNS', icon: '📡', category: 'network' },
-  { type: 'waf', label: 'WAF', icon: '🛡️', category: 'network' },
+  { type: 'dns', label: 'DNS', icon: dnsIcon, category: 'network' },
+  { type: 'waf', label: 'WAF', icon: wafIcon, category: 'network' },
 
   // Compute
   { type: 'service', label: 'Service', icon: '⚙️', category: 'compute' },
@@ -54,18 +61,17 @@ export const paletteItems: PaletteItem[] = [
   { type: 'cassandra', label: 'Cassandra', icon: '👁️', category: 'database' },
   { type: 'mysql', label: 'MySQL', icon: '🐬', category: 'database' },
   { type: 'clickhouse', label: 'ClickHouse', icon: '🏠', category: 'database' },
-  { type: 's3', label: 'Object Storage', icon: '🪣', category: 'database' },
+  { type: 's3', label: 'Object Storage', icon: s3Icon, category: 'database' },
   { type: 'etcd', label: 'etcd', icon: '🔑', category: 'database' },
   { type: 'elasticsearch', label: 'Elasticsearch', icon: '🔍', category: 'database' },
 
   // Cache
-  { type: 'redis', label: 'Redis', icon: '🔴', category: 'cache' },
+  { type: 'redis', label: 'Redis', icon: redisIcon, category: 'cache' },
   { type: 'memcached', label: 'Memcached', icon: '🟢', category: 'cache' },
 
   // Messaging
-  { type: 'kafka', label: 'Kafka', icon: '📨', category: 'messaging' },
+  { type: 'kafka', label: 'Kafka', icon: kafkaIcon, category: 'messaging' },
   { type: 'rabbitmq', label: 'RabbitMQ', icon: '🐇', category: 'messaging' },
-  { type: 'event_bus', label: 'Event Bus', icon: '🚌', category: 'messaging' },
   { type: 'nats', label: 'NATS', icon: '⚡', category: 'messaging' },
 
   // Storage
@@ -94,3 +100,11 @@ export const paletteItems: PaletteItem[] = [
   { type: 'metrics_collector', label: 'Metrics', icon: '📊', category: 'observability' },
   { type: 'tracing', label: 'Tracing', icon: '🔎', category: 'observability' },
 ];
+
+export function getPaletteItemByType(type: ComponentType): PaletteItem | undefined {
+  return paletteItems.find((item) => item.type === type);
+}
+
+export function getComponentIcon(type: ComponentType, fallback?: string): string {
+  return getPaletteItemByType(type)?.icon ?? fallback ?? '❓';
+}

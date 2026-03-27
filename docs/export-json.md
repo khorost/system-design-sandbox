@@ -92,7 +92,7 @@ System Design Sandbox экспортирует архитектурные схе
 
 **Cache:** `redis`, `memcached`
 
-**Messaging:** `kafka`, `rabbitmq`, `event_bus`, `nats`
+**Messaging:** `kafka`, `rabbitmq`, `nats`
 
 **Storage:** `local_ssd`, `nvme`, `network_disk`, `nfs`
 

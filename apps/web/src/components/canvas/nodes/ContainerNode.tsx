@@ -1,22 +1,24 @@
-import { type NodeProps,NodeResizer } from '@xyflow/react';
+import { type NodeProps, NodeResizer } from '@xyflow/react';
 
 import { CONFIG } from '../../../config/constants.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { ComponentNode } from '../../../types/index.ts';
+import { ComponentIcon } from '../../ui/ComponentIcon.tsx';
+import { getComponentIcon } from '../controls/paletteData.ts';
 
 const CONTAINER_STYLES: Record<string, { border: string; bg: string; headerBg: string }> = {
-  docker_container: { border: '#3b82f6', bg: 'rgba(59,130,246,0.06)', headerBg: 'rgba(59,130,246,0.15)' },
-  kubernetes_pod: { border: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', headerBg: 'rgba(139,92,246,0.15)' },
-  vm_instance: { border: '#64748b', bg: 'rgba(100,116,139,0.06)', headerBg: 'rgba(100,116,139,0.15)' },
-  rack: { border: '#22c55e', bg: 'rgba(34,197,94,0.06)', headerBg: 'rgba(34,197,94,0.15)' },
-  datacenter: { border: '#f97316', bg: 'rgba(249,115,22,0.06)', headerBg: 'rgba(249,115,22,0.15)' },
+  docker_container: { border: '#3b82f6', bg: 'rgba(59,130,246,0.038)', headerBg: 'rgba(59,130,246,0.12)' },
+  kubernetes_pod: { border: '#8b5cf6', bg: 'rgba(139,92,246,0.038)', headerBg: 'rgba(139,92,246,0.12)' },
+  vm_instance: { border: '#64748b', bg: 'rgba(100,116,139,0.038)', headerBg: 'rgba(100,116,139,0.12)' },
+  rack: { border: '#22c55e', bg: 'rgba(34,197,94,0.038)', headerBg: 'rgba(34,197,94,0.12)' },
+  datacenter: { border: '#f97316', bg: 'rgba(249,115,22,0.038)', headerBg: 'rgba(249,115,22,0.12)' },
 };
 
 function hexToStyle(hex: string): { border: string; bg: string; headerBg: string } {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return { border: hex, bg: `rgba(${r},${g},${b},0.06)`, headerBg: `rgba(${r},${g},${b},0.15)` };
+  return { border: hex, bg: `rgba(${r},${g},${b},0.038)`, headerBg: `rgba(${r},${g},${b},0.12)` };
 }
 
 export function ContainerNode(props: NodeProps<ComponentNode>) {
@@ -29,6 +31,7 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
 
   const customColor = data.config.color as string | undefined;
   const displayName = ((data.config.name as string | undefined)?.trim()) || data.label;
+  const displayIcon = getComponentIcon(data.componentType, data.icon);
   const style = customColor ? hexToStyle(customColor) : (CONTAINER_STYLES[data.componentType] ?? CONTAINER_STYLES.docker_container);
   const latencyMs = (data.config.internal_latency_ms as number) ?? 0.1;
   const stripeAngle = depth % 2 === 0 ? '135deg' : '45deg';
@@ -49,7 +52,7 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
 
   return (
     <div
-      className="w-full h-full rounded-xl relative overflow-hidden"
+      className="w-full h-full rounded-lg relative overflow-hidden"
       style={{
         background: 'linear-gradient(180deg, rgba(18,24,35,0.96), rgba(11,16,24,0.94))',
         border: `2px ${borderStyle} ${borderColor}`,
@@ -85,7 +88,7 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
         className="pointer-events-none absolute inset-x-0 bottom-0 z-0 rounded-b-[inherit]"
         style={{
           top: CONFIG.CANVAS.CONTAINER_HEADER_HEIGHT,
-          backgroundImage: `repeating-linear-gradient(${stripeAngle}, ${style.border}14 0 18px, transparent 18px 36px)`,
+          backgroundImage: `repeating-linear-gradient(${stripeAngle}, ${style.border}10 0 26px, transparent 26px 68px)`,
         }}
       />
 
@@ -112,25 +115,20 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
 
       {/* Header — drag handle for moving the container */}
       <div
-        onClick={(e) => {
-          e.stopPropagation();
-          selectNode(id);
-        }}
-        className="container-drag-handle relative z-[1] flex items-center gap-3 px-5 cursor-grab active:cursor-grabbing border-b border-[rgba(255,255,255,0.05)]"
+        onClick={() => selectNode(id)}
+        className="container-drag-handle relative z-[1] flex items-center gap-2 px-3 cursor-grab active:cursor-grabbing border-b border-[rgba(255,255,255,0.05)]"
         style={{
           height: CONFIG.CANVAS.CONTAINER_HEADER_HEIGHT,
-          background: `linear-gradient(180deg, rgba(20,27,39,0.98), rgba(18,24,35,0.96)), linear-gradient(180deg, ${isDragTarget ? style.border + '22' : style.headerBg}, ${isDragTarget ? style.border + '22' : style.headerBg})`,
+          background: `linear-gradient(180deg, rgba(20,27,39,0.985), rgba(18,24,35,0.97)), linear-gradient(180deg, ${isDragTarget ? style.border + '18' : style.headerBg}, ${isDragTarget ? style.border + '18' : style.headerBg})`,
         }}
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center text-[1.15rem] leading-none">
-          {data.icon}
-        </span>
+        <ComponentIcon icon={displayIcon} alt={displayName} className="flex h-5 w-5 shrink-0 items-center justify-center text-base leading-none" imgClassName="h-5 w-5 object-contain" />
         <span className="min-w-0 flex flex-col">
-          <span className="text-[18px] font-semibold leading-none truncate" style={{ color: (data.config.textColor as string) || '#edf4fb' }}>{displayName}</span>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">{data.componentType.replaceAll('_', ' ')}</span>
+          <span className="text-sm font-semibold leading-none truncate" style={{ color: (data.config.textColor as string) || '#edf4fb' }}>{displayName}</span>
+          <span className="text-[9px] uppercase tracking-[0.16em] text-slate-500">{data.componentType.replaceAll('_', ' ')}</span>
         </span>
         <span
-          className="ml-auto shrink-0 text-[11px] font-mono px-3 py-1.5 rounded-lg leading-none"
+          className="ml-auto shrink-0 text-[9px] font-mono px-1.5 py-1 rounded-md leading-none"
           style={{ background: style.border + '30', color: style.border }}
         >
           {latencyMs}ms
@@ -138,6 +136,8 @@ export function ContainerNode(props: NodeProps<ComponentNode>) {
       </div>
 
       <div className="pointer-events-none absolute inset-x-4 bottom-4 h-px bg-[linear-gradient(90deg,rgba(255,255,255,0.06),rgba(255,255,255,0))]" />
+
+
 
     </div>
   );

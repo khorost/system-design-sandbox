@@ -142,7 +142,7 @@ export function createSimulationEngine(
           totalInboundKBps: 0, totalOutboundKBps: 0,
           componentUtilization: {}, connectionUtilization: {}, queueDepths: {},
           edgeThroughput: {}, edgeLatency: {},
-          nodeTagTraffic: {}, edgeTagTraffic: {},
+          nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {},
         };
       }
 
@@ -212,6 +212,9 @@ export function createSimulationEngine(
       const fwdNodeOutBytes: Record<string, Record<string, number>> = {};
       const fwdEdgeCount: Record<string, Record<string, number>> = {};
       const fwdEdgeBytes: Record<string, Record<string, number>> = {};
+      // CDN cache hit/miss accumulators: nodeId → tag → { hits, misses }
+      const cacheHits: Record<string, Record<string, number>> = {};
+      const cacheMisses: Record<string, Record<string, number>> = {};
 
       for (const req of activeRequests) {
         if (req.failed) {
@@ -269,10 +272,27 @@ export function createSimulationEngine(
           req.totalLatencyMs += hopLatency;
         }
 
+        // CDN cache hit check: if this node has cacheRules, check for cache hit
+        const currentComp = components.get(req.currentNode);
+        if (currentComp?.cacheRules) {
+          const cacheRule = currentComp.cacheRules.find(r => r.tag === req.tag);
+          if (cacheRule) {
+            if (Math.random() < cacheRule.hitRatio) {
+              // Cache hit — respond immediately without going to origin
+              (cacheHits[req.currentNode] ??= {})[req.tag] = ((cacheHits[req.currentNode])?.[req.tag] ?? 0) + 1;
+              completed.push(req);
+              continue;
+            } else {
+              // Cache miss — forward to origin
+              (cacheMisses[req.currentNode] ??= {})[req.tag] = ((cacheMisses[req.currentNode])?.[req.tag] ?? 0) + 1;
+            }
+          }
+        }
+
         // Resolve next hops with fan-out
         const hops = resolveNextHops(
           req.currentNode, req.tag, req.visited,
-          adjacency, connectionMap, loadBalancerNodes,
+          adjacency, connectionMap, loadBalancerNodes, components,
         );
 
         if (hops.length === 0) {
@@ -345,8 +365,10 @@ export function createSimulationEngine(
         const leafComp = components.get(visited[visited.length - 1]);
         const tag = req.tag;
         // Per-tag responseSizeKb takes priority, then component-level, then type default
+        const respRule = leafComp?.responseRules?.find(r => r.tag === tag);
         const tagRespEntry = leafComp?.tagDistribution?.find(t => t.tag === tag);
-        const respKb = tagRespEntry?.responseSizeKb
+        const respKb = respRule?.responseSizeKb
+          ?? tagRespEntry?.responseSizeKb
           ?? (leafComp?.responseSizeKb
           || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
           || DEFAULT_RESPONSE_FALLBACK_KB);
@@ -442,6 +464,34 @@ export function createSimulationEngine(
       }
       result.totalInboundKBps = totalIn;
       result.totalOutboundKBps = totalOut;
+
+      // CDN cache stats
+      const nodeCacheStats: Record<string, Record<string, import('./models.js').CacheTagStats>> = {};
+      const allCacheNodes = new Set([...Object.keys(cacheHits), ...Object.keys(cacheMisses)]);
+      for (const nid of allCacheNodes) {
+        const comp = components.get(nid);
+        const allTags = new Set([...Object.keys(cacheHits[nid] ?? {}), ...Object.keys(cacheMisses[nid] ?? {})]);
+        const tagStats: Record<string, import('./models.js').CacheTagStats> = {};
+        for (const tag of allTags) {
+          const hits = (cacheHits[nid]?.[tag] ?? 0);
+          const misses = (cacheMisses[nid]?.[tag] ?? 0);
+          const total = hits + misses;
+          const rule = comp?.cacheRules?.find(r => r.tag === tag);
+          // Estimate fill: cumulative misses * avg response size / capacity
+          // Simplified: use miss rate * throughput as fill indicator
+          const capacityMb = rule?.capacityMb ?? 1024;
+          const missRateKBps = TICK_DURATION_SEC > 0 ? (misses * (DEFAULT_RESPONSE_SIZE_KB[comp?.type ?? ''] ?? 10)) / TICK_DURATION_SEC : 0;
+          const fillMb = Math.min(capacityMb, missRateKBps * TICK_DURATION_SEC / 1024);
+          tagStats[tag] = {
+            hits: TICK_DURATION_SEC > 0 ? hits / TICK_DURATION_SEC : 0,
+            misses: TICK_DURATION_SEC > 0 ? misses / TICK_DURATION_SEC : 0,
+            hitRate: total > 0 ? hits / total : 0,
+            fillMb,
+          };
+        }
+        nodeCacheStats[nid] = tagStats;
+      }
+      result.nodeCacheStats = nodeCacheStats;
 
       return result;
     },

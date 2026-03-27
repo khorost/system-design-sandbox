@@ -8,12 +8,14 @@ import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { useAuthStore } from '../../store/authStore.ts';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ArchitectureSchema } from '../../types/index.ts';
-import type { EdgeRoutingRule,ProtocolType } from '../../types/index.ts';
-import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS,NETWORK_PROTOCOLS } from '../../types/index.ts';
+import type { EdgeRoutingRule, ProtocolType } from '../../types/index.ts';
+import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS, NETWORK_PROTOCOLS } from '../../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES, isValidNesting } from '../../utils/networkLatency.ts';
+import { getConnectionTags } from '../../utils/nodeTags.ts';
 import { notify } from '../../utils/notifications.ts';
-import { paletteItems } from '../canvas/controls/paletteData.ts';
+import { getComponentIcon, paletteItems } from '../canvas/controls/paletteData.ts';
 import { SavedArchitecturesModal } from '../SavedArchitecturesModal.tsx';
+import { ComponentIcon } from '../ui/ComponentIcon.tsx';
 import { NumberInput } from '../ui/NumberInput.tsx';
 
 interface TagWeightEntry {
@@ -21,6 +23,17 @@ interface TagWeightEntry {
   weight: number;
   requestSizeKb?: number;
   responseSizeKb?: number;
+}
+
+interface CacheRuleEntry {
+  tag: string;
+  hitRatio: number;
+  capacityMb: number;
+}
+
+interface ResponseRuleEntry {
+  tag: string;
+  responseSizeKb: number;
 }
 
 function getDefaultColor(componentType: string, nodeType?: string): string {
@@ -37,7 +50,7 @@ function getProtocolOptions(targetComponentType?: string): ProtocolType[] {
 interface ParamDef {
   key: string;
   label: string;
-  type: 'number' | 'text' | 'select';
+  type: 'number' | 'text' | 'select' | 'boolean';
   options?: string[];
   min?: number;
   max?: number;
@@ -83,6 +96,15 @@ const COMPONENT_PARAMS: Record<string, ParamDef[]> = {
     { key: 'brokers', label: 'Brokers', type: 'number', min: 1, max: 1000 },
     { key: 'partitions', label: 'Partitions', type: 'number', min: 1, max: 100000 },
     { key: 'replication_factor', label: 'Replication Factor', type: 'number', min: 1, max: 10 },
+  ],
+  rabbitmq: [
+    { key: 'nodes', label: 'Nodes', type: 'number', min: 1, max: 1000 },
+    { key: 'queues', label: 'Queues', type: 'number', min: 1, max: 100000 },
+    { key: 'ha_mode', label: 'HA Mode', type: 'boolean' },
+  ],
+  nats: [
+    { key: 'nodes', label: 'Cluster Nodes', type: 'number', min: 1, max: 1000 },
+    { key: 'mode', label: 'Mode', type: 'select', options: ['core', 'jetstream'] },
   ],
   load_balancer: [
     { key: 'algorithm', label: 'Algorithm', type: 'select', options: ['round_robin', 'least_conn', 'ip_hash'] },
@@ -167,11 +189,11 @@ function EdgeProperties() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xl">{'🔗'}</span>
           <div>
-            <h2 className="text-base font-bold text-slate-200">Connection</h2>
+            <h2 className="text-sm font-bold text-slate-200">Connection</h2>
             <p className="text-xs text-slate-400 truncate">
               {sourceNode?.data.label ?? edge.source} → {targetNode?.data.label ?? edge.target}
             </p>
@@ -179,7 +201,7 @@ function EdgeProperties() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
           <label htmlFor={`edge-${edge.id}-protocol`} className={labelClass}>Protocol</label>
           <select
@@ -242,10 +264,10 @@ function EdgeProperties() {
           />
         </div>
 
-        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} sourceNode={sourceNode} bandwidth={data?.bandwidthMbps ?? 1000} allEdges={edges} />
+        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} sourceNode={sourceNode} targetNode={targetNode} allEdges={edges} />
       </div>
 
-      <div className="p-4 border-t border-[var(--color-border)]">
+      <div className="p-3 border-t border-[var(--color-border)]">
         <button
           onClick={handleDelete}
           className={destructiveButtonClass}
@@ -257,49 +279,20 @@ function EdgeProperties() {
   );
 }
 
-interface TagWeightSource {
-  tag: string;
-  weight: number;
-  requestSizeKb?: number;
-}
 
-function fmtEdgeRps(v: number): string {
-  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
-  return v.toFixed(0);
-}
-
-function fmtEdgeBw(kbps: number): string {
-  if (kbps >= 1024 * 1024) return `${(kbps / (1024 * 1024)).toFixed(1)} GB/s`;
-  if (kbps >= 1024) return `${(kbps / 1024).toFixed(1)} MB/s`;
-  return `${kbps.toFixed(1)} KB/s`;
-}
-
-function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, bandwidth, allEdges }: {
+function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, targetNode, allEdges }: {
   edgeId: string;
   rules: EdgeRoutingRule[];
   updateEdgeData: (id: string, data: Record<string, unknown>) => void;
   sourceNode: import('../../types/index.ts').ComponentNode | undefined;
-  bandwidth: number;
+  targetNode: import('../../types/index.ts').ComponentNode | undefined;
   allEdges: import('../../types/index.ts').ComponentEdge[];
 }) {
-  const [newTag, setNewTag] = useState('');
-
-  // Collect all tags from source node's tagDistribution
-  const srcConfig = sourceNode?.data.config ?? {};
-  const srcTags = (srcConfig.tagDistribution as TagWeightSource[] | undefined) ?? [];
-  const srcUsersK = (srcConfig.concurrent_users_k as number) ?? 1;
-  const srcRpu = (srcConfig.requests_per_user as number) ?? 0.1;
-  const srcTotalRps = srcUsersK * 1000 * srcRpu;
-  const srcTotalWeight = srcTags.reduce((s, t) => s + t.weight, 0);
-
-  // Merge: auto-populate tags from source, preserve existing rule weights
-  const allTags = new Set([...srcTags.map(t => t.tag), ...rules.map(r => r.tag)]);
-  const sortedTags = [...allTags].sort();
+  // Determine tags that can flow through this connection (intersection of source/target)
+  const connectionTags = sourceNode && targetNode ? getConnectionTags(sourceNode, targetNode) : null;
 
   const getRule = (tag: string) => rules.find(r => r.tag === tag);
   const getCoeff = (tag: string) => getRule(tag)?.weight ?? 1;
-  const getOutTag = (tag: string) => getRule(tag)?.outTag;
 
   const update = (updated: EdgeRoutingRule[]) => {
     updateEdgeData(edgeId, { routingRules: updated.length > 0 ? updated : undefined });
@@ -308,133 +301,62 @@ function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, ban
   const setCoeff = (tag: string, coeff: number) => {
     const existing = rules.filter(r => r.tag !== tag);
     if (coeff === 1) {
-      // Default — remove rule (implicit 1)
-      update(existing);
+      update(existing); // default — remove rule (implicit 1)
     } else {
       const oldRule = getRule(tag);
       update([...existing, { tag, weight: coeff, ...(oldRule?.outTag ? { outTag: oldRule.outTag } : {}) }]);
     }
   };
 
-  const setOutTagVal = (tag: string, outTag: string) => {
-    const existing = rules.filter(r => r.tag !== tag);
-    const coeff = getCoeff(tag);
-    if (!outTag && coeff === 1) {
-      update(existing);
-    } else {
-      update([...existing, { tag, weight: coeff, ...(outTag ? { outTag } : {}) }]);
-    }
-  };
-
-  const addTag = () => {
-    const tag = newTag.trim();
-    if (!tag || allTags.has(tag)) return;
-    update([...rules, { tag, weight: 1 }]);
-    setNewTag('');
-  };
-
-  // Compute proportional split: this edge's share among all sibling edges from same source
+  // Compute share among sibling edges from same source
   const siblingEdges = sourceNode ? allEdges.filter(e => e.source === sourceNode.id) : [];
-
   const getTagShare = (tag: string): number => {
-    // Coefficient on THIS edge for the tag
     const thisCoeff = getCoeff(tag);
     if (thisCoeff <= 0) return 0;
-    // Sum of coefficients across ALL sibling edges for the same tag
     let totalCoeff = 0;
     for (const se of siblingEdges) {
       const seRules = (se.data?.routingRules as EdgeRoutingRule[] | undefined) ?? [];
       const seRule = seRules.find(r => r.tag === tag);
-      const seCoeff = seRule != null ? seRule.weight : 1; // default 1
-      totalCoeff += seCoeff;
+      totalCoeff += seRule != null ? seRule.weight : 1;
     }
     return totalCoeff > 0 ? thisCoeff / totalCoeff : 0;
   };
 
-  const getTagRps = (tag: string): number => {
-    const srcTag = srcTags.find(t => t.tag === tag);
-    if (!srcTag || srcTotalWeight <= 0) return 0;
-    const tagFraction = srcTag.weight / srcTotalWeight;
-    return srcTotalRps * tagFraction * getTagShare(tag);
-  };
-
-  const getTagBw = (tag: string): number => {
-    const srcTag = srcTags.find(t => t.tag === tag);
-    const reqKb = srcTag?.requestSizeKb ?? 0.1;
-    return getTagRps(tag) * reqKb;
-  };
-
-  const totalRps = sortedTags.reduce((s, t) => s + getTagRps(t), 0);
-  const totalBw = sortedTags.reduce((s, t) => s + getTagBw(t), 0);
-
   return (
     <div>
-      <label className={labelClass}>Traffic Tags</label>
-      {sortedTags.length === 0 ? (
-        <p className="text-xs text-slate-400">No tags defined on source</p>
+      <label className={labelClass}>Tag Routing</label>
+      {connectionTags === null ? (
+        <p className="text-xs text-slate-400 mt-1">All tags pass through (both nodes accept any traffic)</p>
+      ) : connectionTags.length === 0 ? (
+        <p className="text-xs text-amber-400/80 mt-1">No matching tags between source and target</p>
       ) : (
-        <table className="w-full border-collapse table-fixed mt-1">
-          <colgroup>
-            <col />
-            <col className="w-12" />
-            <col className="w-16" />
-            <col className="w-[4.5rem]" />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-[var(--color-border)]">
-              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-left">Tag</th>
-              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">Coef</th>
-              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">RPS</th>
-              <th className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 px-1 py-1 text-right">BW</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedTags.map((tag) => {
-              const coeff = getCoeff(tag);
-              const outTag = getOutTag(tag);
-              return (
-                <tr key={tag} className="border-b border-[rgba(138,167,198,0.08)] group">
-                  <td className="px-1 py-1">
-                    <div className="text-xs font-medium text-slate-200">{tag}</div>
-                    {outTag != null && (
-                      <div className="text-[10px] text-slate-500">→ {outTag}</div>
-                    )}
-                  </td>
-                  <td className="px-1 py-1 text-right">
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={coeff}
-                      onChange={(e) => setCoeff(tag, Number(e.target.value))}
-                      className={`w-full px-1 py-0.5 text-xs text-right ${compactInputClass}`}
-                    />
-                  </td>
-                  <td className="px-1 py-1 text-xs font-mono text-right text-slate-300">{fmtEdgeRps(getTagRps(tag))}</td>
-                  <td className="px-1 py-1 text-[10px] font-mono text-right text-slate-400">{fmtEdgeBw(getTagBw(tag))}</td>
-                </tr>
-              );
-            })}
-            <tr className="bg-blue-500/8 border-t border-blue-500/20">
-              <td className="px-1 py-1 text-xs font-semibold text-blue-400">Total</td>
-              <td />
-              <td className="px-1 py-1 text-xs font-mono text-right text-blue-300 font-semibold">{fmtEdgeRps(totalRps)}</td>
-              <td className="px-1 py-1 text-[10px] font-mono text-right text-blue-400/60">{fmtEdgeBw(totalBw)}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="mt-1 space-y-1">
+          {connectionTags.map((tag) => {
+            const coeff = getCoeff(tag);
+            const share = getTagShare(tag);
+            const blocked = coeff <= 0;
+            return (
+              <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${blocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
+                <span className={`text-xs font-medium w-16 shrink-0 truncate ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={coeff}
+                  aria-label={`Weight for tag ${tag}`}
+                  onChange={(e) => setCoeff(tag, Number(e.target.value))}
+                  className={`w-12 shrink-0 px-1.5 py-0.5 text-xs text-right ${compactInputClass}`}
+                />
+                {blocked ? (
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>
+                ) : (
+                  <span className="text-[10px] text-slate-500 ml-auto">{Math.round(share * 100)}%</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
-      <div className="flex items-center gap-1.5 mt-2">
-        <input
-          type="text"
-          value={newTag}
-          placeholder="tag"
-          onChange={(e) => setNewTag(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addTag()}
-          className={`w-20 px-1.5 py-1 text-xs ${compactInputClass}`}
-        />
-        <button onClick={addTag} className="text-xs px-2 py-1 text-slate-400 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)]">+</button>
-      </div>
     </div>
   );
 }
@@ -444,13 +366,14 @@ function NodeLink({
   onClick,
   subtitle,
 }: {
-  node: { data: { icon: string; label: string } };
+  node: { data: { icon: string; label: string; componentType: string } };
   onClick: () => void;
   subtitle?: string;
 }) {
+  const icon = getComponentIcon(node.data.componentType as Parameters<typeof getComponentIcon>[0], node.data.icon);
   return (
     <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
-      <span>{node.data.icon}</span>
+      <ComponentIcon icon={icon} alt={node.data.label} className="flex h-4 w-4 shrink-0 items-center justify-center text-sm leading-none" imgClassName="h-4 w-4 object-contain" />
       <span className="min-w-0 flex-1 text-left">
         <span className="block truncate">{node.data.label}</span>
         {subtitle ? <span className="block text-[10px] uppercase tracking-[0.16em] text-slate-500">{subtitle}</span> : null}
@@ -490,206 +413,449 @@ function NodeProperties() {
     if (config[key] != null) return config[key];
     return def?.params.find(p => p.key === key)?.default;
   };
+  const modelParams = params.filter((p) => p.key !== 'replicas');
+  const showStandaloneReplicas = !CLIENT_TYPES.has(selectedNode.data.componentType) && !CONTAINER_TYPES.has(selectedNode.data.componentType) && !def?.params.some(p => p.key === 'brokers' || p.key === 'nodes');
+  const validParents = nodes.filter(n =>
+    CONTAINER_TYPES.has(n.data.componentType) &&
+    n.id !== selectedNode.id &&
+    isValidNesting(selectedNode.data.componentType, n.data.componentType),
+  );
+  const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
+  const children = CONTAINER_TYPES.has(selectedNode.data.componentType)
+    ? nodes.filter(n => n.parentId === selectedNode.id)
+    : [];
+  const selectedNodeIcon = getComponentIcon(selectedNode.data.componentType, selectedNode.data.icon);
+  const effectiveRps = CLIENT_TYPES.has(selectedNode.data.componentType)
+    ? (((configVal('concurrent_users_k') as number) ?? 1) * 1000 * ((configVal('requests_per_user') as number) ?? 0.1))
+    : null;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <span className="text-[1.75rem] leading-none">{paletteItem?.icon || selectedNode.data.icon}</span>
-          <div>
-            <h2 className="text-base font-bold text-slate-200">{selectedNode.data.label}</h2>
-            <p className="text-xs text-slate-400">{formatComponentName(selectedNode.data.componentType)}</p>
+          <ComponentIcon icon={selectedNodeIcon} alt={formatComponentName(selectedNode.data.componentType)} className="flex h-7 w-7 shrink-0 items-center justify-center text-[1.75rem] leading-none" imgClassName="h-7 w-7 object-contain" />
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-100 truncate">{formatComponentName(selectedNode.data.componentType)}</span>
+            {paletteItem?.category ? (
+              <span className="shrink-0 rounded-full border border-[rgba(138,167,198,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                {paletteItem.category}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div>
-          <label htmlFor={`node-${selectedNode.id}-name`} className={labelClass}>Name</label>
-          <input
-            type="text"
-            id={`node-${selectedNode.id}-name`}
-            value={(config.name as string) || selectedNode.data.label}
-            onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
-            maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
-            className={inputClass}
-          />
-        </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div className={sectionClass}>
+          <div className="mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-accent)]">Presentation</div>
+            <div className="mt-1 text-[11px] text-slate-500">Identity, colors and placement in the scheme</div>
+          </div>
 
-        {(() => {
-          const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
-          const defaultTextColor = '#e2e8f0';
-          return (
-            <div className={sectionClass}>
-              <div className="flex items-center justify-between gap-3">
-                <label className={labelClass}>Colors</label>
-                {(config.color != null || config.textColor != null) && (
-                  <button
-                    onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
-                    className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          <div className="space-y-3">
+            <div>
+              <label htmlFor={`node-${selectedNode.id}-name`} className={labelClass}>Name</label>
+              <input
+                type="text"
+                id={`node-${selectedNode.id}-name`}
+                value={(config.name as string) || selectedNode.data.label}
+                onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
+                maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
+                className={inputClass}
+              />
+            </div>
+
+            {(() => {
+              const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
+              const defaultTextColor = '#e2e8f0';
+              return (
+                <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className={labelClass}>Colors</label>
+                    {(config.color != null || config.textColor != null) && (
+                      <button
+                        onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
+                        className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id={`node-${selectedNode.id}-borderColor`}
+                        value={(config.color as string) || defaultColor}
+                        onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
+                        title="Border color"
+                        aria-label="Border color"
+                        className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
+                      />
+                      <span className="text-[11px] text-slate-400">Border</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id={`node-${selectedNode.id}-textColor`}
+                        value={(config.textColor as string) || defaultTextColor}
+                        onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
+                        title="Text color"
+                        aria-label="Text color"
+                        className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
+                      />
+                      <span className="text-[11px] text-slate-400">Text</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {validParents.length > 0 ? (
+              <div>
+                <label htmlFor={`node-${selectedNode.id}-parent`} className={labelClass}>Parent Container</label>
+                <div className="mt-1 flex items-center gap-2">
+                  <select
+                    id={`node-${selectedNode.id}-parent`}
+                    value={selectedNode.parentId ?? ''}
+                    onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
+                    className={`mt-0 flex-1 ${inputClass}`}
                   >
-                    Reset
+                    <option value="">None (top-level)</option>
+                    {validParents.map((c) => (
+                      <option key={c.id} value={c.id}>{c.data.icon} {formatContainerOptionLabel(c)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => parentNode && focusNode(parentNode.id)}
+                    disabled={!parentNode}
+                    className="inline-flex h-[2.35rem] w-[2.35rem] shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[rgba(7,12,19,0.40)] text-slate-300 transition-colors hover:bg-[rgba(255,255,255,0.03)] hover:text-slate-100 disabled:cursor-not-allowed disabled:text-slate-600"
+                    title={parentNode ? 'Locate parent container on canvas' : 'No parent container selected'}
+                    aria-label="Locate parent container on canvas"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M15 3h6v6" />
+                      <path d="M10 14 21 3" />
+                      <path d="M21 14v7H3V3h7" />
+                    </svg>
                   </button>
+                </div>
+              </div>
+            ) : null}
+
+            {CONTAINER_TYPES.has(selectedNode.data.componentType) ? (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[11px] text-slate-400">Children</span>
+                  <span className="text-sm font-mono font-semibold text-slate-200">{children.length}</span>
+                </div>
+                {children.length > 0 && (
+                  <div className="border-t border-[var(--color-border)]">
+                    {children.map(child => (
+                      <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="mt-2 flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    id={`node-${selectedNode.id}-borderColor`}
-                    value={(config.color as string) || defaultColor}
-                    onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
-                    title="Border color"
-                    aria-label="Border color"
-                    className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
+            ) : null}
+          </div>
+        </div>
+
+        <div className={sectionClass}>
+          <div className="mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-accent-warm)]">Simulation Model</div>
+            <div className="mt-1 text-[11px] text-slate-500">Capacity, replication and behavior in simulation</div>
+          </div>
+
+          <div className="space-y-3">
+            {showStandaloneReplicas && (
+              <div>
+                <label htmlFor={`node-${selectedNode.id}-replicas`} className={labelClass}>Instances (replicas)</label>
+                <NumberInput
+                  id={`node-${selectedNode.id}-replicas`}
+                  value={(config.replicas as number) ?? def?.defaults?.replicas ?? 1}
+                  onChange={(n) => updateNodeConfig(selectedNode.id, { replicas: n })}
+                  min={1}
+                  max={10000}
+                  className={inputClass}
+                />
+              </div>
+            )}
+
+            {modelParams.map((param) => (
+              <div key={param.key}>
+                <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className={labelClass}>
+                  {param.label}
+                </label>
+                {param.type === 'select' ? (
+                  <select
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as string) || param.options?.[0] || ''}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
+                    className={inputClass}
+                  >
+                    {param.options?.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : param.type === 'number' ? (
+                  <NumberInput
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as number) ?? 0}
+                    onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
+                    min={param.min}
+                    max={param.max}
+                    step={param.step}
+                    className={inputClass}
                   />
-                  <span className="text-[11px] text-slate-400">Border</span>
-                </div>
-                <div className="flex items-center gap-2">
+                ) : (
                   <input
-                    type="color"
-                    id={`node-${selectedNode.id}-textColor`}
-                    value={(config.textColor as string) || defaultTextColor}
-                    onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
-                    title="Text color"
-                    aria-label="Text color"
-                    className="w-8 h-8 rounded-md border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded"
+                    type={param.type}
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as string) ?? ''}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
+                    maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
+                    className={inputClass}
                   />
-                  <span className="text-[11px] text-slate-400">Text</span>
+                )}
+              </div>
+            ))}
+
+            {effectiveRps != null ? (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">Effective RPS</span>
+                  <span className="text-sm font-mono font-semibold text-slate-200">{Math.round(effectiveRps)}/s</span>
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            ) : null}
 
-        {params.map((param) => (
-          <div key={param.key}>
-            <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className={labelClass}>
-              {param.label}
-            </label>
-            {param.type === 'select' ? (
-              <select
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as string) || param.options?.[0] || ''}
-                onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
-                className={inputClass}
-              >
-                {param.options?.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            ) : param.type === 'number' ? (
-              <NumberInput
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as number) ?? 0}
-                onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
-                min={param.min}
-                max={param.max}
-                step={param.step}
-                className={inputClass}
-              />
-            ) : (
-              <input
-                type={param.type}
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as string) ?? ''}
-                onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
-                maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
-                className={inputClass}
+            {selectedNode.data.componentType === 'cdn' && (
+              <CacheRulesEditor
+                nodeId={selectedNode.id}
+                rules={(config.cacheRules as CacheRuleEntry[] | undefined) ?? (def?.defaultConfig?.cacheRules as CacheRuleEntry[] | undefined) ?? []}
+                updateNodeConfig={updateNodeConfig}
               />
             )}
+
+            {(Boolean(def?.defaultConfig?.responseRules) || Boolean(config.responseRules)) && (
+              <ResponseRulesEditor
+                nodeId={selectedNode.id}
+                rules={(config.responseRules as ResponseRuleEntry[] | undefined) ?? (def?.defaultConfig?.responseRules as ResponseRuleEntry[] | undefined) ?? []}
+                updateNodeConfig={updateNodeConfig}
+              />
+            )}
+
+            {CLIENT_TYPES.has(selectedNode.data.componentType) && (
+              <TagDistributionEditor
+                nodeId={selectedNode.id}
+                tags={(config.tagDistribution as TagWeightEntry[] | undefined) ?? []}
+                updateNodeConfig={updateNodeConfig}
+              />
+            )}
+
+            {!showStandaloneReplicas && modelParams.length === 0 && effectiveRps == null && (
+              <p className="text-sm text-slate-400">No simulation parameters for this component type.</p>
+            )}
           </div>
-        ))}
-
-        {/* Container children list */}
-        {CONTAINER_TYPES.has(selectedNode.data.componentType) && (() => {
-          const children = nodes.filter(n => n.parentId === selectedNode.id);
-          return (
-            <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-[11px] text-slate-400">Children</span>
-                <span className="text-sm font-mono font-semibold text-slate-200">{children.length}</span>
-              </div>
-              {children.length > 0 && (
-                <div className="border-t border-[var(--color-border)]">
-                  {children.map(child => (
-                    <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Parent container dropdown — for all node types */}
-        {(() => {
-          const validParents = nodes.filter(n =>
-            CONTAINER_TYPES.has(n.data.componentType) &&
-            n.id !== selectedNode.id &&
-            isValidNesting(selectedNode.data.componentType, n.data.componentType)
-          );
-          const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
-          return validParents.length > 0 ? (
-            <div>
-              <label htmlFor={`node-${selectedNode.id}-parent`} className={labelClass}>Parent Container</label>
-              {parentNode && (
-                <div className="mt-1 mb-1 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
-                  <NodeLink
-                    node={parentNode}
-                    subtitle={formatComponentName(parentNode.data.componentType)}
-                    onClick={() => focusNode(parentNode.id)}
-                  />
-                </div>
-              )}
-              <select
-                id={`node-${selectedNode.id}-parent`}
-                value={selectedNode.parentId ?? ''}
-                onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
-                className={inputClass}
-              >
-                <option value="">None (top-level)</option>
-                {validParents.map((c) => (
-                  <option key={c.id} value={c.id}>{c.data.icon} {formatContainerOptionLabel(c)}</option>
-                ))}
-              </select>
-            </div>
-          ) : null;
-        })()}
-
-        {CLIENT_TYPES.has(selectedNode.data.componentType) && (() => {
-          const usersK = (configVal('concurrent_users_k') as number) ?? 1;
-          const rpu = (configVal('requests_per_user') as number) ?? 0.1;
-          const effectiveRps = usersK * 1000 * rpu;
-          return (
-            <div className={sectionClass}>
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">Effective RPS</span>
-                <span className="text-sm font-mono font-semibold text-slate-200">{Math.round(effectiveRps)}/s</span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {CLIENT_TYPES.has(selectedNode.data.componentType) && (
-          <TagDistributionEditor
-            nodeId={selectedNode.id}
-            tags={(config.tagDistribution as TagWeightEntry[] | undefined) ?? []}
-            updateNodeConfig={updateNodeConfig}
-          />
-        )}
-
-        {params.length === 0 && (
-          <p className="text-sm text-slate-400">No configurable parameters for this component type.</p>
-        )}
+        </div>
       </div>
 
-      <div className="p-4 border-t border-[var(--color-border)]">
+      <div className="p-3 border-t border-[var(--color-border)]">
         <button
           onClick={() => removeNode(selectedNode.id)}
           className={destructiveButtonClass}
         >
           Delete Component
         </button>
+      </div>
+    </div>
+  );
+}
+
+function CacheRulesEditor({ nodeId, rules, updateNodeConfig }: {
+  nodeId: string;
+  rules: CacheRuleEntry[];
+  updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: CacheRuleEntry[]) => {
+    updateNodeConfig(nodeId, { cacheRules: updated.length > 0 ? updated : undefined });
+  };
+
+  const addRule = () => {
+    const tag = newTag.trim() || 'misc';
+    if (rules.some(r => r.tag === tag)) return;
+    update([...rules, { tag, hitRatio: 0.8, capacityMb: 256 }]);
+    setNewTag('');
+  };
+
+  const removeRule = (idx: number) => update(rules.filter((_, i) => i !== idx));
+
+  const updateRule = (idx: number, field: keyof CacheRuleEntry, value: string | number) => {
+    update(rules.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className={labelClass}>Cache Rules</label>
+        <button
+          onClick={addRule}
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+        >
+          + Add Rule
+        </button>
+      </div>
+      {rules.length === 0 ? (
+        <p className="text-xs text-slate-400">No cache rules — all traffic passes through to origin</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-0.5">
+            <span className="w-16 shrink-0">Tag</span>
+            <span className="w-14 shrink-0">Hit %</span>
+            <span className="w-16 shrink-0">Cache MB</span>
+          </div>
+          {rules.map((rule, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={rule.tag}
+                placeholder="tag"
+                aria-label={`Rule ${idx + 1} tag`}
+                onChange={(e) => updateRule(idx, 'tag', e.target.value)}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(rule.hitRatio * 100)}
+                aria-label={`Rule ${idx + 1} hit ratio`}
+                onChange={(e) => updateRule(idx, 'hitRatio', Number(e.target.value) / 100)}
+                className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={1}
+                step={64}
+                value={rule.capacityMb}
+                aria-label={`Rule ${idx + 1} capacity MB`}
+                onChange={(e) => updateRule(idx, 'capacityMb', Number(e.target.value))}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <button
+                onClick={() => removeRule(idx)}
+                aria-label={`Remove rule ${idx + 1}`}
+                className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="tag name"
+          aria-label="New cache rule tag"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addRule()}
+          className={`w-16 px-1.5 py-1 text-xs ${compactInputClass}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ResponseRulesEditor({ nodeId, rules, updateNodeConfig }: {
+  nodeId: string;
+  rules: ResponseRuleEntry[];
+  updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: ResponseRuleEntry[]) => {
+    updateNodeConfig(nodeId, { responseRules: updated.length > 0 ? updated : undefined });
+  };
+
+  const addRule = () => {
+    const tag = newTag.trim() || 'data';
+    if (rules.some(r => r.tag === tag)) return;
+    update([...rules, { tag, responseSizeKb: 100 }]);
+    setNewTag('');
+  };
+
+  const removeRule = (idx: number) => update(rules.filter((_, i) => i !== idx));
+
+  const updateRule = (idx: number, field: keyof ResponseRuleEntry, value: string | number) => {
+    update(rules.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className={labelClass}>Response Rules</label>
+        <button
+          onClick={addRule}
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+        >
+          + Add Rule
+        </button>
+      </div>
+      {rules.length === 0 ? (
+        <p className="text-xs text-slate-400">No rules — all tags return default response size</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-0.5">
+            <span className="w-16 shrink-0">Tag</span>
+            <span className="w-16 shrink-0">Size KB</span>
+          </div>
+          {rules.map((rule, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={rule.tag}
+                placeholder="tag"
+                aria-label={`Rule ${idx + 1} tag`}
+                onChange={(e) => updateRule(idx, 'tag', e.target.value)}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={0.01}
+                step={1}
+                value={rule.responseSizeKb}
+                aria-label={`Rule ${idx + 1} response size KB`}
+                onChange={(e) => updateRule(idx, 'responseSizeKb', Number(e.target.value))}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <button
+                onClick={() => removeRule(idx)}
+                aria-label={`Remove rule ${idx + 1}`}
+                className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="tag name"
+          aria-label="New response rule tag"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addRule()}
+          className={`w-16 px-1.5 py-1 text-xs ${compactInputClass}`}
+        />
       </div>
     </div>
   );
@@ -706,12 +872,10 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
     updateNodeConfig(nodeId, { tagDistribution: updated.length > 0 ? updated : undefined });
   };
 
-  const isClient = true; // TagDistributionEditor is only rendered for CLIENT_TYPES
-
   const addTag = () => {
     const tag = newTag.trim() || 'read';
     if (tags.some(t => t.tag === tag)) return;
-    update([...tags, { tag, weight: 1.0, ...(isClient ? { requestSizeKb: 0.1 } : {}) }]);
+    update([...tags, { tag, weight: 1.0, requestSizeKb: 0.1 }]);
     setNewTag('');
   };
 
@@ -901,7 +1065,7 @@ function SchemaProperties() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xl">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
@@ -909,13 +1073,13 @@ function SchemaProperties() {
             </svg>
           </span>
           <div>
-            <h2 className="text-base font-bold text-slate-200">Architecture</h2>
+            <h2 className="text-sm font-bold text-slate-200">Architecture</h2>
             <p className="text-xs text-slate-400">Schema properties</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
           <label htmlFor="schema-name" className={labelClass}>Name</label>
           <input

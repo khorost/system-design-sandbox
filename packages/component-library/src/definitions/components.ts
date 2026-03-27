@@ -138,7 +138,7 @@ export const componentDefinitions: ComponentDefinition[] = [
     params: [
       { key: 'max_rps_per_instance', label: 'Max RPS/Instance', type: 'number', default: 50000, min: 1, max: 10000000 },
       { key: 'algorithm', label: 'Algorithm', type: 'select', default: 'round_robin', options: ['round_robin', 'least_conn', 'ip_hash'] },
-      { key: 'max_connections', label: 'Max Connections', type: 'number', default: 100000, min: 1, max: 1000000 },
+      { key: 'max_connections', label: 'Max Connections', type: 'number', default: 10000, min: 1, max: 1000000 },
     ],
     defaults: { maxRps: 50000, baseLatencyMs: 1, replicas: 2 },
   },
@@ -150,15 +150,14 @@ export const componentDefinitions: ComponentDefinition[] = [
     description: 'Content Delivery Network for static assets',
     params: [
       { key: 'max_rps_per_instance', label: 'Max RPS', type: 'number', default: 500000, min: 1, max: 10000000 },
-      { key: 'cache_hit_ratio', label: 'Cache Hit Ratio', type: 'number', default: 0.9, min: 0, max: 1 },
       { key: 'edge_locations', label: 'Edge Locations', type: 'number', default: 50, min: 1, max: 500 },
       { key: 'ttl_sec', label: 'TTL (sec)', type: 'number', default: 3600, min: 0, max: 31536000 },
     ],
     defaults: { maxRps: 500000, baseLatencyMs: 10, replicas: 1 },
     defaultConfig: {
-      response_size_kb: 400,
-      tagDistribution: [
-        { tag: 'content', weight: 100, responseSizeKb: 400 },
+      cacheRules: [
+        { tag: 'web', hitRatio: 0.95, capacityMb: 512 },
+        { tag: 'content', hitRatio: 0.70, capacityMb: 2048 },
       ],
     },
   },
@@ -366,6 +365,13 @@ export const componentDefinitions: ComponentDefinition[] = [
       { key: 'max_throughput_mbps', label: 'Max Throughput (Mbps)', type: 'number', default: 1000, min: 1, max: 100000 },
     ],
     defaults: { maxRps: 5500, baseLatencyMs: 20, replicas: 1 },
+    defaultConfig: {
+      response_size_kb: 100,
+      responseRules: [
+        { tag: 'web', responseSizeKb: 2 },
+        { tag: 'content', responseSizeKb: 400 },
+      ],
+    },
   },
   {
     type: 'nfs',
@@ -416,13 +422,13 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '📨',
     description: 'Distributed event streaming platform',
     params: [
-      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Broker', type: 'number', default: 100000, min: 1, max: 10000000 },
       { key: 'brokers', label: 'Brokers', type: 'number', default: 3, min: 1, max: 1000 },
+      { key: 'max_rps_per_broker', label: 'Max Msg/sec/Broker', type: 'number', default: 100000, min: 1, max: 10000000 },
       { key: 'partitions', label: 'Partitions', type: 'number', default: 12, min: 1, max: 100000 },
       { key: 'replication_factor', label: 'Replication Factor', type: 'number', default: 3, min: 1, max: 10 },
       { key: 'retention_hours', label: 'Retention (hours)', type: 'number', default: 168, min: 1, max: 8760 },
     ],
-    defaults: { maxRps: 100000, baseLatencyMs: 5, replicas: 3 },
+    defaults: { maxRps: 100000, baseLatencyMs: 5, replicas: 1 },
   },
   {
     type: 'rabbitmq',
@@ -431,24 +437,13 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '🐇',
     description: 'Message broker with flexible routing',
     params: [
-      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Node', type: 'number', default: 20000, min: 1, max: 10000000 },
+      { key: 'nodes', label: 'Nodes', type: 'number', default: 3, min: 1, max: 1000 },
+      { key: 'max_rps_per_node', label: 'Max Msg/sec/Node', type: 'number', default: 20000, min: 1, max: 10000000 },
       { key: 'queues', label: 'Queues', type: 'number', default: 10, min: 1, max: 100000 },
       { key: 'prefetch_count', label: 'Prefetch Count', type: 'number', default: 10, min: 1, max: 10000 },
       { key: 'ha_mode', label: 'HA Mode', type: 'boolean', default: true },
     ],
-    defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 3 },
-  },
-  {
-    type: 'event_bus',
-    label: 'Event Bus',
-    category: 'messaging',
-    icon: '🚌',
-    description: 'Pub/Sub event bus',
-    params: [
-      { key: 'max_rps_per_instance', label: 'Max Msg/sec', type: 'number', default: 50000, min: 1, max: 10000000 },
-      { key: 'type', label: 'Type', type: 'select', default: 'pub_sub', options: ['pub_sub', 'point_to_point'] },
-    ],
-    defaults: { maxRps: 50000, baseLatencyMs: 3, replicas: 1 },
+    defaults: { maxRps: 20000, baseLatencyMs: 2, replicas: 1 },
   },
 
   {
@@ -458,12 +453,12 @@ export const componentDefinitions: ComponentDefinition[] = [
     icon: '⚡',
     description: 'High-performance cloud-native messaging (NATS / NATS JetStream)',
     params: [
-      { key: 'max_rps_per_instance', label: 'Max Msg/sec/Node', type: 'number', default: 200000, min: 1, max: 10000000 },
       { key: 'nodes', label: 'Cluster Nodes', type: 'number', default: 3, min: 1, max: 1000 },
+      { key: 'max_rps_per_node', label: 'Max Msg/sec/Node', type: 'number', default: 200000, min: 1, max: 10000000 },
       { key: 'mode', label: 'Mode', type: 'select', default: 'core', options: ['core', 'jetstream'] },
       { key: 'max_payload_kb', label: 'Max Payload (KB)', type: 'number', default: 1024, min: 0.1, max: 102400 },
     ],
-    defaults: { maxRps: 200000, baseLatencyMs: 0.5, replicas: 3 },
+    defaults: { maxRps: 200000, baseLatencyMs: 0.5, replicas: 1 },
   },
 
   // --- Infrastructure / Containers ---

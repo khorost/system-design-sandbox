@@ -94,6 +94,7 @@ export function resolveNextHops(
   adjacency: Map<string, string[]>,
   connectionLookup: Map<string, ConnectionModel>,
   _loadBalancerNodes: Set<string>,
+  components?: Map<string, ComponentModel>,
 ): NextHop[] {
   const neighbors = adjacency.get(currentNode);
   if (!neighbors || neighbors.length === 0) return [];
@@ -105,6 +106,12 @@ export function resolveNextHops(
   // Build candidates with per-tag coefficient
   const candidates: { target: string; coeff: number; outTag?: string }[] = [];
   for (const neighbor of unvisited) {
+    // Skip neighbor if it declares explicit tags and doesn't accept this tag
+    const targetComp = components?.get(neighbor);
+    if (targetComp?.supportedTags && !targetComp.supportedTags.includes(tag)) {
+      continue;
+    }
+
     const conn = connectionLookup.get(`${currentNode}->${neighbor}`);
     const rule = conn?.routingRules?.find(r => r.tag === tag);
     const coeff = rule != null ? rule.weight : 1; // explicit rule or default 1

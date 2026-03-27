@@ -210,7 +210,7 @@ function findFreeSpaceInContainer(
   }
 
   // No space inside current bounds — place at bottom of content, auto-expand will handle it
-  const maxBottom = rects.reduce((max, r) => Math.max(max, r.y + r.h + gap), padT);
+  const maxBottom = rects.reduce((max: number, r) => Math.max(max, r.y + r.h + gap), padT as number);
   return { x: padL, y: maxBottom };
 }
 
@@ -501,7 +501,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   selectNode: (id) => {
-    set({ selectedNodeId: id, selectedEdgeId: null });
+    set({
+      selectedNodeId: id,
+      selectedEdgeId: null,
+      nodes: get().nodes.map(n => ({ ...n, selected: n.id === id })),
+    });
   },
 
   focusNode: (id) => {

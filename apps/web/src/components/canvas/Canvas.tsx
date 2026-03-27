@@ -13,16 +13,17 @@ import {
   ReactFlowProvider,
   reconnectEdge,
   useReactFlow,
+  useViewport,
 } from '@xyflow/react';
-import { type DragEvent,useCallback, useEffect, useRef } from 'react';
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { CONFIG } from '../../config/constants.ts';
-import { CONTAINER_COLORS,NODE_TYPE_COLORS } from '../../constants/colors.ts';
+import { CONTAINER_COLORS, NODE_TYPE_COLORS } from '../../constants/colors.ts';
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ComponentCategory, ComponentEdge, ComponentNode, ComponentNodeData, ComponentType } from '../../types/index.ts';
 import { NODE_TYPE_MAP } from '../../types/index.ts';
-import { CONTAINER_TYPES, CONTAINER_Z_INDEX, getAbsolutePosition, getNestingDepth,isValidNesting } from '../../utils/networkLatency.ts';
+import { CONTAINER_TYPES, CONTAINER_Z_INDEX, getAbsolutePosition, getNestingDepth, isValidNesting } from '../../utils/networkLatency.ts';
 import { sanitizeLabel } from '../../utils/sanitize.ts';
 import { Toolbar } from './controls/Toolbar.tsx';
 import { DebugStats } from './DebugStats.tsx';
@@ -119,7 +120,10 @@ function getValidContainersAtPoint(
 
 function CanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const miniMapDragRef = useRef(false);
   const { screenToFlowPosition, setCenter, getZoom } = useReactFlow();
+  const viewport = useViewport();
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
 
   const nodes = useCanvasStore((s) => s.nodes);
@@ -132,6 +136,22 @@ function CanvasInner() {
   const selectEdge = useCanvasStore((s) => s.selectEdge);
   const focusNodeId = useCanvasStore((s) => s.focusNodeId);
   const clearFocus = useCanvasStore((s) => s.clearFocus);
+
+  useEffect(() => {
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return;
+
+    const updateSize = () => {
+      setViewportSize({ width: wrapper.clientWidth, height: wrapper.clientHeight });
+    };
+
+    updateSize();
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(wrapper);
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!focusNodeId) return;
@@ -374,6 +394,125 @@ function CanvasInner() {
     selectNode(null);
     selectEdge(null);
   }, [selectNode, selectEdge]);
+
+  const isMiniMapInteractive = useMemo(() => {
+    if (nodes.length === 0 || viewport.zoom <= 0 || viewportSize.width <= 0 || viewportSize.height <= 0) {
+      return false;
+    }
+
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const bounds = nodes.reduce(
+      (acc, node) => {
+        const { x, y, width, height } = getNodeBounds(node, nodeMap);
+        return {
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x + width),
+          maxY: Math.max(acc.maxY, y + height),
+        };
+      },
+      { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY },
+    );
+
+    if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.minY)) {
+      return false;
+    }
+
+    const visibleLeft = -viewport.x / viewport.zoom;
+    const visibleTop = -viewport.y / viewport.zoom;
+    const visibleRight = visibleLeft + viewportSize.width / viewport.zoom;
+    const visibleBottom = visibleTop + viewportSize.height / viewport.zoom;
+    const padding = 12;
+
+    const fullyVisible =
+      bounds.minX >= visibleLeft + padding &&
+      bounds.minY >= visibleTop + padding &&
+      bounds.maxX <= visibleRight - padding &&
+      bounds.maxY <= visibleBottom - padding;
+
+    return !fullyVisible;
+  }, [nodes, viewport, viewportSize]);
+
+  const centerFromMiniMapClientPoint = useCallback((clientX: number, clientY: number) => {
+    const miniMapEl = reactFlowWrapper.current?.querySelector('.react-flow__minimap') as HTMLElement | null;
+    if (!miniMapEl || nodes.length === 0) return;
+
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const bounds = nodes.reduce(
+      (acc, node) => {
+        const { x, y, width, height } = getNodeBounds(node, nodeMap);
+        return {
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x + width),
+          maxY: Math.max(acc.maxY, y + height),
+        };
+      },
+      { minX: Number.POSITIVE_INFINITY, minY: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY },
+    );
+
+    if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.minY)) return;
+
+    const padding = 40;
+    const worldMinX = bounds.minX - padding;
+    const worldMinY = bounds.minY - padding;
+    const worldWidth = Math.max(1, bounds.maxX - bounds.minX + padding * 2);
+    const worldHeight = Math.max(1, bounds.maxY - bounds.minY + padding * 2);
+
+    const rect = miniMapEl.getBoundingClientRect();
+    const scale = Math.min(rect.width / worldWidth, rect.height / worldHeight);
+    const drawnWidth = worldWidth * scale;
+    const drawnHeight = worldHeight * scale;
+    const offsetX = (rect.width - drawnWidth) / 2;
+    const offsetY = (rect.height - drawnHeight) / 2;
+
+    const localX = Math.min(Math.max(clientX - rect.left - offsetX, 0), drawnWidth);
+    const localY = Math.min(Math.max(clientY - rect.top - offsetY, 0), drawnHeight);
+    const worldX = worldMinX + localX / scale;
+    const worldY = worldMinY + localY / scale;
+
+    setCenter(worldX, worldY, { zoom: getZoom(), duration: 0 });
+  }, [getZoom, nodes, setCenter]);
+
+  useEffect(() => {
+    const miniMapEl = reactFlowWrapper.current?.querySelector('.react-flow__minimap') as HTMLElement | null;
+    if (!miniMapEl) return;
+
+    if (!isMiniMapInteractive) {
+      miniMapDragRef.current = false;
+      miniMapEl.style.cursor = 'default';
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      miniMapDragRef.current = true;
+      miniMapEl.style.cursor = 'grabbing';
+      centerFromMiniMapClientPoint(event.clientX, event.clientY);
+      event.preventDefault();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!miniMapDragRef.current) return;
+      centerFromMiniMapClientPoint(event.clientX, event.clientY);
+    };
+
+    const handlePointerUp = () => {
+      miniMapDragRef.current = false;
+      miniMapEl.style.cursor = 'grab';
+    };
+
+    miniMapEl.style.cursor = 'grab';
+    miniMapEl.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      miniMapEl.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [centerFromMiniMapClientPoint, isMiniMapInteractive]);
 
   return (
     <div

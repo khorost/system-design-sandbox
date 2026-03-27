@@ -63,7 +63,24 @@ function MenuDivider() {
   return <div className="my-1.5 h-px bg-[var(--color-border)]" />;
 }
 
-function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: string; onClick: () => void; variant?: 'default' | 'danger'; disabled?: boolean }[][] }) {
+type ToolbarMenuGroup = {
+  icon: ReactNode;
+  label: string;
+  hint?: string;
+  onClick: () => void;
+  variant?: 'default' | 'danger';
+  disabled?: boolean;
+};
+
+function DropdownMenu({
+  label,
+  ariaLabel,
+  items,
+}: {
+  label: string;
+  ariaLabel: string;
+  items: ToolbarMenuGroup[][];
+}) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -89,12 +106,12 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label="File menu"
+        aria-label={ariaLabel}
         aria-haspopup="true"
         aria-expanded={open}
         className="px-2 py-1 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1"
       >
-        File {IconChevron}
+        {label} {IconChevron}
       </button>
       {open && (
         <div role="menu" className="absolute top-full left-0 mt-1 min-w-[180px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-1.5 shadow-lg z-50">
@@ -306,7 +323,7 @@ export function Toolbar() {
     return () => document.removeEventListener('keydown', handler);
   });
 
-  const menuItems = [
+  const fileMenuItems: ToolbarMenuGroup[][] = [
     [
       { icon: IconCloud, label: 'Save to server', hint: 'Ctrl+S — Requires sign-in', onClick: handleSaveToServer, disabled: !canSaveToServer },
       { icon: IconCopy, label: 'Save As...', hint: 'Save a copy with a new name', onClick: handleSaveAs, disabled: !isAuthenticated },
@@ -321,12 +338,19 @@ export function Toolbar() {
       { icon: IconImport, label: 'Import JSON', hint: 'Restore from .json file', onClick: handleImport },
     ],
     [
+      { icon: IconExport, label: 'Export DSL', hint: 'Compact text format (.sds)', onClick: handleDslExport },
+      { icon: IconImport, label: 'Import DSL', hint: 'Restore from .sds file', onClick: handleDslImport },
+    ],
+  ];
+
+  const bufferMenuItems: ToolbarMenuGroup[][] = [
+    [
       { icon: IconClipboardCopy, label: 'Copy to clipboard', hint: 'Copy schema as JSON', onClick: handleCopyToClipboard },
       { icon: IconClipboardPaste, label: 'Paste from clipboard', hint: 'Import schema from clipboard', onClick: handlePasteFromClipboard },
     ],
     [
-      { icon: IconExport, label: 'Export DSL', hint: 'Compact text format (.sds)', onClick: handleDslExport },
-      { icon: IconImport, label: 'Import DSL', hint: 'Restore from .sds file', onClick: handleDslImport },
+      { icon: IconUndo, label: 'Undo', hint: 'Ctrl+Z', onClick: undo, disabled: !canUndo },
+      { icon: IconRedo, label: 'Redo', hint: 'Ctrl+Shift+Z', onClick: redo, disabled: !canRedo },
     ],
     [
       { icon: IconTrash, label: 'Clear canvas', onClick: handleClear, variant: 'danger' as const },
@@ -335,37 +359,21 @@ export function Toolbar() {
 
   return (
     <>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(19,32,44,0.88)] px-3 py-1.5 shadow-[var(--shadow-panel)] backdrop-blur">
-        <span className="mr-2 flex flex-col">
+      <div className="absolute top-3 left-3 right-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-2 gap-y-2 rounded-xl border border-[var(--color-border)] bg-[rgba(19,32,44,0.88)] px-3 py-2 shadow-[var(--shadow-panel)] backdrop-blur lg:left-1/2 lg:right-auto lg:w-auto lg:max-w-none lg:-translate-x-1/2 lg:flex-nowrap lg:gap-1 lg:py-1.5">
+        <span className="mr-1 flex min-w-[4.5rem] flex-col lg:mr-2">
           <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Workbench</span>
-          <span className="text-sm font-bold text-slate-100">Canvas Tools</span>
+          <span className="text-sm font-bold text-slate-100 lg:hidden">Tools</span>
+          <span className="hidden text-sm font-bold text-slate-100 lg:block">Canvas Tools</span>
         </span>
-        <div className="w-px h-5 bg-[var(--color-border)]" />
-        <FileMenu items={menuItems} />
-        <div className="w-px h-5 bg-[var(--color-border)]" />
-        <button
-          onClick={undo}
-          disabled={!canUndo}
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo (Ctrl+Z)"
-          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {IconUndo}
-        </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo}
-          title="Redo (Ctrl+Shift+Z)"
-          aria-label="Redo (Ctrl+Shift+Z)"
-          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {IconRedo}
-        </button>
-        <div className="w-px h-5 bg-[var(--color-border)]" />
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
+        <DropdownMenu label="Files" ariaLabel="File actions menu" items={fileMenuItems} />
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
+        <DropdownMenu label="Buffer" ariaLabel="Buffer actions menu" items={bufferMenuItems} />
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
         <button
           onClick={cycleEdgeLabelMode}
           title={tooltipByMode[edgeLabelMode]}
-          className="px-2 py-1 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1.5"
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
         >
           {IconTag} {labelByMode[edgeLabelMode]}
         </button>

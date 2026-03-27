@@ -5,6 +5,8 @@ import { useMemo } from 'react';
 import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import { useSimulationStore } from '../../store/simulationStore.ts';
+import { getComponentIcon } from '../canvas/controls/paletteData.ts';
+import { ComponentIcon } from '../ui/ComponentIcon.tsx';
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -22,10 +24,17 @@ function formatComponentName(componentType: string): string {
   return componentType.replaceAll('_', ' ');
 }
 
+function toTitleCase(value: string): string {
+  return value.replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
 function getNodeDisplayName(node: { data: { label: string; componentType: string; config: Record<string, unknown> } }): string {
   const configuredName = typeof node.data.config.name === 'string' ? node.data.config.name.trim() : '';
-  const name = configuredName || node.data.label;
-  return `${name} - ${formatComponentName(node.data.componentType)}`;
+  return configuredName || node.data.label;
+}
+
+function getNodeDisplayType(node: { data: { componentType: string } }): string {
+  return toTitleCase(formatComponentName(node.data.componentType));
 }
 
 function useClientNodes() {
@@ -59,7 +68,7 @@ export function SimulationPanel() {
     : 'border-[rgba(138,167,198,0.18)] bg-[rgba(138,167,198,0.08)] text-slate-300';
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Load Simulation</h3>
         <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${statusClass}`}>
@@ -80,23 +89,32 @@ export function SimulationPanel() {
           <div className="mt-1.5 space-y-1.5">
             {clientNodes.map((node) => {
               const rps = getClientRps(node.data.componentType, node.data.config);
+              const icon = getComponentIcon(node.data.componentType, node.data.icon);
               return (
                 <div
                   key={node.id}
-                  className="flex items-center justify-between px-3 py-2 bg-[var(--color-bg)] rounded text-xs"
+                  className="flex items-center justify-between gap-3 rounded-lg border border-[rgba(138,167,198,0.10)] bg-[rgba(7,12,19,0.52)] px-3 py-2.5"
                 >
-                  <span className="text-slate-300 truncate">
-                    {node.data.icon} {getNodeDisplayName(node)}
+                  <span className="min-w-0 flex items-start gap-2.5">
+                    <ComponentIcon icon={icon} alt={getNodeDisplayName(node)} className="shrink-0 pt-0.5 text-[1rem] leading-none" imgClassName="h-4 w-4 object-contain" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-slate-100">
+                        {getNodeDisplayName(node)}
+                      </span>
+                      <span className="block truncate text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                        {getNodeDisplayType(node)}
+                      </span>
+                    </span>
                   </span>
-                  <span className="text-blue-400 font-mono font-semibold ml-2 shrink-0">
+                  <span className="ml-2 shrink-0 font-mono text-sm font-semibold text-blue-300">
                     {formatNumber(rps)}/s
                   </span>
                 </div>
               );
             })}
-            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20 text-xs">
-              <span className="text-slate-300 font-semibold">Total RPS</span>
-              <span className="text-blue-400 font-mono font-bold">{formatNumber(totalRps)}/s</span>
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-blue-500/22 bg-blue-500/10 px-3 py-2 text-xs">
+              <span className="font-semibold text-slate-200">Total RPS</span>
+              <span className="font-mono font-bold text-blue-300">{formatNumber(totalRps)}/s</span>
             </div>
           </div>
         )}
@@ -126,7 +144,7 @@ export function SimulationPanel() {
           <button
             onClick={() => start()}
             disabled={clientNodes.length === 0}
-            className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-colors ${
+            className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
               clientNodes.length === 0
                 ? 'cursor-not-allowed border border-slate-500/20 bg-slate-500/10 text-slate-500'
                 : 'border border-emerald-500/28 bg-emerald-500/14 text-emerald-300 hover:bg-emerald-500/22'
@@ -139,14 +157,14 @@ export function SimulationPanel() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => resume()}
-              className="flex items-center justify-center gap-2 rounded-lg border border-emerald-500/28 bg-emerald-500/14 px-4 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22"
+              className="flex items-center justify-center gap-2 rounded-lg border border-emerald-500/28 bg-emerald-500/14 px-3 py-2 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22"
             >
               <span className="text-xs">▶</span>
               <span>Resume</span>
             </button>
             <button
               onClick={() => stop()}
-              className="flex items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16"
+              className="flex items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/16"
             >
               <span className="text-xs">■</span>
               <span>Stop</span>
@@ -156,14 +174,14 @@ export function SimulationPanel() {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => pause()}
-              className="flex items-center justify-center gap-2 rounded-lg border border-amber-500/28 bg-amber-500/12 px-4 py-3 text-sm font-semibold text-amber-300 transition-colors hover:bg-amber-500/18"
+              className="flex items-center justify-center gap-2 rounded-lg border border-amber-500/28 bg-amber-500/12 px-3 py-2 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/18"
             >
               <span className="text-xs">❚❚</span>
               <span>Pause</span>
             </button>
             <button
               onClick={() => stop()}
-              className="flex items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16"
+              className="flex items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 transition-colors hover:bg-rose-500/16"
             >
               <span className="text-xs">■</span>
               <span>Stop</span>

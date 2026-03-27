@@ -86,7 +86,7 @@ export function FlowEdge(props: EdgeProps) {
     }
   }
 
-  let strokeColor = '#3b82f6';
+  let strokeColor = '#38bdf8';
   let strokeWidth = getWidthByLatency(latencyMs);
   let strokeDasharray: string | undefined;
   let animationName: string | undefined;
@@ -97,12 +97,12 @@ export function FlowEdge(props: EdgeProps) {
 
   if (isRunning && throughput > 0) {
     const ratio = Math.min(throughput / 1000, 1);
-    if (ratio > 0.5) {
-      strokeColor = '#ef4444';
-    } else if (ratio > 0.1) {
-      strokeColor = '#f59e0b';
+    if (ratio > 0.55) {
+      strokeColor = '#f87171';
+    } else if (ratio > 0.18) {
+      strokeColor = '#fbbf24';
     } else {
-      strokeColor = '#22c55e';
+      strokeColor = '#38bdf8';
     }
     const anim = getAnimationByThroughput(throughput);
     strokeDasharray = anim.dasharray;
@@ -124,7 +124,7 @@ export function FlowEdge(props: EdgeProps) {
 
   const showLabel = effectiveMode !== null;
 
-  const effectiveColor = isSelected ? '#60a5fa' : strokeColor;
+  const effectiveColor = isSelected ? '#7ddcff' : strokeColor;
   const markerId = `edge-arrow-${id}`;
   const arrowSize = Math.max(8, strokeWidth * 2);
 

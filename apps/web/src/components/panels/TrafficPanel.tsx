@@ -141,21 +141,84 @@ function NodeTrafficView({ nodeId, traffic, mode }: { nodeId: string; traffic: N
   const currentMetrics = useSimulationStore((s) => s.currentMetrics);
   const connUtil = currentMetrics?.connectionUtilization?.[nodeId] ?? 0;
   const compUtil = currentMetrics?.componentUtilization?.[nodeId] ?? 0;
+  const cacheStats = useSimulationStore((s) => s.nodeCacheStats[nodeId]);
+  const isCdn = node?.data?.componentType === 'cdn';
+
+  const replicas = (node?.data?.config?.replicas as number) ?? 1;
 
   return (
     <div className="space-y-3">
       <h4 className="text-sm font-bold text-slate-200">{label}</h4>
       <div className="flex gap-2">
         <div className="flex-1 rounded-lg border border-[rgba(138,167,198,0.14)] bg-[rgba(10,18,28,0.6)] px-2.5 py-2">
+          <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">Inst</div>
+          <div className="mt-0.5 text-sm font-mono font-semibold text-slate-100">{replicas}</div>
+        </div>
+        <div className="flex-1 rounded-lg border border-[rgba(138,167,198,0.14)] bg-[rgba(10,18,28,0.6)] px-2.5 py-2">
           <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">Load</div>
-          <div className={`mt-0.5 text-sm font-mono font-semibold ${compUtil > 0.8 ? 'text-amber-300' : compUtil > 0.95 ? 'text-rose-300' : 'text-slate-100'}`}>{(compUtil * 100).toFixed(0)}%</div>
+          <div className={`mt-0.5 text-sm font-mono font-semibold ${compUtil > 0.95 ? 'text-rose-300' : compUtil > 0.8 ? 'text-amber-300' : 'text-slate-100'}`}>{(compUtil * 100).toFixed(0)}%</div>
         </div>
         <div className="flex-1 rounded-lg border border-[rgba(138,167,198,0.14)] bg-[rgba(10,18,28,0.6)] px-2.5 py-2">
           <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">Conn</div>
-          <div className={`mt-0.5 text-sm font-mono font-semibold ${connUtil > 0.8 ? 'text-amber-300' : connUtil > 0.95 ? 'text-rose-300' : 'text-slate-100'}`}>{(connUtil * 100).toFixed(0)}%</div>
+          <div className={`mt-0.5 text-sm font-mono font-semibold ${connUtil > 0.95 ? 'text-rose-300' : connUtil > 0.8 ? 'text-amber-300' : 'text-slate-100'}`}>{(connUtil * 100).toFixed(0)}%</div>
         </div>
       </div>
+
+      {isCdn && cacheStats && Object.keys(cacheStats).length > 0 && (
+        <CacheStatsTable stats={cacheStats} config={node?.data?.config} />
+      )}
+
       <TrafficTable req={traffic.incoming} resp={traffic.responseOutgoing} mode={mode} />
+    </div>
+  );
+}
+
+function CacheStatsTable({ stats, config }: { stats: Record<string, import('@system-design-sandbox/simulation-engine').CacheTagStats>; config?: Record<string, unknown> }) {
+  const cacheRules = (config?.cacheRules as Array<{ tag: string; capacityMb: number }> | undefined) ?? [];
+  const tags = Object.keys(stats).sort();
+  const totalHits = tags.reduce((s, t) => s + stats[t].hits, 0);
+  const totalMisses = tags.reduce((s, t) => s + stats[t].misses, 0);
+  const totalRate = (totalHits + totalMisses) > 0 ? totalHits / (totalHits + totalMisses) : 0;
+
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-1">Cache</div>
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr className="border-b border-[var(--color-border)]">
+            <th className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 px-1 py-1 text-left">Tag</th>
+            <th className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 px-1 py-1 text-right">Hit/s</th>
+            <th className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 px-1 py-1 text-right">Miss/s</th>
+            <th className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 px-1 py-1 text-right">Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tags.map((tag) => {
+            const s = stats[tag];
+            const rule = cacheRules.find(r => r.tag === tag);
+            const hitColor = s.hitRate > 0.9 ? 'text-emerald-300' : s.hitRate > 0.7 ? 'text-amber-300' : 'text-rose-300';
+            return (
+              <tr key={tag} className="border-b border-[rgba(138,167,198,0.08)]">
+                <td className="px-1 py-1 font-medium text-slate-200">
+                  {tag}
+                  {rule && <span className="ml-1 text-[9px] text-slate-500">{rule.capacityMb}MB</span>}
+                </td>
+                <td className="px-1 py-1 text-right font-mono text-emerald-400">{fmtRps(s.hits)}</td>
+                <td className="px-1 py-1 text-right font-mono text-rose-400">{fmtRps(s.misses)}</td>
+                <td className={`px-1 py-1 text-right font-mono font-semibold ${hitColor}`}>{(s.hitRate * 100).toFixed(0)}%</td>
+              </tr>
+            );
+          })}
+          {tags.length > 1 && (
+            <tr className="border-t border-blue-500/20">
+              <td className="px-1 py-1 font-semibold text-blue-400">Total</td>
+              <td className="px-1 py-1 text-right font-mono font-semibold text-emerald-300">{fmtRps(totalHits)}</td>
+              <td className="px-1 py-1 text-right font-mono font-semibold text-rose-300">{fmtRps(totalMisses)}</td>
+              <td className={`px-1 py-1 text-right font-mono font-semibold ${totalRate > 0.9 ? 'text-emerald-300' : totalRate > 0.7 ? 'text-amber-300' : 'text-rose-300'}`}>{(totalRate * 100).toFixed(0)}%</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

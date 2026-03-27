@@ -9,10 +9,10 @@ const DEFAULT_MAX_CONNECTIONS: Record<string, number> = {
   postgresql: 100, mysql: 150, mongodb: 500, cassandra: 256,
   elasticsearch: 500, clickhouse: 200,
   redis: 10000, memcached: 10000,
-  service: 5000, api_gateway: 10000, load_balancer: 50000,
-  cdn: 100000, dns: 100000,
+  service: 1000, api_gateway: 10000, load_balancer: 10000,
+  cdn: 50000, dns: 50000,
   kafka: 5000, rabbitmq: 2000, sqs: 10000, nats: 50000,
-  s3: 100000, nfs: 500, local_ssd: 1000, nvme: 10000, network_disk: 1000,
+  s3: 50000, nfs: 500, local_ssd: 1000, nvme: 10000, network_disk: 1000,
   web_client: Infinity, mobile_client: Infinity, external_api: Infinity,
 };
 
@@ -26,8 +26,8 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
     const def = getDefinition(compType);
     const config = node.data.config;
 
-    const replicas = (config.replicas as number) || def?.defaults?.replicas || 1;
-    const maxRpsPerInstance = (config.max_rps_per_instance as number) || (config.max_rps as number) || def?.defaults?.maxRps || 1000;
+    const replicas = (config.replicas as number) || (config.brokers as number) || (config.nodes as number) || def?.defaults?.replicas || 1;
+    const maxRpsPerInstance = (config.max_rps_per_broker as number) || (config.max_rps_per_node as number) || (config.max_rps_per_instance as number) || (config.max_rps as number) || def?.defaults?.maxRps || 1000;
     const maxRps = maxRpsPerInstance * replicas;
     const baseLatencyMs = (config.base_latency_ms as number) || def?.defaults?.baseLatencyMs || 10;
 
@@ -50,7 +50,25 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
     }
 
     const tagDist = config.tagDistribution as TagWeight[] | undefined;
-    const maxConnections = (config.max_connections as number) || DEFAULT_MAX_CONNECTIONS[compType] || 1000;
+    const defTagDist = def?.defaultConfig?.tagDistribution as TagWeight[] | undefined;
+    const cacheRules = (config.cacheRules ?? def?.defaultConfig?.cacheRules) as Array<{ tag: string }> | undefined;
+    const responseRules = (config.responseRules ?? def?.defaultConfig?.responseRules) as Array<{ tag: string; responseSizeKb: number }> | undefined;
+
+    // Determine supported tags: explicit tags from tagDistribution, cacheRules or responseRules, or undefined (wildcard)
+    let supportedTags: string[] | undefined;
+    if (cacheRules && cacheRules.length > 0) {
+      supportedTags = cacheRules.map(r => r.tag);
+    } else if (responseRules && responseRules.length > 0) {
+      supportedTags = responseRules.map(r => r.tag);
+    } else {
+      const effectiveTagDist = tagDist?.length ? tagDist : defTagDist;
+      if (effectiveTagDist && effectiveTagDist.length > 0) {
+        supportedTags = effectiveTagDist.map(t => t.tag);
+      }
+    }
+
+    const maxConnectionsPerInstance = (config.max_connections as number) || DEFAULT_MAX_CONNECTIONS[compType] || 1000;
+    const maxConnections = maxConnectionsPerInstance * replicas;
     components.set(node.id, {
       id: node.id,
       type: compType,
@@ -68,8 +86,11 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
       queueCapacity: 10000,
       processingRate: maxRps,
       payloadSizeKb: CLIENT_TYPES.has(compType) ? ((config.payload_size_kb as number) || 10) : 0,
-      responseSizeKb: (config.response_size_kb as number) || 0,
+      responseSizeKb: (config.response_size_kb as number) || (def?.defaultConfig?.response_size_kb as number) || 0,
       ...(tagDist?.length ? { tagDistribution: tagDist } : {}),
+      ...(cacheRules?.length ? { cacheRules: cacheRules as Array<{ tag: string; hitRatio: number; capacityMb: number }> } : {}),
+      ...(responseRules?.length ? { responseRules } : {}),
+      ...(supportedTags ? { supportedTags } : {}),
     });
   }
 

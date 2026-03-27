@@ -7,7 +7,6 @@ import { UserMenu } from './components/auth/UserMenu.tsx';
 import { Canvas } from './components/canvas/Canvas.tsx';
 import { ComponentPalette } from './components/canvas/controls/ComponentPalette.tsx';
 import { InventoryTable } from './components/inventory/InventoryTable.tsx';
-import { CostPanel } from './components/panels/CostPanel.tsx';
 import { MetricsPanel } from './components/panels/MetricsPanel.tsx';
 import { PropertiesPanel } from './components/panels/PropertiesPanel.tsx';
 import { SimulationPanel } from './components/panels/SimulationPanel.tsx';
@@ -41,14 +40,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-const TOP_TABS = ['Properties', 'Traffic', 'Cost'] as const;
+const TOP_TABS = ['Properties', 'Traffic'] as const;
 type TopTab = (typeof TOP_TABS)[number];
 
 const BOTTOM_TABS = ['Simulation', 'Metrics'] as const;
 type BottomTab = (typeof BOTTOM_TABS)[number];
 
 function tabClass(active: boolean) {
-  return `flex-1 inline-flex items-center justify-center min-h-9 px-3.5 py-2 text-[11px] leading-none uppercase tracking-[0.18em] font-semibold rounded-lg transition-all ${
+  return `flex-1 inline-flex items-center justify-center py-1.5 px-2 text-[10px] leading-none uppercase tracking-[0.18em] font-semibold rounded-md transition-all ${
     active
       ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
       : 'text-slate-400 hover:text-slate-200'
@@ -74,11 +73,11 @@ function RightPanel() {
   const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>('Simulation');
 
   return (
-    <div className="border-l border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(24,39,54,0.98),rgba(13,23,34,0.98))] flex flex-col overflow-hidden">
-      <div className="flex flex-col min-h-0 flex-[1.08] overflow-hidden border-b border-[var(--color-border)]">
-        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(110,220,255,0.07),rgba(0,0,0,0))]">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent)]">Inspector</div>
-          <div className="mt-3 flex gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-1">
+    <div className="border-l border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(18,30,42,0.98),rgba(11,18,28,0.98))] p-1.5 flex flex-col gap-1.5 h-full overflow-y-auto">
+      <div className="flex flex-col min-h-[180px] flex-[1.08] overflow-hidden rounded-lg border border-[rgba(138,167,198,0.16)] bg-[rgba(20,32,46,0.9)]">
+        <div className="px-3 pt-3 pb-2 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(110,220,255,0.06),rgba(0,0,0,0))]">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent)]">Inspector</div>
+          <div className="mt-2 flex gap-0.5 rounded-md border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-0.5">
             {TOP_TABS.map((tab) => (
               <button
                 key={tab}
@@ -90,19 +89,18 @@ function RightPanel() {
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto bg-[rgba(19,32,44,0.7)]">
+        <div className="flex-1 overflow-y-auto rounded-b-lg">
           <ErrorBoundary key={activeTopTab}>
             {activeTopTab === 'Properties' && <PropertiesPanel />}
             {activeTopTab === 'Traffic' && <TrafficPanel />}
-            {activeTopTab === 'Cost' && <CostPanel />}
           </ErrorBoundary>
         </div>
       </div>
 
-      <div className="flex flex-col min-h-0 flex-[0.92] overflow-hidden">
-        <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(255,180,84,0.08),rgba(0,0,0,0))]">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent-warm)]">Telemetry</div>
-          <div className="mt-3 flex gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-1">
+      <div className="flex flex-col min-h-[160px] flex-[0.92] overflow-hidden rounded-lg border border-[rgba(255,180,84,0.16)] bg-[rgba(20,28,40,0.9)]">
+        <div className="px-3 pt-3 pb-2 border-b border-[rgba(255,180,84,0.12)] bg-[linear-gradient(180deg,rgba(255,180,84,0.07),rgba(0,0,0,0))]">
+          <div className="text-[9px] font-semibold uppercase tracking-[0.32em] text-[var(--color-accent-warm)]">Workspace Simulation</div>
+          <div className="mt-2 flex gap-0.5 rounded-md border border-[var(--color-border)] bg-[rgba(6,13,19,0.52)] p-0.5">
             {BOTTOM_TABS.map((tab) => (
               <button
                 key={tab}
@@ -114,7 +112,7 @@ function RightPanel() {
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto bg-[rgba(13,23,34,0.76)]">
+        <div className="flex-1 overflow-y-auto rounded-b-lg">
           <ErrorBoundary key={activeBottomTab}>
             {activeBottomTab === 'Simulation' && <SimulationPanel />}
             {activeBottomTab === 'Metrics' && <MetricsPanel />}
@@ -150,38 +148,38 @@ function FloatingSimControls() {
     : 'border-[rgba(138,167,198,0.18)] bg-[rgba(138,167,198,0.08)] text-slate-300';
 
   return (
-    <div className="absolute bottom-36 right-4 z-20 w-[200px] rounded-2xl border border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(24,39,54,0.96),rgba(13,23,34,0.98))] p-3 shadow-[var(--shadow-panel)] backdrop-blur">
+    <div className="absolute bottom-36 right-4 z-20 w-[200px] rounded-xl border border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(24,39,54,0.96),rgba(13,23,34,0.98))] p-2.5 shadow-[var(--shadow-panel)] backdrop-blur">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-warm)]">Sim</div>
-        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${statusClass}`}>
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] ${statusClass}`}>
           {statusLabel}
         </span>
       </div>
 
-      <div className="mt-3 rounded-xl border border-[var(--color-border)] bg-[rgba(7,12,19,0.32)] p-2.5">
+      <div className="mt-2.5 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] p-2">
         {!isRunning ? (
-          <button onClick={() => start()} className="flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/28 bg-emerald-500/14 px-4 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22">
+          <button onClick={() => start()} className="flex w-full min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/28 bg-emerald-500/14 px-3 py-2.5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22">
             <span className="text-xs">▶</span>
             <span>Start</span>
           </button>
         ) : isPaused ? (
-          <div className="space-y-3">
-            <button onClick={() => resume()} className="flex w-full min-h-[2.6rem] items-center justify-center gap-2 rounded-lg border border-emerald-500/28 bg-emerald-500/14 px-4 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22">
+          <div className="space-y-2">
+            <button onClick={() => resume()} className="flex w-full min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-500/28 bg-emerald-500/14 px-3 py-2.5 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/22">
               <span className="text-xs">▶</span>
               <span>Resume</span>
             </button>
-            <button onClick={() => stop()} className="flex w-full min-h-[2.6rem] items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16">
+            <button onClick={() => stop()} className="flex w-full min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/24 bg-rose-500/10 px-3 py-2.5 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16">
               <span className="text-xs">■</span>
               <span>Stop</span>
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
-            <button onClick={() => pause()} className="flex w-full min-h-[2.6rem] items-center justify-center gap-2 rounded-lg border border-amber-500/28 bg-amber-500/12 px-4 py-3 text-sm font-semibold text-amber-300 transition-colors hover:bg-amber-500/18">
+          <div className="space-y-2">
+            <button onClick={() => pause()} className="flex w-full min-h-10 items-center justify-center gap-2 rounded-md border border-amber-500/28 bg-amber-500/12 px-3 py-2.5 text-sm font-semibold text-amber-300 transition-colors hover:bg-amber-500/18">
               <span className="text-xs">❚❚</span>
               <span>Pause</span>
             </button>
-            <button onClick={() => stop()} className="flex w-full min-h-[2.6rem] items-center justify-center gap-2 rounded-lg border border-rose-500/24 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16">
+            <button onClick={() => stop()} className="flex w-full min-h-10 items-center justify-center gap-2 rounded-md border border-rose-500/24 bg-rose-500/10 px-3 py-2.5 text-sm font-semibold text-rose-300 transition-colors hover:bg-rose-500/16">
               <span className="text-xs">■</span>
               <span>Stop</span>
             </button>
@@ -190,33 +188,35 @@ function FloatingSimControls() {
       </div>
 
       {currentMetrics && (
-        <div className="mt-3 space-y-2">
+        <div className="mt-2.5 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">Live</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">HUD</div>
           </div>
-          <div className="space-y-2">
-            <div className="rounded-lg border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">P95</div>
-              <div className="mt-1 text-[15px] font-mono font-semibold leading-none text-slate-100">{currentMetrics.latencyP95.toFixed(1)} ms</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-md border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-2.5 py-2">
+              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-500">P95</div>
+              <div className="mt-1 text-[13px] font-mono font-semibold leading-none text-slate-100">{currentMetrics.latencyP95.toFixed(1)} ms</div>
             </div>
-            <div className="rounded-lg border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">RPS</div>
-              <div className="mt-1 text-[15px] font-mono font-semibold leading-none text-slate-100">{fmtNum(currentMetrics.throughput)}/s</div>
+            <div className="rounded-md border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-2.5 py-2">
+              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-500">RPS</div>
+              <div className="mt-1 text-[13px] font-mono font-semibold leading-none text-slate-100">{fmtNum(currentMetrics.throughput)}/s</div>
             </div>
-            <div className="rounded-lg border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">Err</div>
-              <div className={`mt-1 text-[15px] font-mono font-semibold leading-none ${currentMetrics.errorRate > 0.05 ? 'text-rose-300' : 'text-slate-100'}`}>{(currentMetrics.errorRate * 100).toFixed(1)}%</div>
+            <div className="rounded-md border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-2.5 py-2">
+              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-500">Err</div>
+              <div className={`mt-1 text-[13px] font-mono font-semibold leading-none ${currentMetrics.errorRate > 0.05 ? 'text-rose-200' : 'text-slate-100'}`}>{(currentMetrics.errorRate * 100).toFixed(1)}%</div>
             </div>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            <div className="rounded-lg border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">In</div>
-              <div className="mt-1 text-[15px] font-mono font-semibold leading-none text-slate-100">{fmtBw(currentMetrics.totalInboundKBps)}</div>
-            </div>
-            <div className="rounded-lg border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-3 py-2.5">
-              <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">Out</div>
-              <div className="mt-1 text-[15px] font-mono font-semibold leading-none text-slate-100">{fmtBw(currentMetrics.totalOutboundKBps)}</div>
+            <div className="rounded-md border border-[rgba(138,167,198,0.14)] bg-[linear-gradient(180deg,rgba(18,28,40,0.94),rgba(10,18,28,0.98))] px-2.5 py-2">
+              <div className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-500">I/O</div>
+              <div className="mt-1 space-y-1.5 text-[10px] font-mono font-semibold leading-none text-slate-100">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">In</span>
+                  <span className="text-right text-[10px]">{fmtBw(currentMetrics.totalInboundKBps)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500">Out</span>
+                  <span className="text-right text-[10px]">{fmtBw(currentMetrics.totalOutboundKBps)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -288,15 +288,16 @@ function MainApp() {
 
   return (
     <div className="h-screen overflow-hidden bg-[var(--color-bg)] flex flex-col">
-      <div className="h-16 flex items-center justify-between px-4 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(19,32,44,0.94),rgba(13,23,34,0.96))] shrink-0 shadow-[0_10px_26px_rgba(2,8,14,0.35)]">
-        <div className="min-w-0 flex items-center gap-4">
+      <div className="shrink-0 border-b border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(19,32,44,0.94),rgba(13,23,34,0.96))] px-3 py-2 shadow-[0_10px_26px_rgba(2,8,14,0.35)] sm:px-4">
+        <div className="flex min-h-12 flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0 flex flex-1 items-center gap-3 sm:gap-4">
           <div className="min-w-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-[var(--color-accent)]">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent)] sm:text-[10px] sm:tracking-[0.34em]">
               System Design Sandbox
             </div>
-            <div className="mt-1 flex items-center gap-2 min-w-0">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
               <span
-                className="truncate text-sm font-semibold text-[var(--color-text)]"
+                className="max-w-[11rem] truncate text-sm font-semibold text-[var(--color-text)] sm:max-w-[16rem]"
                 style={{ fontFamily: 'var(--font-display)' }}
                 title={workspaceName}
               >
@@ -309,11 +310,11 @@ function MainApp() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:gap-3 xl:w-auto xl:flex-nowrap xl:justify-end">
           <div className="flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-[rgba(6,13,19,0.54)] p-1">
             <button
               onClick={() => setViewMode('canvas')}
-              className={`inline-flex min-h-[2.1rem] min-w-[7.5rem] items-center justify-center px-6 py-1.5 text-[10px] leading-none font-semibold uppercase tracking-[0.12em] rounded-lg transition-all ${
+              className={`inline-flex min-h-[2rem] min-w-[5.9rem] items-center justify-center px-4 py-1.5 text-[10px] leading-none font-semibold uppercase tracking-[0.1em] rounded-lg transition-all sm:min-h-[2.1rem] sm:min-w-[7.1rem] sm:px-5 md:min-w-[7.5rem] md:px-6 ${
                 viewMode === 'canvas'
                   ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
                   : 'text-slate-400 hover:text-slate-200'
@@ -323,7 +324,7 @@ function MainApp() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`inline-flex min-h-[2.1rem] min-w-[7.5rem] items-center justify-center px-6 py-1.5 text-[10px] leading-none font-semibold uppercase tracking-[0.12em] rounded-lg transition-all ${
+              className={`inline-flex min-h-[2rem] min-w-[5.9rem] items-center justify-center px-4 py-1.5 text-[10px] leading-none font-semibold uppercase tracking-[0.1em] rounded-lg transition-all sm:min-h-[2.1rem] sm:min-w-[7.1rem] sm:px-5 md:min-w-[7.5rem] md:px-6 ${
                 viewMode === 'table'
                   ? 'bg-[rgba(110,220,255,0.14)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(110,220,255,0.32)]'
                   : 'text-slate-400 hover:text-slate-200'
@@ -338,11 +339,12 @@ function MainApp() {
           ) : (
             <button
               onClick={() => useAuthStore.getState().setView('login')}
-              className="ml-1 inline-flex min-h-10 min-w-[7.25rem] items-center justify-center rounded-xl border border-[rgba(110,220,255,0.34)] bg-[linear-gradient(180deg,rgba(110,220,255,0.20),rgba(110,220,255,0.08))] px-5 py-2 text-[12px] leading-none font-semibold tracking-[0.02em] text-[var(--color-accent)] shadow-[0_8px_18px_rgba(9,20,32,0.24),inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-colors hover:bg-[linear-gradient(180deg,rgba(110,220,255,0.26),rgba(110,220,255,0.12))]"
+              className="inline-flex min-h-10 min-w-[6.25rem] items-center justify-center rounded-xl border border-[rgba(110,220,255,0.34)] bg-[linear-gradient(180deg,rgba(110,220,255,0.20),rgba(110,220,255,0.08))] px-4 py-2 text-[12px] leading-none font-semibold tracking-[0.02em] text-[var(--color-accent)] shadow-[0_8px_18px_rgba(9,20,32,0.24),inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-colors hover:bg-[linear-gradient(180deg,rgba(110,220,255,0.26),rgba(110,220,255,0.12))] sm:min-w-[7rem] sm:px-5"
             >
               Sign in
             </button>
           )}
+        </div>
         </div>
       </div>
 
@@ -394,15 +396,15 @@ function MainApp() {
       )}
       <ToastContainer />
       <div className="fixed bottom-3 right-3 z-40">
-        <div className="flex items-center gap-3 rounded-xl border border-[rgba(110,220,255,0.28)] bg-[linear-gradient(180deg,rgba(22,34,48,0.96),rgba(12,19,28,0.96))] px-3.5 py-2 shadow-[0_10px_28px_rgba(2,8,14,0.34)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(12,19,28,0.82)]">
+        <div className="rounded-lg border border-[rgba(138,167,198,0.16)] bg-[rgba(12,19,28,0.76)] px-3 py-1.5 shadow-[0_8px_20px_rgba(2,8,14,0.24)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(12,19,28,0.64)]">
           <div
-            className="select-text text-[11px] font-medium tracking-[0.08em] text-slate-200"
+            className="select-text text-[11px] font-medium tracking-[0.02em] text-slate-300"
             style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
             title="Select and copy"
           >
             <span className="font-semibold text-[var(--color-accent)]">v{__APP_VERSION__}</span>
-            <span className="mx-2 text-slate-400">&middot;</span>
-            <span className="text-slate-300">&copy; {new Date().getFullYear()} sdsandbox.ru</span>
+            <span className="mx-1.5 text-slate-500">&middot;</span>
+            <span className="text-slate-400">&copy; {new Date().getFullYear()} sdsandbox.ru</span>
           </div>
         </div>
       </div>

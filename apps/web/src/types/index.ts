@@ -40,7 +40,6 @@ export type ComponentType =
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
-  | 'event_bus'
   | 'nats'
   | 'circuit_breaker'
   | 'rate_limiter'
@@ -148,7 +147,6 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   elasticsearch: 'databaseNode',
   kafka: 'queueNode',
   rabbitmq: 'queueNode',
-  event_bus: 'queueNode',
   nats: 'queueNode',
   circuit_breaker: 'serviceNode',
   rate_limiter: 'serviceNode',
