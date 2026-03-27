@@ -1,7 +1,7 @@
 import { type DragEvent, useState } from 'react';
 
-import { ComponentIcon } from '../../ui/ComponentIcon.tsx';
 import type { ComponentCategory } from '../../../types/index.ts';
+import { ComponentIcon } from '../../ui/ComponentIcon.tsx';
 import { paletteCategories, type PaletteItem, paletteItems } from './paletteData.ts';
 
 function formatCapability(type: string) {

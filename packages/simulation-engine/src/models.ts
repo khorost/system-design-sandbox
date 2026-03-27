@@ -200,6 +200,7 @@ export interface SimRequest {
 export interface TagTraffic {
   rps: number;
   bytesPerSec: number; // KB/s
+  failedRps: number;   // failed requests per second for this tag
 }
 
 export interface NodeTagTraffic {

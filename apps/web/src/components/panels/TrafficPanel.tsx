@@ -1,5 +1,5 @@
 import type { EdgeTagTraffic, NodeTagTraffic, TagTraffic } from '@system-design-sandbox/simulation-engine';
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import { useSimulationStore } from '../../store/simulationStore.ts';
@@ -18,10 +18,80 @@ type ViewMode = 'rps' | 'bw' | 'err';
 
 const VIEW_LABELS: Record<ViewMode, string> = { rps: 'RPS', bw: 'MB/s', err: '% Err' };
 
+/** Debounce delay for unit changes and tag removal (ms) */
+const STABLE_DELAY_MS = 5000;
+
 function getTagColor(tag: string): string {
   return TAG_COLORS[tag] || TAG_COLORS.default;
 }
 
+/* ---- Stable unit formatting ---- */
+
+type RpsUnit = 'M' | 'K' | '';
+type BwUnit = 'GB/s' | 'MB/s' | 'KB/s';
+
+function pickRpsUnit(v: number): RpsUnit {
+  if (v >= 1_000_000) return 'M';
+  if (v >= 1_000) return 'K';
+  return '';
+}
+function fmtRpsU(v: number, unit: RpsUnit): string {
+  switch (unit) {
+    case 'M': return `${(v / 1e6).toFixed(1)}M/s`;
+    case 'K': return `${(v / 1000).toFixed(1)}K/s`;
+    default:
+      if (v >= 100) return `${v.toFixed(0)}/s`;
+      if (v >= 10) return `${v.toFixed(1)}/s`;
+      return `${v.toFixed(2)}/s`;
+  }
+}
+
+function pickBwUnit(kb: number): BwUnit {
+  if (kb >= 1024 * 1024) return 'GB/s';
+  if (kb >= 1024) return 'MB/s';
+  return 'KB/s';
+}
+function fmtBwU(kb: number, unit: BwUnit): string {
+  switch (unit) {
+    case 'GB/s': return `${(kb / (1024 * 1024)).toFixed(1)} GB/s`;
+    case 'MB/s': return `${(kb / 1024).toFixed(1)} MB/s`;
+    default: return `${kb.toFixed(1)} KB/s`;
+  }
+}
+
+/** Would the value render with 6+ significant digits in the current unit? If so — switch immediately. */
+function rpsOverflows(v: number, unit: RpsUnit): boolean {
+  switch (unit) {
+    case 'M': return false;
+    case 'K': return v >= 1_000_000; // 1000K → M
+    default: return v >= 10_000;      // 10000 → K
+  }
+}
+function bwOverflows(kb: number, unit: BwUnit): boolean {
+  switch (unit) {
+    case 'GB/s': return false;
+    case 'MB/s': return kb >= 1024 * 1024; // 1024 MB → GB
+    default: return kb >= 10_240;           // 10 MB in KB → MB
+  }
+}
+
+/** Hook: debounce unit changes per direction, but switch immediately on overflow (6+ digits) */
+function useStableUnit(rpsVal: number, bwVal: number): { rpsU: RpsUnit; bwU: BwUnit } {
+  const wantRps = pickRpsUnit(rpsVal);
+  const wantBw = pickBwUnit(bwVal);
+  const [locked, setLocked] = useState({ rpsU: wantRps, bwU: wantBw });
+
+  useEffect(() => {
+    if (wantRps === locked.rpsU && wantBw === locked.bwU) return;
+    const immediate = rpsOverflows(rpsVal, locked.rpsU) || bwOverflows(bwVal, locked.bwU);
+    const t = setTimeout(() => setLocked({ rpsU: wantRps, bwU: wantBw }), immediate ? 0 : STABLE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [wantRps, wantBw, locked.rpsU, locked.bwU, rpsVal, bwVal]);
+
+  return locked;
+}
+
+// Fallback formatters (no unit lock) for simple displays
 function fmtRps(v: number): string {
   if (v >= 1_000_000) return `${(v / 1e6).toFixed(1)}M`;
   if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
@@ -30,42 +100,67 @@ function fmtRps(v: number): string {
   return v.toFixed(2);
 }
 
-function fmtBw(kbps: number): string {
-  if (kbps >= 1_048_576) return `${(kbps / 1_048_576).toFixed(1)} GB/s`;
-  if (kbps >= 1024) return `${(kbps / 1024).toFixed(1)} MB/s`;
-  if (kbps >= 100) return `${kbps.toFixed(0)} KB/s`;
-  return `${kbps.toFixed(1)} KB/s`;
-}
-
-/** Merge all unique tags from req + resp, sorted alphabetically, stable across renders. */
+/**
+ * Merge unique tags from req + resp, keep tags that recently had data for STABLE_DELAY_MS
+ * to prevent flickering when a tag temporarily drops to zero.
+ */
 function useSortedTags(req: Record<string, TagTraffic>, resp: Record<string, TagTraffic>): string[] {
-  const prevRef = useRef<string[]>([]);
-  const tags = Array.from(new Set([...Object.keys(req), ...Object.keys(resp)])).sort();
-  // Stable: only update if set changed
-  const prev = prevRef.current;
-  if (tags.length !== prev.length || tags.some((t, i) => t !== prev[i])) {
-    prevRef.current = tags;
-    return tags;
-  }
-  return prev;
+  const currentTags = useMemo(() => {
+    return Array.from(new Set([...Object.keys(req), ...Object.keys(resp)])).sort();
+  }, [req, resp]);
+
+  const [stableTags, setStableTags] = useState<string[]>(currentTags);
+
+  // Immediately add new tags; delay-remove disappeared tags
+  useEffect(() => {
+    // Add new tags immediately
+    const merged = Array.from(new Set([...stableTags, ...currentTags])).sort();
+    if (merged.length !== stableTags.length || merged.some((t, i) => t !== stableTags[i])) {
+      setStableTags(merged);
+    }
+    // Schedule removal of disappeared tags
+    const disappeared = stableTags.filter(t => !currentTags.includes(t));
+    if (disappeared.length === 0) return;
+    const timer = setTimeout(() => {
+      setStableTags(prev => prev.filter(t => currentTags.includes(t)));
+    }, STABLE_DELAY_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTags.join(',')]);
+
+  return stableTags;
 }
 
-function cellVal(t: TagTraffic | undefined, mode: ViewMode): string {
+function fmtErrRate(failed: number, total: number): string {
+  if (total <= 0) return '-';
+  const pct = (failed / total) * 100;
+  if (pct <= 0) return '0%';
+  if (pct >= 100) return '100%';
+  if (pct >= 10) return `${pct.toFixed(0)}%`;
+  if (pct >= 1) return `${pct.toFixed(1)}%`;
+  return `${pct.toFixed(2)}%`;
+}
+
+function cellVal(t: TagTraffic | undefined, mode: ViewMode, rpsU: RpsUnit, bwU: BwUnit): string {
   if (!t) return '-';
   switch (mode) {
-    case 'rps': return `${fmtRps(t.rps)}/s`;
-    case 'bw': return fmtBw(t.bytesPerSec);
-    case 'err': return '-'; // error rate not tracked per-tag yet
+    case 'rps': return fmtRpsU(t.rps, rpsU);
+    case 'bw': return fmtBwU(t.bytesPerSec, bwU);
+    case 'err': return fmtErrRate(t.failedRps, t.rps);
   }
 }
 
-function totalVal(entries: Record<string, TagTraffic>, mode: ViewMode): string {
+function totalVal(entries: Record<string, TagTraffic>, mode: ViewMode, rpsU: RpsUnit, bwU: BwUnit): string {
   const vals = Object.values(entries);
   if (vals.length === 0) return '-';
   switch (mode) {
-    case 'rps': return `${fmtRps(vals.reduce((s, t) => s + t.rps, 0))}/s`;
-    case 'bw': return fmtBw(vals.reduce((s, t) => s + t.bytesPerSec, 0));
-    case 'err': return '-';
+    case 'rps': return fmtRpsU(vals.reduce((s, t) => s + t.rps, 0), rpsU);
+    case 'bw': return fmtBwU(vals.reduce((s, t) => s + t.bytesPerSec, 0), bwU);
+    case 'err': {
+      const totalRps = vals.reduce((s, t) => s + t.rps, 0);
+      const totalFailed = vals.reduce((s, t) => s + t.failedRps, 0);
+      return fmtErrRate(totalFailed, totalRps);
+    }
   }
 }
 
@@ -79,6 +174,17 @@ function TrafficTable({ req, resp, mode }: {
   mode: ViewMode;
 }) {
   const tags = useSortedTags(req, resp);
+
+  // Separate stable units per direction (req vs resp)
+  const reqVals = Object.values(req);
+  const respVals = Object.values(resp);
+  const reqMaxRps = reqVals.reduce((m, t) => Math.max(m, t.rps), 0);
+  const reqMaxBw = reqVals.reduce((m, t) => Math.max(m, t.bytesPerSec), 0);
+  const respMaxRps = respVals.reduce((m, t) => Math.max(m, t.rps), 0);
+  const respMaxBw = respVals.reduce((m, t) => Math.max(m, t.bytesPerSec), 0);
+  const reqU = useStableUnit(reqMaxRps, reqMaxBw);
+  const respU = useStableUnit(respMaxRps, respMaxBw);
+
   if (tags.length === 0) return <p className="text-xs text-slate-500">No traffic data</p>;
 
   return (
@@ -99,14 +205,14 @@ function TrafficTable({ req, resp, mode }: {
         {tags.map((tag) => (
           <tr key={tag} className="border-b border-[rgba(138,167,198,0.08)]">
             <td className={`px-2 py-1.5 text-xs font-medium ${getTagColor(tag)}`}>{tag}</td>
-            <td className={tdClass}>{cellVal(req[tag], mode)}</td>
-            <td className={tdClass}>{cellVal(resp[tag], mode)}</td>
+            <td className={tdClass}>{cellVal(req[tag], mode, reqU.rpsU, reqU.bwU)}</td>
+            <td className={tdClass}>{cellVal(resp[tag], mode, respU.rpsU, respU.bwU)}</td>
           </tr>
         ))}
         <tr className="bg-blue-500/8 border-t border-blue-500/20">
           <td className="px-2 py-1.5 text-xs font-semibold text-blue-400">Total</td>
-          <td className={tdTotalClass}>{totalVal(req, mode)}</td>
-          <td className={tdTotalClass}>{totalVal(resp, mode)}</td>
+          <td className={tdTotalClass}>{totalVal(req, mode, reqU.rpsU, reqU.bwU)}</td>
+          <td className={tdTotalClass}>{totalVal(resp, mode, respU.rpsU, respU.bwU)}</td>
         </tr>
       </tbody>
     </table>

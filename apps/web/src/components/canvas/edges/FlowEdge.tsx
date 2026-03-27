@@ -1,4 +1,5 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps,getBezierPath, useInternalNode } from '@xyflow/react';
+import { useEffect, useState } from 'react';
 
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
@@ -26,18 +27,62 @@ function getAnimationByThroughput(rps: number): { dasharray: string; duration: s
   return { dasharray: '4 2', duration: '0.25s' };
 }
 
-function formatRps(v: number): string {
-  if (v >= 1_000_000) return `${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1000).toFixed(1)}K`;
-  if (v >= 100) return `${v.toFixed(0)}`;
-  if (v >= 10) return `${v.toFixed(1)}`;
-  return `${v.toFixed(2)}`;
+type Unit = 'M' | 'K' | '' ;
+
+function pickRpsUnit(v: number): Unit {
+  if (v >= 1_000_000) return 'M';
+  if (v >= 1_000) return 'K';
+  return '';
 }
 
-function formatBytes(bytesPerSec: number): string {
-  if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} GB/s`;
-  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(1)} MB/s`;
-  return `${bytesPerSec.toFixed(1)} KB/s`;
+function formatRpsWithUnit(v: number, unit: Unit): string {
+  switch (unit) {
+    case 'M': return `${(v / 1e6).toFixed(1)}M`;
+    case 'K': return `${(v / 1000).toFixed(1)}K`;
+    default:
+      if (v >= 100) return v.toFixed(0);
+      if (v >= 10) return v.toFixed(1);
+      return v.toFixed(2);
+  }
+}
+
+type ByteUnit = 'GB/s' | 'MB/s' | 'KB/s';
+
+function pickByteUnit(kb: number): ByteUnit {
+  if (kb >= 1024 * 1024) return 'GB/s';
+  if (kb >= 1024) return 'MB/s';
+  return 'KB/s';
+}
+
+function formatBytesWithUnit(kb: number, unit: ByteUnit): string {
+  switch (unit) {
+    case 'GB/s': return `${(kb / (1024 * 1024)).toFixed(1)} GB/s`;
+    case 'MB/s': return `${(kb / 1024).toFixed(1)} MB/s`;
+    default: return `${kb.toFixed(1)} KB/s`;
+  }
+}
+
+interface DirUnits {
+  rps: Unit;
+  bw: ByteUnit;
+}
+
+const UNIT_LOCK_MS = 5000;
+
+/** Would value look bad in current unit (5+ raw digits)? Switch immediately. */
+function rpsOverflows(v: number, unit: Unit): boolean {
+  switch (unit) {
+    case 'M': return false;
+    case 'K': return v >= 1_000_000; // 1000K → M
+    default: return v >= 10_000;      // 10000 → K
+  }
+}
+function bwOverflows(kb: number, unit: ByteUnit): boolean {
+  switch (unit) {
+    case 'GB/s': return false;
+    case 'MB/s': return kb >= 1024 * 1024; // 1024 MB → GB
+    default: return kb >= 10_240;           // 10 MB in KB → MB
+  }
 }
 
 export function FlowEdge(props: EdgeProps) {
@@ -57,6 +102,37 @@ export function FlowEdge(props: EdgeProps) {
   const nodes = useCanvasStore((s) => s.nodes);
   const isSelected = selected || selectedEdgeId === id!;
 
+  // Sum forward (out) and response (in) traffic — must be before early return for hooks
+  let fwdRps = 0, fwdBytes = 0, respRps = 0, respBytes = 0;
+  if (edgeTagTraffic?.forward) {
+    for (const tag of Object.values(edgeTagTraffic.forward)) {
+      fwdRps += tag.rps; fwdBytes += tag.bytesPerSec;
+    }
+  }
+  if (edgeTagTraffic?.response) {
+    for (const tag of Object.values(edgeTagTraffic.response)) {
+      respRps += tag.rps; respBytes += tag.bytesPerSec;
+    }
+  }
+
+  // Stable unit locking per direction — debounce unit changes independently
+  const wantFwdRps = pickRpsUnit(fwdRps), wantFwdBw = pickByteUnit(fwdBytes);
+  const wantRespRps = pickRpsUnit(respRps), wantRespBw = pickByteUnit(respBytes);
+  const [fwdU, setFwdU] = useState<DirUnits>({ rps: wantFwdRps, bw: wantFwdBw });
+  const [respU, setRespU] = useState<DirUnits>({ rps: wantRespRps, bw: wantRespBw });
+  useEffect(() => {
+    if (wantFwdRps === fwdU.rps && wantFwdBw === fwdU.bw) return;
+    const immediate = rpsOverflows(fwdRps, fwdU.rps) || bwOverflows(fwdBytes, fwdU.bw);
+    const t = setTimeout(() => setFwdU({ rps: wantFwdRps, bw: wantFwdBw }), immediate ? 0 : UNIT_LOCK_MS);
+    return () => clearTimeout(t);
+  }, [wantFwdRps, wantFwdBw, fwdU.rps, fwdU.bw, fwdRps, fwdBytes]);
+  useEffect(() => {
+    if (wantRespRps === respU.rps && wantRespBw === respU.bw) return;
+    const immediate = rpsOverflows(respRps, respU.rps) || bwOverflows(respBytes, respU.bw);
+    const t = setTimeout(() => setRespU({ rps: wantRespRps, bw: wantRespBw }), immediate ? 0 : UNIT_LOCK_MS);
+    return () => clearTimeout(t);
+  }, [wantRespRps, wantRespBw, respU.rps, respU.bw, respRps, respBytes]);
+
   if (!sourceNode || !targetNode) return null;
 
   const { sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode);
@@ -73,17 +149,20 @@ export function FlowEdge(props: EdgeProps) {
   const protocol = data?.protocol ?? 'REST';
   const userLatency = data?.latencyMs ?? 1;
   const hierarchyLatency = computeEffectiveLatency(source, target, nodes);
-  // User override (changed from default 1) takes priority; otherwise use hierarchy
   const hasOverride = data?.latencyMs != null && data.latencyMs !== 1;
   const latencyMs = hasOverride ? userLatency : (hierarchyLatency > 0 ? hierarchyLatency : userLatency);
   const throughput = edgeEma?.ema1 ?? 0;
 
-  // Sum bytesPerSec across all forward tags
-  let totalBytesPerSec = 0;
-  if (edgeTagTraffic?.forward) {
-    for (const tag of Object.values(edgeTagTraffic.forward)) {
-      totalBytesPerSec += tag.bytesPerSec;
+  // Compute edge error rate from forward traffic
+  let edgeErrRate = 0;
+  if (fwdRps > 0) {
+    let fwdFailed = 0;
+    if (edgeTagTraffic?.forward) {
+      for (const tag of Object.values(edgeTagTraffic.forward)) {
+        fwdFailed += tag.failedRps;
+      }
     }
+    edgeErrRate = fwdFailed / fwdRps;
   }
 
   let strokeColor = '#38bdf8';
@@ -96,13 +175,20 @@ export function FlowEdge(props: EdgeProps) {
   let animationPlayState: 'running' | 'paused' | undefined;
 
   if (isRunning && throughput > 0) {
-    const ratio = Math.min(throughput / 1000, 1);
-    if (ratio > 0.55) {
-      strokeColor = '#f87171';
-    } else if (ratio > 0.18) {
-      strokeColor = '#fbbf24';
+    // Error rate takes priority over throughput coloring
+    if (edgeErrRate > 0.5) {
+      strokeColor = '#ef4444'; // red-500 — majority errors
+    } else if (edgeErrRate > 0.05) {
+      strokeColor = '#f97316'; // orange-500 — some errors
     } else {
-      strokeColor = '#38bdf8';
+      const ratio = Math.min(throughput / 1000, 1);
+      if (ratio > 0.55) {
+        strokeColor = '#f87171';
+      } else if (ratio > 0.18) {
+        strokeColor = '#fbbf24';
+      } else {
+        strokeColor = '#38bdf8';
+      }
     }
     const anim = getAnimationByThroughput(throughput);
     strokeDasharray = anim.dasharray;
@@ -131,8 +217,19 @@ export function FlowEdge(props: EdgeProps) {
   // Build label content
   const protocolLine = <>{protocol} &middot; {Math.round(edgeLatency ?? latencyMs)}ms</>;
   const hasTrafficData = throughput > 0;
+  const hasResponse = respRps > 0;
   const trafficLine = hasTrafficData
-    ? <>{formatRps(throughput)} rps &middot; {formatBytes(totalBytesPerSec)}</>
+    ? (
+      <>
+        <span className="text-emerald-400">↑</span>{formatRpsWithUnit(fwdRps, fwdU.rps)} rps &middot; {formatBytesWithUnit(fwdBytes, fwdU.bw)}
+        {hasResponse && (
+          <>
+            <br />
+            <span className="text-amber-400">↓</span>{formatRpsWithUnit(respRps, respU.rps)} rps &middot; {formatBytesWithUnit(respBytes, respU.bw)}
+          </>
+        )}
+      </>
+    )
     : <span className="text-slate-400">&mdash; rps &middot; &mdash; KB/s</span>;
 
   let labelContent: React.ReactNode = null;

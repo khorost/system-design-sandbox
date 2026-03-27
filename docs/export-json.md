@@ -74,6 +74,9 @@ System Design Sandbox экспортирует архитектурные схе
 | `data.category` | string | Категория (`network`, `compute`, `storage` и др.) |
 | `data.icon` | string | Emoji-иконка |
 | `data.config` | object | Параметры компонента (replicas, cpu, memory, ttl и др.) |
+| `data.config.tagDistribution` | array | Клиенты: теги генерируемого трафика `[{ tag, weight, requestSizeKb }]` |
+| `data.config.cacheRules` | array | CDN: per-tag кеширование `[{ tag, hitRatio, capacityMb }]` |
+| `data.config.responseRules` | array | Storage/S3: per-tag размер ответа `[{ tag, responseSizeKb }]` |
 | `parentId` | string | ID родительского контейнера (для вложенных компонентов) |
 | `extent` | string | `"parent"` — ограничить перемещение внутри контейнера |
 | `style` | object | CSS-стили (обычно `width`/`height` для контейнеров) |
@@ -137,7 +140,7 @@ System Design Sandbox экспортирует архитектурные схе
 | `data.latencyMs` | number | нет | Задержка в миллисекундах |
 | `data.bandwidthMbps` | number | нет | Пропускная способность в Мбит/с |
 | `data.timeoutMs` | number | нет | Таймаут в миллисекундах |
-| `data.routingRules` | array | нет | Правила маршрутизации (tag-based routing) |
+| `data.routingRules` | array | нет | Тег-маршрутизация: `[{ tag, weight, outTag? }]`. Теги определяются пересечением source/target. Weight=0 блокирует тег. |
 | `style` | object | нет | CSS-стили линии |
 
 ### Значения по умолчанию

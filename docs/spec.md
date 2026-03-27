@@ -53,7 +53,7 @@
 |-----------|-----------|
 | API Gateway | max_rps, rate_limit, auth_enabled, protocols[] |
 | Load Balancer | algorithm (round_robin/least_conn/ip_hash), max_connections |
-| CDN | cache_hit_ratio, edge_locations_count, ttl_sec |
+| CDN | edge_locations, ttl_sec, `cacheRules` (per-tag: hitRatio, capacityMb). Глобальный cache_hit_ratio удалён — hit rate задаётся per-tag. |
 | DNS | routing_policy (latency/geo/weighted) |
 | WAF | rules_count, inspection_latency_ms |
 
@@ -75,7 +75,7 @@
 | Cassandra | nodes, replication_factor, consistency_level (ONE/QUORUM/ALL) |
 | Redis | mode (standalone/cluster/sentinel), memory_gb, max_connections |
 | Memcached | nodes, memory_gb |
-| S3 / Object Storage | storage_class, max_throughput_mbps |
+| S3 / Object Storage | storage_class, max_throughput_mbps, `responseRules` (per-tag response size: web=2KB, content=400KB) |
 | Elasticsearch | nodes, shards, replicas |
 
 ### 2.5. Сообщения и события (Модуль 3)
@@ -83,8 +83,8 @@
 | Компонент | Параметры |
 |-----------|-----------|
 | Kafka | brokers, partitions, replication_factor, retention_hours |
-| RabbitMQ | queues, prefetch_count, ha_mode |
-| Event Bus | type (pub_sub/point_to_point), max_throughput |
+| RabbitMQ | nodes, queues, prefetch_count, ha_mode |
+| NATS | nodes, mode (core/jetstream) |
 
 ### 2.6. Надёжность (Модуль 4)
 
@@ -131,6 +131,15 @@
 | GraphQL | query_depth_limit, batch_enabled |
 | Async (Queue) | через Kafka/RabbitMQ — связь опосредованная |
 | TCP/UDP | bandwidth_mbps |
+
+**Тег-ориентированная маршрутизация соединений:**
+
+Узлы описывают какой трафик они обрабатывают, соединения — балансируют или отключают:
+- Клиенты (`tagDistribution`) — генерируют теги (web, api, content) с весами и размерами запросов.
+- CDN (`cacheRules`) — per-tag cache hit ratio. При hit запрос не идёт к origin.
+- Storage/S3 (`responseRules`) — per-tag размер ответа.
+- Узлы без явных тегов (Service, DB, Cache) — wildcard, принимают любой тег.
+- Соединение показывает пересечение тегов source и target. Weight=0 блокирует тег на соединении.
 
 ---
 

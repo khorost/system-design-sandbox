@@ -212,6 +212,10 @@ export function createSimulationEngine(
       const fwdNodeOutBytes: Record<string, Record<string, number>> = {};
       const fwdEdgeCount: Record<string, Record<string, number>> = {};
       const fwdEdgeBytes: Record<string, Record<string, number>> = {};
+      // Per-tag failed request counts (propagated along full path)
+      const failedNodeInCount: Record<string, Record<string, number>> = {};
+      const failedNodeOutCount: Record<string, Record<string, number>> = {};
+      const failedEdgeCount: Record<string, Record<string, number>> = {};
       // CDN cache hit/miss accumulators: nodeId → tag → { hits, misses }
       const cacheHits: Record<string, Record<string, number>> = {};
       const cacheMisses: Record<string, Record<string, number>> = {};
@@ -272,11 +276,27 @@ export function createSimulationEngine(
           req.totalLatencyMs += hopLatency;
         }
 
-        // CDN cache hit check: if this node has cacheRules, check for cache hit
+        // CDN cache logic: needs origin (outgoing hops) to function
         const currentComp = components.get(req.currentNode);
+
+        // Resolve next hops first — needed to check if origin exists
+        const hops = resolveNextHops(
+          req.currentNode, req.tag, req.visited,
+          adjacency, connectionMap, loadBalancerNodes, components,
+        );
+
         if (currentComp?.cacheRules) {
           const cacheRule = currentComp.cacheRules.find(r => r.tag === req.tag);
           if (cacheRule) {
+            // CDN without origin can't serve anything — cache can never be populated
+            if (hops.length === 0) {
+              req.failed = true;
+              req.failureReason = `CDN ${req.currentNode}: no origin for tag '${req.tag}'`;
+              (cacheMisses[req.currentNode] ??= {})[req.tag] = ((cacheMisses[req.currentNode])?.[req.tag] ?? 0) + 1;
+              completed.push(req);
+              continue;
+            }
+
             if (Math.random() < cacheRule.hitRatio) {
               // Cache hit — respond immediately without going to origin
               (cacheHits[req.currentNode] ??= {})[req.tag] = ((cacheHits[req.currentNode])?.[req.tag] ?? 0) + 1;
@@ -288,12 +308,6 @@ export function createSimulationEngine(
             }
           }
         }
-
-        // Resolve next hops with fan-out
-        const hops = resolveNextHops(
-          req.currentNode, req.tag, req.visited,
-          adjacency, connectionMap, loadBalancerNodes, components,
-        );
 
         if (hops.length === 0) {
           completed.push(req); // leaf node, done
@@ -358,20 +372,28 @@ export function createSimulationEngine(
       const respEdgeCount: Record<string, Record<string, number>> = {};
       const respEdgeBytes: Record<string, Record<string, number>> = {};
 
+      const ERROR_RESPONSE_KB = 0.5; // HTTP error body (~500 bytes)
+
       for (const req of completed) {
-        if (req.failed) continue;
         const visited = req.visited;
         if (visited.length < 2) continue;
         const leafComp = components.get(visited[visited.length - 1]);
         const tag = req.tag;
-        // Per-tag responseSizeKb takes priority, then component-level, then type default
-        const respRule = leafComp?.responseRules?.find(r => r.tag === tag);
-        const tagRespEntry = leafComp?.tagDistribution?.find(t => t.tag === tag);
-        const respKb = respRule?.responseSizeKb
-          ?? tagRespEntry?.responseSizeKb
-          ?? (leafComp?.responseSizeKb
-          || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
-          || DEFAULT_RESPONSE_FALLBACK_KB);
+
+        // Failed requests still send error response (502/504 etc.) back to client
+        let respKb: number;
+        if (req.failed) {
+          respKb = ERROR_RESPONSE_KB;
+        } else {
+          // Per-tag responseSizeKb takes priority, then component-level, then type default
+          const respRule = leafComp?.responseRules?.find(r => r.tag === tag);
+          const tagRespEntry = leafComp?.tagDistribution?.find(t => t.tag === tag);
+          respKb = respRule?.responseSizeKb
+            ?? tagRespEntry?.responseSizeKb
+            ?? (leafComp?.responseSizeKb
+            || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
+            || DEFAULT_RESPONSE_FALLBACK_KB);
+        }
 
         // Response latency: traverse reverse path
         let responseLat = 0;
@@ -398,16 +420,33 @@ export function createSimulationEngine(
           (respNodeInBytes[from] ??= {})[tag] = ((respNodeInBytes[from])?.[tag] ?? 0) + respKb;
         }
         req.totalLatencyMs += responseLat;
+
+        // Propagate failed status along the entire path (forward + response)
+        if (req.failed) {
+          for (const nid of visited) {
+            (failedNodeInCount[nid] ??= {})[tag] = ((failedNodeInCount[nid])?.[tag] ?? 0) + 1;
+            (failedNodeOutCount[nid] ??= {})[tag] = ((failedNodeOutCount[nid])?.[tag] ?? 0) + 1;
+          }
+          for (let i = 0; i < visited.length - 1; i++) {
+            const ek = `${visited[i]}->${visited[i + 1]}`;
+            (failedEdgeCount[ek] ??= {})[tag] = ((failedEdgeCount[ek])?.[tag] ?? 0) + 1;
+          }
+        }
       }
 
       // Build per-tag traffic maps
-      function buildTagMap(counts: Record<string, number> | undefined, bytes: Record<string, number> | undefined): Record<string, TagTraffic> {
+      function buildTagMap(
+        counts: Record<string, number> | undefined,
+        bytes: Record<string, number> | undefined,
+        failed?: Record<string, number>,
+      ): Record<string, TagTraffic> {
         const result: Record<string, TagTraffic> = {};
         if (!counts) return result;
         for (const tag of Object.keys(counts)) {
           result[tag] = {
             rps: TICK_DURATION_SEC > 0 ? counts[tag] / TICK_DURATION_SEC : 0,
             bytesPerSec: TICK_DURATION_SEC > 0 ? (bytes?.[tag] ?? 0) / TICK_DURATION_SEC : 0,
+            failedRps: TICK_DURATION_SEC > 0 ? (failed?.[tag] ?? 0) / TICK_DURATION_SEC : 0,
           };
         }
         return result;
@@ -421,10 +460,10 @@ export function createSimulationEngine(
       const nodeTagTraffic: Record<string, NodeTagTraffic> = {};
       for (const nid of allNodeIds) {
         nodeTagTraffic[nid] = {
-          incoming: buildTagMap(fwdNodeInCount[nid], fwdNodeInBytes[nid]),
-          outgoing: buildTagMap(fwdNodeOutCount[nid], fwdNodeOutBytes[nid]),
-          responseIncoming: buildTagMap(respNodeInCount[nid], respNodeInBytes[nid]),
-          responseOutgoing: buildTagMap(respNodeOutCount[nid], respNodeOutBytes[nid]),
+          incoming: buildTagMap(fwdNodeInCount[nid], fwdNodeInBytes[nid], failedNodeInCount[nid]),
+          outgoing: buildTagMap(fwdNodeOutCount[nid], fwdNodeOutBytes[nid], failedNodeOutCount[nid]),
+          responseIncoming: buildTagMap(respNodeInCount[nid], respNodeInBytes[nid], failedNodeInCount[nid]),
+          responseOutgoing: buildTagMap(respNodeOutCount[nid], respNodeOutBytes[nid], failedNodeOutCount[nid]),
         };
       }
 
@@ -435,8 +474,8 @@ export function createSimulationEngine(
       const edgeTagTraffic: Record<string, EdgeTagTraffic> = {};
       for (const ek of allEdgeKeys) {
         edgeTagTraffic[ek] = {
-          forward: buildTagMap(fwdEdgeCount[ek], fwdEdgeBytes[ek]),
-          response: buildTagMap(respEdgeCount[ek], respEdgeBytes[ek]),
+          forward: buildTagMap(fwdEdgeCount[ek], fwdEdgeBytes[ek], failedEdgeCount[ek]),
+          response: buildTagMap(respEdgeCount[ek], respEdgeBytes[ek], failedEdgeCount[ek]),
         };
       }
 

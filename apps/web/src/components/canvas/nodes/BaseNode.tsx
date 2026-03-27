@@ -152,6 +152,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   const selectNode = useCanvasStore((s) => s.selectNode);
   const ema = useSimulationStore((s) => s.nodeEma[id]);
   const isRunning = useSimulationStore((s) => s.isRunning);
+  const nodeTraffic = useSimulationStore((s) => s.nodeTagTraffic[id]);
 
   const customColor = data.config.color as string | undefined;
   const customTextColor = data.config.textColor as string | undefined;
@@ -160,7 +161,20 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   const language = data.config.language as string | undefined;
   const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
   const utilState = isRunning ? getUtilState(maxEma) : null;
-  const frameBorder = selected ? '#7ddcff' : (customColor || borderColor);
+
+  // Compute node error rate from incoming traffic
+  let nodeErrRate = 0;
+  if (isRunning && nodeTraffic?.incoming) {
+    let totalRps = 0, totalFailed = 0;
+    for (const t of Object.values(nodeTraffic.incoming)) {
+      totalRps += t.rps;
+      totalFailed += t.failedRps;
+    }
+    if (totalRps > 0) nodeErrRate = totalFailed / totalRps;
+  }
+
+  const errBorder = isRunning && nodeErrRate > 0.01;
+  const frameBorder = selected ? '#7ddcff' : errBorder ? '#ef4444' : (customColor || borderColor);
   const summaryLines = getNodeSummary(data.componentType, data.config);
   const def = getDefinition(data.componentType as Parameters<typeof getDefinition>[0]);
   const hasBrokersOrNodes = def?.params.some(p => p.key === 'brokers' || p.key === 'nodes');
@@ -202,6 +216,20 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
           {getTrendArrow(ema) && (
             <span className="text-[9px] leading-none">{getTrendArrow(ema)}</span>
           )}
+        </div>
+      )}
+      {isRunning && nodeErrRate > 0.01 && (
+        <div
+          className="absolute -top-2.5 left-2 z-10 flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 shadow-sm"
+          style={{
+            background: nodeErrRate > 0.5 ? 'rgba(239,68,68,0.95)' : 'rgba(239,68,68,0.80)',
+            borderColor: 'rgba(254,202,202,0.4)',
+            color: '#fff',
+          }}
+        >
+          <span className="text-[8px] font-bold leading-none whitespace-nowrap">
+            ⚠ {nodeErrRate >= 1 ? '100' : nodeErrRate >= 0.1 ? Math.round(nodeErrRate * 100) : (nodeErrRate * 100).toFixed(1)}%
+          </span>
         </div>
       )}
       {/* Target (input) — circle, teal */}
