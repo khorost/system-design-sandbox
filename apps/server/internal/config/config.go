@@ -27,9 +27,9 @@ type RateLimitConfig struct {
 }
 
 type SessionConfig struct {
-	Expiry       time.Duration
+	Expiry           time.Duration
 	TouchMinInterval time.Duration // minimum interval between session touch writes
-	MetricsTick  time.Duration     // how often the metrics collector scans Redis
+	MetricsTick      time.Duration // how often the metrics collector scans Redis
 }
 
 type SMTPConfig struct {
@@ -48,9 +48,10 @@ type RedisConfig struct {
 	DB       int
 
 	// Sentinel mode
-	SentinelActive bool
-	SentinelMaster string
-	SentinelURLs   []string // []"host:port"
+	SentinelActive   bool
+	SentinelMaster   string
+	SentinelURLs     []string // []"host:port"
+	SentinelPassword string
 }
 
 func Load() (*Config, error) {
@@ -182,12 +183,13 @@ func Load() (*Config, error) {
 		SessionLogEnabled:    sessionLogEnabled,
 		MaxMindPath:          os.Getenv("MAXMIND_GEOLITE2"),
 		Redis: RedisConfig{
-			URL:            os.Getenv("REDIS_URL"),
-			Password:       os.Getenv("REDIS_PASSWORD"),
-			DB:             redisDB,
-			SentinelActive: sentinelActive,
-			SentinelMaster: os.Getenv("REDIS_SENTINEL_MASTER"),
-			SentinelURLs:   sentinelURLs,
+			URL:              os.Getenv("REDIS_URL"),
+			Password:         os.Getenv("REDIS_PASSWORD"),
+			DB:               redisDB,
+			SentinelActive:   sentinelActive,
+			SentinelMaster:   os.Getenv("REDIS_SENTINEL_MASTER"),
+			SentinelURLs:     sentinelURLs,
+			SentinelPassword: getEnvOrDefault("REDIS_SENTINEL_PASSWORD", os.Getenv("REDIS_PASSWORD")),
 		},
 		Session: SessionConfig{
 			Expiry:           sessionExpiry,
@@ -207,4 +209,11 @@ func Load() (*Config, error) {
 			PerHour:   rlPerHour,
 		},
 	}, nil
+}
+
+func getEnvOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
