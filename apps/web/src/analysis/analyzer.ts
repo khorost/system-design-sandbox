@@ -1,4 +1,5 @@
 import type { ComponentEdge, ComponentNode } from '../types/index.ts';
+import { detectMissingRlRedis } from './rules/distributedRl.ts';
 import { type AnalysisWarning, detectMissingLoadBalancer } from './rules/spof.ts';
 
 export type { AnalysisWarning };
@@ -12,5 +13,6 @@ export function analyzeArchitecture(
 ): AnalysisWarning[] {
   return [
     ...detectMissingLoadBalancer(nodes, edges),
+    ...detectMissingRlRedis(nodes, edges),
   ];
 }

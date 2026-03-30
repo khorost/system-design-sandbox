@@ -1,4 +1,4 @@
-import type { CacheTagStats, EdgeTagTraffic,LoadProfile, NodeTagTraffic, SimulationMetrics } from '@system-design-sandbox/simulation-engine';
+import type { CacheTagStats, EdgeTagTraffic,LoadProfile, NodeTagTraffic, ServiceNodeMetrics, SimulationMetrics } from '@system-design-sandbox/simulation-engine';
 import { create } from 'zustand';
 
 import { CONFIG } from '../config/constants.ts';
@@ -50,6 +50,8 @@ interface SimulationState {
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
   nodeCacheStats: Record<string, Record<string, CacheTagStats>>;
   circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'>;
+  serviceInternalMetrics: Record<string, ServiceNodeMetrics>;
+  nodeLatencyP99: Record<string, number>;
 
   setLoadType: (type: 'constant' | 'ramp' | 'spike') => void;
   start: () => Promise<void>;
@@ -75,6 +77,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   edgeTagTraffic: {},
   nodeCacheStats: {},
   circuitBreakerStates: {},
+  serviceInternalMetrics: {},
+  nodeLatencyP99: {},
 
   setLoadType: (type) => {
     set({ loadType: type });
@@ -216,6 +220,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       edgeTagTraffic: newEdgeTagTraffic,
       nodeCacheStats: metrics.nodeCacheStats ?? {},
       circuitBreakerStates: metrics.circuitBreakerStates ?? {},
+      serviceInternalMetrics: metrics.serviceInternalMetrics ?? {},
+      nodeLatencyP99: metrics.nodeLatencyP99 ?? {},
     });
   },
 

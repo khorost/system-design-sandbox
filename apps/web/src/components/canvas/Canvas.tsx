@@ -122,7 +122,7 @@ function getValidContainersAtPoint(
 function CanvasInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const miniMapDragRef = useRef(false);
-  const { screenToFlowPosition, setCenter, getZoom } = useReactFlow();
+  const { screenToFlowPosition, setCenter, getZoom, getViewport, setViewport, fitView: fitViewFn, zoomIn, zoomOut } = useReactFlow();
   const viewport = useViewport();
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
@@ -137,6 +137,8 @@ function CanvasInner() {
   const selectEdge = useCanvasStore((s) => s.selectEdge);
   const focusNodeId = useCanvasStore((s) => s.focusNodeId);
   const clearFocus = useCanvasStore((s) => s.clearFocus);
+  const displayMode = useCanvasStore((s) => s.displayMode);
+  const isoRotation = useCanvasStore((s) => s.isoRotation);
 
   useEffect(() => {
     const wrapper = reactFlowWrapper.current;
@@ -515,55 +517,167 @@ function CanvasInner() {
     };
   }, [centerFromMiniMapClientPoint, isMiniMapInteractive]);
 
+  const is3d = displayMode === '3d';
+
+  // In 3D mode: intercept wheel to zoom from center (avoids pan drift from CSS 3D transform)
+  useEffect(() => {
+    if (!is3d) return;
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn({ duration: 100 });
+      else zoomOut({ duration: 100 });
+    };
+    wrapper.addEventListener('wheel', handleWheel, { passive: false });
+    return () => wrapper.removeEventListener('wheel', handleWheel);
+  }, [is3d, zoomIn, zoomOut]);
+
+  // In 3D mode: custom pan that accounts for rotateZ angle
+  const isoPanRef = useRef<{ dragging: boolean; startX: number; startY: number; startVp: { x: number; y: number; zoom: number } } | null>(null);
+  useEffect(() => {
+    if (!is3d) return;
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return;
+    const rad = -(isoRotation * Math.PI) / 180;
+    const cosA = Math.cos(rad);
+    const sinA = Math.sin(rad);
+
+    const onDown = (e: PointerEvent) => {
+      // Only handle left button on the pane (not on nodes)
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      if (!target.closest('.react-flow__pane')) return;
+      isoPanRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, startVp: getViewport() };
+      wrapper.style.cursor = 'grabbing';
+      e.preventDefault();
+    };
+    const onMove = (e: PointerEvent) => {
+      const state = isoPanRef.current;
+      if (!state?.dragging) return;
+      const dx = e.clientX - state.startX;
+      const dy = e.clientY - state.startY;
+      // Rotate the delta by the inverse of the canvas rotation
+      const rdx = dx * cosA - dy * sinA;
+      const rdy = dx * sinA + dy * cosA;
+      setViewport({ x: state.startVp.x + rdx, y: state.startVp.y + rdy, zoom: state.startVp.zoom });
+    };
+    const onUp = () => {
+      if (isoPanRef.current?.dragging) {
+        isoPanRef.current = null;
+        wrapper.style.cursor = '';
+      }
+    };
+
+    wrapper.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      wrapper.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [is3d, isoRotation, getViewport, setViewport]);
+
+  // Re-fit view after display mode or rotation change (after CSS transition settles)
+  const prevDisplayMode = useRef(displayMode);
+  const prevIsoRotation = useRef(isoRotation);
+  useEffect(() => {
+    if (prevDisplayMode.current !== displayMode || prevIsoRotation.current !== isoRotation) {
+      prevDisplayMode.current = displayMode;
+      prevIsoRotation.current = isoRotation;
+      const timer = setTimeout(() => {
+        fitViewFn({ duration: 300 });
+      }, 650);
+      return () => clearTimeout(timer);
+    }
+  }, [displayMode, isoRotation, fitViewFn]);
+
   return (
     <div
       ref={reactFlowWrapper}
       className="w-full h-full relative"
       style={{
-        backgroundImage:
-          'radial-gradient(circle at top, rgba(110,220,255,0.08), transparent 24%), radial-gradient(circle at 80% 18%, rgba(255,180,84,0.06), transparent 18%)',
+        backgroundImage: is3d
+          ? 'radial-gradient(circle at 20% 0%, rgba(110,220,255,0.14), transparent 28%), radial-gradient(circle at 84% 16%, rgba(255,180,84,0.12), transparent 22%), linear-gradient(180deg, rgba(9,15,24,0.98), rgba(4,8,14,0.98))'
+          : 'radial-gradient(circle at top, rgba(110,220,255,0.08), transparent 24%), radial-gradient(circle at 80% 18%, rgba(255,180,84,0.06), transparent 18%)',
+        transition: 'background-image 0.6s ease',
       }}
     >
-      <Toolbar />
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        isValidConnection={isValidConnection}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onNodeDragStop}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onPaneClick={onPaneClick}
-        onEdgeClick={onEdgeClick}
-        onReconnectStart={onReconnectStart}
-        onReconnect={onReconnect}
-        onReconnectEnd={onReconnectEnd}
-        edgesReconnectable
-        deleteKeyCode="Delete"
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        snapToGrid
-        snapGrid={[CONFIG.CANVAS.SNAP_GRID, CONFIG.CANVAS.SNAP_GRID]}
-        defaultEdgeOptions={{
-          type: 'flow',
-          style: { stroke: '#3b82f6', strokeWidth: CONFIG.CANVAS.DEFAULT_EDGE_STROKE_WIDTH },
-        }}
-        elevateNodesOnSelect={false}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgba(110,220,255,0.22)" />
-        <Controls className="!bg-[rgba(19,32,44,0.92)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)] [&>button]:!bg-[rgba(19,32,44,0.92)] [&>button]:!border-[var(--color-border)] [&>button]:!text-slate-300 [&>button:hover]:!bg-[var(--color-surface-hover)]" />
-        <MiniMap
-          className="!bg-[rgba(19,32,44,0.95)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)]"
-          nodeColor={(node) => getMiniMapNodeColor(node as ComponentNode)}
-          maskColor="rgba(8,16,24,0.84)"
+      {is3d && (
+        <div
+          className="pointer-events-none absolute inset-0 z-0"
+          style={{ background: 'radial-gradient(ellipse at 50% 30%, rgba(110,220,255,0.06), transparent 70%)' }}
         />
-      </ReactFlow>
+      )}
+      <Toolbar />
+      <div style={is3d ? { perspective: '4000px', width: '100%', height: '100%', overflow: 'hidden' } : { width: '100%', height: '100%' }}>
+        <div
+          style={{
+            transform: is3d ? `rotateX(40deg) rotateZ(${isoRotation}deg) scale(1.8)` : 'rotateX(0deg) rotateZ(0deg) scale(1)',
+            transformOrigin: 'center 60%',
+            transformStyle: is3d ? 'preserve-3d' : undefined,
+            transition: 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+            width: '100%',
+            height: '100%',
+          }}
+        >
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={is3d ? undefined : onConnect}
+            isValidConnection={isValidConnection}
+            onNodeDragStart={is3d ? undefined : onNodeDragStart}
+            onNodeDrag={is3d ? undefined : onNodeDrag}
+            onNodeDragStop={is3d ? undefined : onNodeDragStop}
+            onDrop={is3d ? undefined : onDrop}
+            onDragOver={is3d ? undefined : onDragOver}
+            onPaneClick={onPaneClick}
+            onEdgeClick={onEdgeClick}
+            onReconnectStart={is3d ? undefined : onReconnectStart}
+            onReconnect={is3d ? undefined : onReconnect}
+            onReconnectEnd={is3d ? undefined : onReconnectEnd}
+            nodesDraggable={!is3d}
+            nodesConnectable={!is3d}
+            edgesReconnectable={!is3d}
+            deleteKeyCode={is3d ? null : 'Delete'}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            snapToGrid={!is3d}
+            snapGrid={[CONFIG.CANVAS.SNAP_GRID, CONFIG.CANVAS.SNAP_GRID]}
+            defaultEdgeOptions={{
+              type: 'flow',
+              style: { stroke: '#3b82f6', strokeWidth: CONFIG.CANVAS.DEFAULT_EDGE_STROKE_WIDTH },
+            }}
+            panOnDrag={!is3d}
+            zoomOnScroll={!is3d}
+            zoomOnPinch={!is3d}
+            zoomOnDoubleClick={!is3d}
+            elevateNodesOnSelect={false}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background
+              variant={is3d ? BackgroundVariant.Lines : BackgroundVariant.Dots}
+              gap={is3d ? 28 : 20}
+              size={is3d ? 0.8 : 1}
+              color={is3d ? 'rgba(110,220,255,0.14)' : 'rgba(110,220,255,0.22)'}
+            />
+            {!is3d && (
+              <Controls className="!bg-[rgba(19,32,44,0.92)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)] [&>button]:!bg-[rgba(19,32,44,0.92)] [&>button]:!border-[var(--color-border)] [&>button]:!text-slate-300 [&>button:hover]:!bg-[var(--color-surface-hover)]" />
+            )}
+            {!is3d && (
+              <MiniMap
+                className="!bg-[rgba(19,32,44,0.95)] !border-[var(--color-border)] !rounded-xl !shadow-[var(--shadow-panel)]"
+                nodeColor={(node) => getMiniMapNodeColor(node as ComponentNode)}
+                maskColor="rgba(8,16,24,0.84)"
+              />
+            )}
+          </ReactFlow>
+        </div>
+      </div>
       <DebugStats />
     </div>
   );

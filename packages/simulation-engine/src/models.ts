@@ -9,6 +9,7 @@ export type ComponentType =
   | 'dns'
   | 'waf'
   | 'service'
+  | 'service_container'
   | 'serverless_function'
   | 'worker'
   | 'cron_job'
@@ -132,6 +133,24 @@ export interface ComponentModel {
   authLatencyMs?: number;    // extra latency per request for token validation
   authFailRate?: number;     // fraction of requests that fail auth (0..1)
 
+  // Service Container internals
+  serviceDbPools?: Array<{
+    id: string;
+    poolSize: number;
+    queryDelay: number;      // ms per query
+    callsPerRequest: number; // total DB calls per request across all pipeline steps
+    parallel: boolean;       // if true, calls run in parallel (take max, not sum)
+  }>;
+
+  consumerConfig?: {
+    concurrency: number;
+    processingDelayMs: number; // avg step delay for consumer pipelines
+  };
+
+  asyncDispatch?: {
+    returnDelayMs: number; // latency for sync jobId return (fast path)
+  };
+
   // Traffic sizing
   payloadSizeKb: number;
   responseSizeKb: number;
@@ -199,6 +218,19 @@ export interface SimulationMetrics {
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
   nodeCacheStats: Record<string, Record<string, CacheTagStats>>; // nodeId → tag → stats
   circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'>; // edgeKey → state
+  serviceInternalMetrics: Record<string, ServiceNodeMetrics>;
+  nodeLatencyP99: Record<string, number>;
+}
+
+export interface DbPoolMetrics {
+  utilization: number;   // 0..1, fraction of pool capacity used
+  avgLatencyMs: number;  // base + queue delay at current load
+}
+
+export interface ServiceNodeMetrics {
+  dbPools: Record<string, DbPoolMetrics>;    // poolId → metrics
+  consumerLag: number;                        // estimated message backlog (messages)
+  asyncQueueDepth: number;                    // pending async jobs
 }
 
 export interface FailureReport {

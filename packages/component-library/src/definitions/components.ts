@@ -218,6 +218,41 @@ export const componentDefinitions: ComponentDefinition[] = [
     defaults: { maxRps: 2000, baseLatencyMs: 10, replicas: 3 },
   },
   {
+    type: 'service_container' as ComponentType,
+    label: 'Service Container',
+    category: 'compute',
+    icon: '⚙',
+    description: 'Service with internal pipelines, DB pools, producers and consumers',
+    params: [
+      { key: 'replicas', label: 'Replicas', type: 'number', default: 1, min: 1, max: 1000 },
+    ],
+    defaults: { maxRps: 2000, baseLatencyMs: 10, replicas: 1 },
+    defaultConfig: {
+      collapsed: true,
+      internalLatency: 2,
+      dbPools: [],
+      persistentConns: [],
+      producers: [],
+      onDemandConns: [],
+      pipelines: [
+        {
+          id: 'default',
+          label: 'default-pipeline',
+          trigger: { kind: 'router', protocol: 'REST', port: 8080, acceptedTags: [] },
+          steps: [
+            {
+              id: 'step-1',
+              processingDelay: 1,
+              description: '',
+              calls: [],
+              response: { kind: 'sync', responseSize: 0.5 },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     type: 'serverless_function',
     label: 'Serverless Function',
     category: 'compute',

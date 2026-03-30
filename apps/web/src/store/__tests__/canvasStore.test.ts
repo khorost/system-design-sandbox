@@ -34,12 +34,14 @@ function mkEdge(source: string, target: string): ComponentEdge {
 }
 
 beforeEach(() => {
+  localStorage.removeItem('sds-canvas-display-mode');
   // Reset store to clean state
   useCanvasStore.setState({
     nodes: [],
     edges: [],
     selectedNodeId: null,
     selectedEdgeId: null,
+    displayMode: '2d',
     _history: { past: [], future: [] },
     _skipAutoSave: true,
   });
@@ -90,6 +92,20 @@ describe('undo / redo', () => {
     useCanvasStore.getState().redo();
     expect(useCanvasStore.getState().nodes).toHaveLength(1);
     expect(useCanvasStore.getState().nodes[0].id).toBe('n1');
+  });
+});
+
+describe('displayMode', () => {
+  it('toggles between 2d and 3d', () => {
+    const store = useCanvasStore.getState();
+
+    expect(store.displayMode).toBe('2d');
+
+    store.toggleDisplayMode();
+    expect(useCanvasStore.getState().displayMode).toBe('3d');
+
+    useCanvasStore.getState().toggleDisplayMode();
+    expect(useCanvasStore.getState().displayMode).toBe('2d');
   });
 });
 

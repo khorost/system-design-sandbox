@@ -7,7 +7,7 @@ const PARALLEL_GAP = 12;
 export function buildBezierPath(
   sx: number, sy: number, tx: number, ty: number,
   sourcePos: Position, targetPos: Position,
-): [string, number, number] {
+): [string, number, number, number, number] {
   return getBezierPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty, sourcePosition: sourcePos, targetPosition: targetPos });
 }
 

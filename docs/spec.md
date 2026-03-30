@@ -66,6 +66,41 @@
 | Worker | concurrency, poll_interval_ms |
 | Cron Job | schedule, timeout_ms |
 
+#### Service Container (расширенный режим)
+
+Узел `service` может быть сконвертирован в **Service Container** — самостоятельную единицу с внутренней структурой. Активируется кнопкой «⚙ Convert to Service Container» в Properties Panel.
+
+**Функциональные блоки:**
+
+| Блок | Тип | Описание |
+|------|-----|----------|
+| **Router** | входящий (target handle) | Точка входа HTTP/WS/gRPC. Параметры: protocol (REST/WS/gRPC), port, acceptedTags |
+| **Consumer** | входящий (target handle) | Подписка на брокер. Параметры: sourceBrokerNodeId, topic, consumerGroup, concurrency, ackMode |
+| **DB Pool** | исходящий (source handle) | Постоянный пул соединений к БД. Параметры: targetNodeId, poolSize, queryDelay |
+| **Persistent Conn** | исходящий (source handle) | Постоянное соединение (Redis, etcd). Параметры: targetNodeId, cmdDelay, pipelined |
+| **Producer** | исходящий (source handle) | Отправка в брокер. Параметры: targetNodeId, topic, acks (none/leader/all), batchMode |
+| **On-demand Conn** | исходящий (source handle) | Соединение по запросу к внешнему узлу. Параметры: targetNodeId, setupDelay, keepAlive, requestDelay |
+
+**Структура Pipeline:**
+```
+Service Container
+├── Shared Resources (переиспользуются всеми пайплайнами)
+│   ├── DB Pools × N
+│   ├── Persistent Conns × N
+│   ├── Producers × N
+│   └── On-demand Conns × N
+└── Pipelines × N
+    ├── Trigger: Router (protocol:port) | Consumer (broker, topic, group)
+    ├── Steps × N: processingDelay, description, calls[]
+    └── Response: sync (responseSize) | async (returnDelay) | none
+```
+
+**Визуализация:** collapsed-вид показывает список блоков (max 4 + `··· +N more`) с именованными хендлами на каждый блок. При симуляции — утилизация бар, per-node p99, per-pool utilization badge (зелёный/жёлтый/красный), consumer lag badge. Expanded-вид (`⊞`) показывает пайплайны как chip-flow.
+
+**Handle ID конвенция:**
+- Входящие: `router:{pipelineId}`, `consumer:{pipelineId}`
+- Исходящие: `dbpool:{poolId}`, `persistent:{connId}`, `producer:{prodId}`, `ondemand:{connId}`
+
 ### 2.4. Данные и хранение (Модуль 3)
 
 | Компонент | Параметры |
@@ -641,6 +676,49 @@ function propagateFailure(graph: Graph, failedNode: string): FailureReport {
 }
 ```
 
+### 7.4. Service Container — симуляционная модель
+
+Сервис с `ServiceContainerConfig` разворачивается в `ComponentModel` с расширенными параметрами:
+
+**DB Pool M/M/c contention:**
+```
+poolUtil = rps × queryDelay_s × callsPerRequest / poolSize
+queueDelay = queryDelay × poolUtil / (1 - poolUtil)
+effectiveLatency = queryDelay + queueDelay  (× callsPerRequest если sequential, иначе ×1)
+```
+При нескольких пайплайнах, делящих один пул, суммарный `callsPerRequest` агрегируется — студент видит как два независимых пайплайна незаметно перегружают общий пул.
+
+**Consumer back-pressure:**
+```
+processingRate = concurrency / avgStepDurationSec
+lagDelta = (incomingRate - processingRate) × tickDuration
+lag = max(0, lag + lagDelta)
+```
+Lag-бейдж на consumer-строке в collapsed-ноде: зелёный (<100 msg), жёлтый (<1000 msg), красный (>1000 msg).
+
+**Async Dispatcher:**
+При `response.kind === 'async'` движок использует `returnDelayMs` вместо полного `baseLatencyMs` для расчёта latency клиентского ответа. Фоновая обработка моделируется через `asyncQueueDepth`.
+
+**Producer latency по acks:**
+```
+acks=none   → +0.1ms  (fire-and-forget)
+acks=leader → +2ms    (acknowledgement от лидера)
+acks=all    → +10ms   (acknowledgement от всех реплик)
+```
+
+**ServiceInternalMetrics** — per-tick метрики сервис-контейнера:
+```typescript
+interface ServiceNodeMetrics {
+  dbPools: Record<string, {
+    utilization:  number;   // 0..1 (fraction of poolSize)
+    avgLatencyMs: number;   // queryDelay + queueDelay
+  }>;
+  consumerLag:    number;   // накопленный lag (messages)
+  asyncQueueDepth: number;  // pending async jobs
+}
+```
+Доступны через `simulationStore.serviceInternalMetrics[nodeId]`.
+
 ---
 
 ## 8. Модель данных
@@ -680,10 +758,35 @@ function propagateFailure(graph: Graph, failedNode: string): FailureReport {
       "config": {
         "name": "ChatService",
         "replicas": 3,
-        "cpuCores": 4,
-        "memoryGb": 8,
-        "maxRpsPerInstance": 5000,
-        "baseLatencyMs": 10
+        "collapsed": true,
+        "internalLatency": 2,
+        "dbPools": [
+          { "id": "dp1", "label": "pg-main", "targetNodeId": "pg-1", "poolSize": 20, "queryDelay": 5 }
+        ],
+        "persistentConns": [
+          { "id": "pc1", "label": "redis-presence", "targetNodeId": "redis-presence", "pipelined": false, "cmdDelay": 0.5 }
+        ],
+        "producers": [],
+        "onDemandConns": [],
+        "pipelines": [
+          {
+            "id": "p1",
+            "label": "send-message",
+            "trigger": { "kind": "router", "protocol": "WS", "port": 8080, "acceptedTags": [] },
+            "steps": [
+              {
+                "id": "s1",
+                "processingDelay": 0.5,
+                "description": "validate & persist",
+                "calls": [
+                  { "kind": "db", "resourceId": "dp1", "count": 1, "parallel": false },
+                  { "kind": "persistent", "resourceId": "pc1", "count": 1 }
+                ],
+                "response": { "kind": "sync", "responseSize": 0.1 }
+              }
+            ]
+          }
+        ]
       }
     },
     {

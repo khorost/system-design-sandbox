@@ -103,8 +103,10 @@ export function FlowEdge(props: EdgeProps) {
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
+  const displayMode = useCanvasStore((s) => s.displayMode);
   const nodes = useCanvasStore((s) => s.nodes);
   const isSelected = selected || selectedEdgeId === id!;
+  const is3d = displayMode === '3d';
   // Non-hook: reads edges snapshot directly — safe from infinite re-render
   const parallelInfo = getParallelEdgeInfo(id!, source, target);
 
@@ -141,7 +143,23 @@ export function FlowEdge(props: EdgeProps) {
 
   if (!sourceNode || !targetNode) return null;
 
-  const { sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode);
+  // When named handles are involved (e.g. ServiceContainer ports), use React Flow's
+  // handle-based positions so edges connect to the exact port centers.
+  // For unnamed handles, keep the floating-edge behaviour (nearest boundary point).
+  const hasNamedHandles = !!(props.sourceHandleId || props.targetHandleId);
+
+  let sx: number, sy: number, tx: number, ty: number;
+  let sourcePos, targetPos;
+  if (hasNamedHandles) {
+    sx = props.sourceX;
+    sy = props.sourceY;
+    tx = props.targetX;
+    ty = props.targetY;
+    sourcePos = props.sourcePosition;
+    targetPos = props.targetPosition;
+  } else {
+    ({ sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode));
+  }
 
   let edgePath: string, labelX: number, labelY: number;
   switch (edgeRoutingMode) {
@@ -212,6 +230,17 @@ export function FlowEdge(props: EdgeProps) {
     strokeWidth += 1;
   }
 
+  const edgeFilter = is3d ? 'drop-shadow(4px 5px 6px rgba(4,8,15,0.34))' : undefined;
+  const edgeHighlightWidth = is3d ? Math.max(1, strokeWidth * 0.35) : 0;
+  const labelStyle = {
+    position: 'absolute' as const,
+    transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 4}px)`,
+    pointerEvents: 'none' as const,
+    zIndex: 1000,
+    background: is3d ? 'linear-gradient(145deg, rgba(41,58,74,0.96), rgba(15,23,33,0.92))' : 'rgba(15,23,33,0.9)',
+    boxShadow: is3d ? '6px 8px 0 rgba(5,10,18,0.28), 0 14px 20px rgba(3,8,14,0.22)' : undefined,
+  };
+
   // Determine effective display mode
   const effectiveMode = edgeLabelMode === 'auto'
     ? (isSelected ? (isRunning ? 'full' : 'protocol') : null)
@@ -274,6 +303,16 @@ export function FlowEdge(props: EdgeProps) {
           <path d="M 0 0 L 10 5 L 0 10 z" fill={effectiveColor} />
         </marker>
       </defs>
+      {is3d && (
+        <BaseEdge
+          path={edgePath}
+          style={{
+            stroke: 'rgba(255,255,255,0.18)',
+            strokeWidth: edgeHighlightWidth,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
       <BaseEdge
         path={edgePath}
         markerEnd={`url(#${markerId})`}
@@ -286,18 +325,14 @@ export function FlowEdge(props: EdgeProps) {
           animationTimingFunction,
           animationIterationCount,
           animationPlayState,
+          filter: edgeFilter,
         }}
       />
       {showLabel && labelContent && (
         <EdgeLabelRenderer>
           <div
-            style={{
-              position: 'absolute',
-              transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 4}px)`,
-              pointerEvents: 'none',
-              zIndex: 1000,
-            }}
-            className="text-[10px] font-mono leading-tight px-2.5 py-1.5 rounded bg-[var(--color-surface)]/90 border border-[var(--color-border)] text-slate-300 whitespace-nowrap"
+            style={labelStyle}
+            className="text-[10px] font-mono leading-tight px-2.5 py-1.5 rounded border border-[var(--color-border)] text-slate-300 whitespace-nowrap"
           >
             {labelContent}
           </div>

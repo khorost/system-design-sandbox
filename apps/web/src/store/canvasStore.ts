@@ -29,6 +29,7 @@ const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
 };
 
 const STORAGE_KEY = 'sds-architecture';
+const DISPLAY_MODE_KEY = 'sds-canvas-display-mode';
 const MAX_HISTORY = CONFIG.HISTORY.MAX_UNDO_ENTRIES;
 
 type Snapshot = { nodes: ComponentNode[]; edges: ComponentEdge[] };
@@ -271,6 +272,12 @@ function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; s
   }
 }
 
+function loadDisplayMode(): CanvasDisplayMode {
+  // Always start in 2D — 3D/Iso is a view-only mode that distorts
+  // handle measurements if active during initial layout.
+  return '2d';
+}
+
 const initial = loadInitialState();
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -319,6 +326,7 @@ function flushSave() {
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
 export type EdgeRoutingMode = 'bezier' | 'straight' | 'polyline';
+export type CanvasDisplayMode = '2d' | '3d';
 
 interface CanvasState {
   nodes: ComponentNode[];
@@ -326,6 +334,8 @@ interface CanvasState {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   focusNodeId: string | null;
+  displayMode: CanvasDisplayMode;
+  isoRotation: number;
   edgeLabelMode: EdgeLabelMode;
   edgeRoutingMode: EdgeRoutingMode;
   schemaName: string;
@@ -349,7 +359,9 @@ interface CanvasState {
 
   addNode: (node: ComponentNode) => void;
   removeNode: (id: string) => void;
+  removeEdgesWhere: (predicate: (e: ComponentEdge) => boolean) => void;
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+  toggleContainerCollapse: (nodeId: string) => void;
   selectNode: (id: string | null) => void;
   focusNode: (id: string) => void;
   clearFocus: () => void;
@@ -368,6 +380,8 @@ interface CanvasState {
   normalizeNodes: () => void;
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
+  toggleDisplayMode: () => void;
+  rotateIso: (dir: 1 | -1) => void;
   cycleEdgeLabelMode: () => void;
   cycleEdgeRoutingMode: () => void;
   updateEdgeWaypoints: (edgeId: string, waypoints: Array<{ x: number; y: number }>) => void;
@@ -399,6 +413,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedNodeId: null,
   selectedEdgeId: null,
   focusNodeId: null,
+  displayMode: loadDisplayMode(),
+  isoRotation: 45,
   edgeLabelMode: 'auto',
   edgeRoutingMode: 'bezier',
   schemaName: initial.schemaName,
@@ -436,6 +452,40 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   onEdgesChange: (changes) => {
     const hasRemoval = changes.some(c => c.type === 'remove');
     if (hasRemoval) set({ ...pushHistory(get) });
+
+    // When an SC-resource edge is deleted, clear the corresponding targetNodeId
+    // so the panel stays in sync with the canvas.
+    if (hasRemoval) {
+      const removedIds = new Set(changes.filter(c => c.type === 'remove').map(c => c.id));
+      const edgesBefore = get().edges;
+      for (const edge of edgesBefore) {
+        if (!removedIds.has(edge.id)) continue;
+        const sh = edge.sourceHandle;
+        if (!sh) continue;
+        const scNode = get().nodes.find(n => n.id === edge.source);
+        if (!scNode || scNode.data.componentType !== 'service_container') continue;
+        const cfg = scNode.data.config as unknown as import('../types/index.ts').ServiceContainerConfig;
+        const patch: Record<string, unknown> = {};
+        if (sh === 'ratelimit-redis') {
+          patch.rateLimitRedisNodeId = '';
+        } else {
+          const match = sh.match(/^(dbpool|persistent|producer|ondemand):(.+)$/);
+          if (!match) continue;
+          const [, kind, resId] = match;
+          if (kind === 'dbpool')     patch.dbPools = cfg.dbPools.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'persistent') patch.persistentConns = cfg.persistentConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'producer')   patch.producers = cfg.producers.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'ondemand')   patch.onDemandConns = cfg.onDemandConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+        }
+        // Update the SC node config inline (history already pushed above)
+        set({
+          nodes: get().nodes.map(n =>
+            n.id === edge.source ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n,
+          ),
+        });
+      }
+    }
+
     set({ edges: applyEdgeChanges(changes, get().edges) as ComponentEdge[] });
   },
 
@@ -445,16 +495,46 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const sourceType = sourceNode?.data.componentType;
     const targetType = targetNode?.data.componentType;
 
+    const sourceName = (sourceNode?.data.config.name as string)?.trim() || sourceNode?.data.label || sourceType || '?';
+    const targetName = (targetNode?.data.config.name as string)?.trim() || targetNode?.data.label || targetType || '?';
+
+    // Reject duplicate (source, sourceHandle, target, targetHandle) — each port pair must be unique
+    const isDuplicate = get().edges.some(e =>
+      e.source === connection.source &&
+      e.target === connection.target &&
+      (e.sourceHandle ?? null) === (connection.sourceHandle ?? null) &&
+      (e.targetHandle ?? null) === (connection.targetHandle ?? null),
+    );
+    if (isDuplicate) {
+      notify.warn(`Connection ${sourceName} → ${targetName} already exists`);
+      return;
+    }
+
+    // Validate SC consumer ports — only brokers (kafka, rabbitmq, nats) can connect to consumer handles
+    if (connection.targetHandle?.startsWith('consumer:') && sourceType) {
+      const SC_CONSUMER_ALLOWED_SOURCES = new Set(['kafka', 'rabbitmq', 'nats']);
+      if (!SC_CONSUMER_ALLOWED_SOURCES.has(sourceType)) {
+        notify.warn(`Consumer port accepts only message brokers (Kafka, RabbitMQ, NATS), not ${sourceType}`);
+        return;
+      }
+    }
+
     // Validate LB targets — only compute/gateway nodes
     if (sourceType === 'load_balancer' && targetType) {
-      const LB_ALLOWED_TARGETS = new Set(['service', 'api_gateway', 'auth_service', 'serverless_function']);
-      if (!LB_ALLOWED_TARGETS.has(targetType)) return;
+      const LB_ALLOWED_TARGETS = new Set(['service', 'service_container', 'api_gateway', 'auth_service', 'serverless_function']);
+      if (!LB_ALLOWED_TARGETS.has(targetType)) {
+        notify.warn(`Load Balancer can only route to compute nodes, not ${targetType}`);
+        return;
+      }
     }
 
     // Validate API Gateway targets — route to services, LB, CDN, auth, serverless
     if (sourceType === 'api_gateway' && targetType) {
-      const GW_ALLOWED_TARGETS = new Set(['service', 'load_balancer', 'auth_service', 'serverless_function', 'cdn']);
-      if (!GW_ALLOWED_TARGETS.has(targetType)) return;
+      const GW_ALLOWED_TARGETS = new Set(['service', 'service_container', 'load_balancer', 'auth_service', 'serverless_function', 'cdn']);
+      if (!GW_ALLOWED_TARGETS.has(targetType)) {
+        notify.warn(`API Gateway can only route to services, LB or CDN, not ${targetType}`);
+        return;
+      }
     }
 
     let protocol: ProtocolType = 'REST';
@@ -503,12 +583,42 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     };
     collect(id);
+
+    // Before removing edges, clear targetNodeId on SC resources whose edges are being removed.
+    // This preserves the resource config (pool size, delays, etc.) — only the binding is cleared.
+    let nodes = get().nodes;
+    const removedEdges = get().edges.filter(e => toRemove.has(e.source) || toRemove.has(e.target));
+    for (const edge of removedEdges) {
+      const sh = edge.sourceHandle;
+      if (!sh) continue;
+      const match = sh.match(/^(dbpool|persistent|producer|ondemand):(.+)$/);
+      if (!match) continue;
+      const [, kind, resId] = match;
+      const scNode = nodes.find(n => n.id === edge.source);
+      if (!scNode || scNode.data.componentType !== 'service_container') continue;
+      const cfg = scNode.data.config as unknown as import('../types/index.ts').ServiceContainerConfig;
+      const patch: Record<string, unknown> = {};
+      if (kind === 'dbpool')     patch.dbPools = cfg.dbPools.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'persistent') patch.persistentConns = cfg.persistentConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'producer')   patch.producers = cfg.producers.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'ondemand')   patch.onDemandConns = cfg.onDemandConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      nodes = nodes.map(n =>
+        n.id === edge.source ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n,
+      );
+    }
+
     set({
       ...pushHistory(get),
-      nodes: get().nodes.filter((n) => !toRemove.has(n.id)),
+      nodes: nodes.filter((n) => !toRemove.has(n.id)),
       edges: get().edges.filter((e) => !toRemove.has(e.source) && !toRemove.has(e.target)),
       selectedNodeId: toRemove.has(get().selectedNodeId ?? '') ? null : get().selectedNodeId,
     });
+  },
+
+  removeEdgesWhere: (predicate) => {
+    const filtered = get().edges.filter((e) => !predicate(e));
+    if (filtered.length === get().edges.length) return; // nothing changed
+    set({ ...pushHistory(get), edges: filtered });
   },
 
   updateNodeConfig: (id, config) => {
@@ -518,6 +628,75 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         n.id === id ? { ...n, data: { ...n.data, config: { ...n.data.config, ...config } } } : n
       ),
     });
+  },
+
+  toggleContainerCollapse: (nodeId) => {
+    set((state) => {
+      const node = state.nodes.find(n => n.id === nodeId);
+      if (!node) return {};
+
+      const isCurrentlyCollapsed = !!(node.data.config.collapsed as boolean);
+      const newCollapsed = !isCurrentlyCollapsed;
+
+      // Update node config and size
+      const HEADER_HEIGHT = 44; // CONFIG.CANVAS.CONTAINER_HEADER_HEIGHT
+      const updatedNodes = state.nodes.map(n => {
+        if (n.id === nodeId) {
+          const currentStyle = n.style ?? {};
+          const currentConfig = n.data.config;
+          // Save/restore expanded dimensions in config (not style — style goes to DOM)
+          const expandedH = newCollapsed
+            ? ((currentStyle.height as number) ?? 300)
+            : (currentConfig._expandedHeight as number | undefined);
+          const expandedW = newCollapsed
+            ? ((currentStyle.width as number) ?? 400)
+            : (currentConfig._expandedWidth as number | undefined);
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              config: {
+                ...currentConfig,
+                collapsed: newCollapsed,
+                ...(newCollapsed
+                  ? { _expandedHeight: expandedH, _expandedWidth: expandedW }
+                  : { _expandedHeight: undefined, _expandedWidth: undefined }
+                ),
+              },
+            },
+            style: newCollapsed
+              ? { ...currentStyle, height: HEADER_HEIGHT }
+              : { ...currentStyle, height: expandedH ?? 300, width: expandedW ?? 400 },
+          };
+        }
+        // Hide/show direct children
+        if (n.parentId === nodeId) {
+          return { ...n, hidden: newCollapsed };
+        }
+        return n;
+      });
+
+      // Get IDs of direct children that are being hidden/shown
+      const childIds = new Set(
+        state.nodes
+          .filter(n => n.parentId === nodeId)
+          .map(n => n.id)
+      );
+
+      // Hide/show edges that connect to hidden children
+      const updatedEdges = state.edges.map(e => {
+        const touchesChild = childIds.has(e.source) || childIds.has(e.target);
+        if (!touchesChild) return e;
+        return { ...e, hidden: newCollapsed };
+      });
+
+      return {
+        ...pushHistory(get),
+        nodes: updatedNodes,
+        edges: updatedEdges,
+      };
+    });
+    debouncedSave();
   },
 
   selectNode: (id) => {
@@ -644,6 +823,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return ancestors;
   },
 
+  toggleDisplayMode: () => {
+    set((state) => ({
+      displayMode: state.displayMode === '2d' ? '3d' : '2d',
+    }));
+  },
+
+  rotateIso: (dir) => {
+    set((state) => ({
+      isoRotation: state.isoRotation + dir * 15,
+    }));
+  },
+
   setSchemaName: (name) => {
     set({ schemaName: name });
   },
@@ -767,6 +958,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
       if (!getDefinition(node.data.componentType)) {
         warnings.push(`Unknown componentType "${node.data.componentType}" on node "${node.id}".`);
+      }
+    }
+
+    // Migrate ServiceContainerConfig: fill missing optional fields with defaults
+    for (const node of nodes) {
+      if (node.data.componentType === 'service' && Array.isArray(node.data.config.pipelines)) {
+        const cfg = node.data.config;
+        if (cfg.dbPools === undefined)       cfg.dbPools = [];
+        if (cfg.persistentConns === undefined) cfg.persistentConns = [];
+        if (cfg.producers === undefined)     cfg.producers = [];
+        if (cfg.onDemandConns === undefined) cfg.onDemandConns = [];
+        if (cfg.internalLatency === undefined) cfg.internalLatency = 2;
+        if (cfg.collapsed === undefined)     cfg.collapsed = true;
       }
     }
 
@@ -1024,6 +1228,10 @@ useCanvasStore.subscribe((state, prev) => {
   // Cross-tab broadcast: metadata
   if (metaChanged) {
     postTabMessage({ type: 'canvas:meta', name: state.schemaName, description: state.schemaDescription, tags: state.schemaTags });
+  }
+
+  if (state.displayMode !== prev.displayMode) {
+    localStorage.setItem(DISPLAY_MODE_KEY, state.displayMode);
   }
 });
 

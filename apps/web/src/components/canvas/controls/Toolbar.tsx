@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { createArchitecture, updateArchitecture } from '../../../api/architectures.ts';
 import { useAuthStore } from '../../../store/authStore.ts';
-import type { EdgeLabelMode, EdgeRoutingMode } from '../../../store/canvasStore.ts';
+import type { CanvasDisplayMode, EdgeLabelMode, EdgeRoutingMode } from '../../../store/canvasStore.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { ArchitectureSchema } from '../../../types/index.ts';
 import { notify } from '../../../utils/notifications.ts';
@@ -46,9 +46,27 @@ const tooltipByRoutingMode: Record<EdgeRoutingMode, string> = {
   polyline: 'Edges: Polyline with waypoints',
 };
 
+const labelByDisplayMode: Record<CanvasDisplayMode, string> = {
+  '2d': '2D',
+  '3d': 'Iso',
+};
+
+const tooltipByDisplayMode: Record<CanvasDisplayMode, string> = {
+  '2d': 'Canvas: flat 2D view',
+  '3d': 'Canvas: isometric diorama view (read-only)',
+};
+
 const IconRoute = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="4 17 10 11 16 15 20 7" />
+  </svg>
+);
+
+const IconCube = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z" />
+    <path d="M12 20v-9.5" />
+    <path d="M20 6.5l-8 4.5-8-4.5" />
   </svg>
 );
 
@@ -187,6 +205,9 @@ export function Toolbar() {
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
   const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
   const cycleEdgeRoutingMode = useCanvasStore((s) => s.cycleEdgeRoutingMode);
+  const displayMode = useCanvasStore((s) => s.displayMode);
+  const toggleDisplayMode = useCanvasStore((s) => s.toggleDisplayMode);
+  const rotateIso = useCanvasStore((s) => s.rotateIso);
   const undo = useCanvasStore((s) => s.undo);
   const redo = useCanvasStore((s) => s.redo);
   const canUndo = useCanvasStore((s) => s._history.past.length > 0);
@@ -390,6 +411,31 @@ export function Toolbar() {
         <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
         <DropdownMenu label="Buffer" ariaLabel="Buffer actions menu" items={bufferMenuItems} />
         <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
+        <button
+          onClick={toggleDisplayMode}
+          title={tooltipByDisplayMode[displayMode]}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          {IconCube} {labelByDisplayMode[displayMode]}
+        </button>
+        {displayMode === '3d' && (
+          <>
+            <button
+              onClick={() => rotateIso(-1)}
+              title="Rotate view left"
+              className="inline-flex items-center justify-center rounded w-7 h-7 text-slate-400 transition-colors hover:bg-[var(--color-surface-hover)] hover:text-slate-200"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button
+              onClick={() => rotateIso(1)}
+              title="Rotate view right"
+              className="inline-flex items-center justify-center rounded w-7 h-7 text-slate-400 transition-colors hover:bg-[var(--color-surface-hover)] hover:text-slate-200"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+            </button>
+          </>
+        )}
         <button
           onClick={cycleEdgeLabelMode}
           title={tooltipByMode[edgeLabelMode]}

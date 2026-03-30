@@ -51,6 +51,7 @@ export const paletteItems: PaletteItem[] = [
 
   // Compute
   { type: 'service', label: 'Service', icon: '⚙️', category: 'compute' },
+  { type: 'service_container', label: 'Service Container', icon: '⚙', category: 'compute' },
   { type: 'serverless_function', label: 'Serverless', icon: 'λ', category: 'compute' },
   { type: 'worker', label: 'Worker', icon: '👷', category: 'compute' },
   { type: 'cron_job', label: 'Cron Job', icon: '🕐', category: 'compute' },

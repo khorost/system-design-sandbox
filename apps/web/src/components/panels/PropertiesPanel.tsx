@@ -17,6 +17,7 @@ import { getComponentIcon, paletteItems } from '../canvas/controls/paletteData.t
 import { SavedArchitecturesModal } from '../SavedArchitecturesModal.tsx';
 import { ComponentIcon } from '../ui/ComponentIcon.tsx';
 import { NumberInput } from '../ui/NumberInput.tsx';
+import { ServiceContainerPanel, ServiceUpgradeButton } from './ServiceContainerPanel.tsx';
 
 interface TagWeightEntry {
   tag: string;
@@ -328,6 +329,19 @@ export function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNo
     }
   };
 
+  const setOutTag = (tag: string, outTag: string) => {
+    const existing = rules.filter(r => r.tag !== tag);
+    const currentRule = getRule(tag);
+    const weight = currentRule?.weight ?? 1;
+    // Don't normalize during typing — only strip empty. Comparing to tag name would reset input mid-type.
+    const cleanOutTag = outTag === '' ? undefined : outTag;
+    if (weight === 1 && !cleanOutTag) {
+      update(existing);
+    } else {
+      update([...existing, { tag, weight, ...(cleanOutTag ? { outTag: cleanOutTag } : {}) }]);
+    }
+  };
+
   // Compute share among sibling edges from same source
   const siblingEdges = sourceNode ? allEdges.filter(e => e.source === sourceNode.id) : [];
   const getTagShare = (tag: string): number => {
@@ -364,20 +378,31 @@ export function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNo
                 >{blocked ? '✕' : '✓'}</button>
                 <span className={`text-xs font-medium w-14 shrink-0 truncate ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
                 {!blocked && (
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={coeff}
-                    aria-label={`Weight for tag ${tag}`}
-                    onChange={(e) => { const v = Number(e.target.value); if (v > 0) setCoeff(tag, v); }}
-                    className={`w-12 shrink-0 px-1.5 py-0.5 text-xs text-right ${compactInputClass}`}
-                  />
+                  <>
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={coeff}
+                      aria-label={`Weight for tag ${tag}`}
+                      onChange={(e) => { const v = Number(e.target.value); if (v > 0) setCoeff(tag, v); }}
+                      className={`w-10 shrink-0 px-1 py-0.5 text-xs text-right ${compactInputClass}`}
+                    />
+                    <span className="text-slate-600 text-[10px]">→</span>
+                    <input
+                      type="text"
+                      value={getRule(tag)?.outTag ?? ''}
+                      placeholder={tag}
+                      aria-label={`Rename tag ${tag}`}
+                      onChange={(e) => setOutTag(tag, e.target.value)}
+                      className={`w-16 shrink-0 px-1 py-0.5 text-xs ${compactInputClass} ${getRule(tag)?.outTag ? 'text-amber-300' : 'text-slate-500'}`}
+                    />
+                  </>
                 )}
                 {blocked ? (
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>
                 ) : (
-                  <span className="text-[10px] text-slate-500 ml-auto">{Math.round(share * 100)}%</span>
+                  <span className="text-[10px] text-slate-500 ml-auto shrink-0">{Math.round(share * 100)}%</span>
                 )}
               </div>
             );
@@ -455,6 +480,12 @@ function NodeProperties() {
   const effectiveRps = CLIENT_TYPES.has(selectedNode.data.componentType)
     ? (((configVal('concurrent_users_k') as number) ?? 1) * 1000 * ((configVal('requests_per_user') as number) ?? 0.1))
     : null;
+
+  // Service Container: render dedicated panel
+  if (selectedNode.data.componentType === 'service_container' ||
+      (selectedNode.data.componentType === 'service' && Array.isArray(config.pipelines))) {
+    return <ServiceContainerPanel node={selectedNode} />;
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -635,7 +666,10 @@ function NodeProperties() {
         </div>
       </div>
 
-      <div className="p-3 border-t border-[var(--color-border)]">
+      <div className="p-3 border-t border-[var(--color-border)] space-y-2">
+        {selectedNode.data.componentType === 'service' && (
+          <ServiceUpgradeButton node={selectedNode} />
+        )}
         <button
           onClick={() => removeNode(selectedNode.id)}
           className={destructiveButtonClass}

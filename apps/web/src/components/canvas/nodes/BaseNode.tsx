@@ -168,6 +168,7 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
 export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: BaseNodeProps) {
   const { id, data, selected } = nodeProps;
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const displayMode = useCanvasStore((s) => s.displayMode);
   const ema = useSimulationStore((s) => s.nodeEma[id]);
   const isRunning = useSimulationStore((s) => s.isRunning);
   const nodeTraffic = useSimulationStore((s) => s.nodeTagTraffic[id]);
@@ -199,27 +200,146 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   const replicas = hasBrokersOrNodes ? 1 : ((data.config.replicas as number) ?? def?.defaults?.replicas ?? 1);
   const isClient = CLIENT_TYPES.has(data.componentType as ComponentType);
   const showReplicas = !isClient && replicas > 1;
+  const is3d = displayMode === '3d';
+  const depthX = 14;
+  const depthY = 14;
+  const shellBackground = is3d
+    ? `linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 40%, rgba(0,0,0,0.06) 100%), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`
+    : `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`;
+  const shellShadow = selected
+    ? (is3d
+      ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 6px rgba(110,220,255,0.14), 0 12px 24px rgba(3,8,14,0.32)'
+      : '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22), 0 10px 20px rgba(3,8,14,0.24)')
+    : utilState
+      ? (is3d
+        ? `0 ${depthY + 4}px 20px rgba(3,8,14,0.30), 0 0 0 1px ${utilState.glow}`
+        : `0 0 0 1px ${utilState.glow}, 0 8px 14px ${utilState.glow}`)
+      : (is3d
+        ? `0 ${depthY + 4}px 22px rgba(3,8,14,0.32)`
+        : '0 8px 16px rgba(3,8,14,0.18)');
 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="min-w-[160px] max-w-[240px] cursor-pointer transition-all relative rounded-lg"
-      style={{
-        background: `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`,
-        border: `1px solid ${frameBorder}`,
-        boxShadow: selected
-          ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22), 0 10px 20px rgba(3,8,14,0.24)'
-          : utilState
-            ? `0 0 0 1px ${utilState.glow}, 0 8px 14px ${utilState.glow}`
-            : '0 8px 16px rgba(3,8,14,0.18)',
-      }}
+      className="min-w-[160px] max-w-[240px] cursor-pointer transition-all relative overflow-visible"
     >
-      {selected ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
-          style={{ boxShadow: 'inset 0 0 0 1px rgba(244,251,255,0.22)' }}
+      {is3d && (
+        <>
+          {/* Bottom face (near wall) */}
+          <div
+            className="pointer-events-none absolute z-0"
+            style={{
+              left: 0,
+              right: 0,
+              bottom: -depthY,
+              height: depthY + 1,
+              background: `linear-gradient(0deg, ${frameBorder}50, ${frameBorder}28)`,
+              transform: 'skewX(45deg)',
+              transformOrigin: 'top left',
+            }}
+          />
+          {/* Right face (side wall) */}
+          <div
+            className="pointer-events-none absolute z-0"
+            style={{
+              bottom: depthX - depthY,
+              right: -depthX,
+              top: 0,
+              width: depthX + 1,
+              background: `linear-gradient(0deg, ${frameBorder}30, rgba(6,10,18,0.55) 50%, ${frameBorder}18)`,
+              transform: 'skewY(45deg)',
+              transformOrigin: 'bottom left',
+            }}
+          />
+          {/* Drop shadow */}
+          <div
+            className="pointer-events-none absolute z-[-1]"
+            style={{
+              inset: 0,
+              transform: `translate(${depthX * 0.5}px, ${depthY + 4}px)`,
+              borderRadius: 10,
+              background: 'rgba(0,4,10,0.45)',
+              filter: 'blur(14px)',
+            }}
+          />
+        </>
+      )}
+      <div
+        className="relative z-[1] rounded-lg"
+        style={{
+          background: shellBackground,
+          border: `1px solid ${frameBorder}`,
+          boxShadow: shellShadow,
+        }}
+      >
+        {selected ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
+            style={{ boxShadow: 'inset 0 0 0 1px rgba(244,251,255,0.22)' }}
+          />
+        ) : null}
+        {is3d ? (
+          <div
+            className="pointer-events-none absolute inset-[1px] z-[1] rounded-[inherit]"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.10) 100%)',
+            }}
+          />
+        ) : null}
+        {!hideTargetHandle && (
+          <Handle
+            type="target"
+            position={Position.Left}
+            className={`${selected ? '!w-2.5 !h-2.5 !bg-[rgba(153,246,228,0.92)] !border-[rgba(236,253,245,0.95)]' : '!w-2 !h-2 !bg-[rgba(109,215,216,0.72)] !border-[rgba(167,243,208,0.62)]'} !rounded-full hover:!bg-[rgba(153,246,228,0.88)] hover:!border-[rgba(204,251,241,0.88)] !transition-colors`}
+            style={is3d ? { boxShadow: '0 2px 6px rgba(5,10,18,0.45)' } : undefined}
+          />
+        )}
+        <div className="relative z-[2] pl-3 pr-3.5 py-2.5">
+          <div className="flex items-start gap-1.5">
+            <ComponentIcon icon={displayIcon} alt={displayName} className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[1.15rem] leading-none" imgClassName="h-6 w-6 object-contain" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-sm font-semibold leading-tight truncate" style={{ color: customTextColor || '#edf4fb' }}>
+                  {displayName}
+                </span>
+                {showReplicas && (
+                  <span className="shrink-0 rounded border border-[rgba(110,220,255,0.25)] bg-[rgba(110,220,255,0.10)] px-1 py-px font-mono text-[9px] font-bold leading-none text-[var(--color-accent)]">
+                    &times;{replicas}
+                  </span>
+                )}
+                {language && LANGUAGE_ICONS[language] && (
+                  <span
+                    className="shrink-0 text-[8px] font-bold leading-none px-1 py-px rounded"
+                    style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
+                    title={language}
+                  >
+                    {LANGUAGE_ICONS[language]}
+                  </span>
+                )}
+              </div>
+              {summaryLines.length > 0 ? (
+                <div className="mt-0.5 text-[9px] font-mono text-slate-300 leading-tight truncate">
+                  {summaryLines.join('  \u00b7  ')}
+                </div>
+              ) : (
+                <div className="mt-0.5 text-[9px] text-slate-500">Ready for configuration</div>
+              )}
+              <div className="mt-0.5 text-[8px] uppercase tracking-[0.14em] text-slate-500 truncate">
+                {formatComponentName(data.componentType)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className={`${selected ? '!w-3 !h-3 !bg-[rgba(252,211,77,0.94)] !border-[rgba(254,240,138,0.95)]' : '!w-2.5 !h-2.5 !bg-[rgba(251,191,36,0.76)] !border-[rgba(253,224,71,0.66)]'} !rounded-sm hover:!bg-[rgba(252,211,77,0.92)] hover:!border-[rgba(254,240,138,0.88)] !transition-colors`}
+          style={{
+            transform: 'translate(50%, -50%) rotate(45deg)',
+            boxShadow: is3d ? '0 2px 6px rgba(5,10,18,0.45)' : undefined,
+          }}
         />
-      ) : null}
+      </div>
       {isRunning && ema && utilState && (
         <div
           className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-md border px-1.5 py-0.5 shadow-sm"
@@ -250,56 +370,6 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
           </span>
         </div>
       )}
-      {/* Target (input) — circle, teal */}
-      {!hideTargetHandle && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          className={`${selected ? '!w-2.5 !h-2.5 !bg-[rgba(153,246,228,0.92)] !border-[rgba(236,253,245,0.95)]' : '!w-2 !h-2 !bg-[rgba(109,215,216,0.72)] !border-[rgba(167,243,208,0.62)]'} !rounded-full hover:!bg-[rgba(153,246,228,0.88)] hover:!border-[rgba(204,251,241,0.88)] !transition-colors`}
-        />
-      )}
-      <div className="pl-3 pr-3.5 py-2.5">
-        <div className="flex items-start gap-1.5">
-          <ComponentIcon icon={displayIcon} alt={displayName} className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[1.15rem] leading-none" imgClassName="h-6 w-6 object-contain" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-sm font-semibold leading-tight truncate" style={{ color: customTextColor || '#edf4fb' }}>
-                {displayName}
-              </span>
-              {showReplicas && (
-                <span className="shrink-0 rounded border border-[rgba(110,220,255,0.25)] bg-[rgba(110,220,255,0.10)] px-1 py-px font-mono text-[9px] font-bold leading-none text-[var(--color-accent)]">
-                  &times;{replicas}
-                </span>
-              )}
-              {language && LANGUAGE_ICONS[language] && (
-                <span
-                  className="shrink-0 text-[8px] font-bold leading-none px-1 py-px rounded"
-                  style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
-                  title={language}
-                >
-                  {LANGUAGE_ICONS[language]}
-                </span>
-              )}
-            </div>
-            {summaryLines.length > 0 ? (
-              <div className="mt-0.5 text-[9px] font-mono text-slate-300 leading-tight truncate">
-                {summaryLines.join('  \u00b7  ')}
-              </div>
-            ) : (
-              <div className="mt-0.5 text-[9px] text-slate-500">Ready for configuration</div>
-            )}
-            <div className="mt-0.5 text-[8px] uppercase tracking-[0.14em] text-slate-500 truncate">
-              {formatComponentName(data.componentType)}
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Source (output) — diamond, amber */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className={`${selected ? '!w-3 !h-3 !bg-[rgba(252,211,77,0.94)] !border-[rgba(254,240,138,0.95)]' : '!w-2.5 !h-2.5 !bg-[rgba(251,191,36,0.76)] !border-[rgba(253,224,71,0.66)]'} !rounded-sm !rotate-45 hover:!bg-[rgba(252,211,77,0.92)] hover:!border-[rgba(254,240,138,0.88)] !transition-colors`}
-      />
     </div>
   );
 }

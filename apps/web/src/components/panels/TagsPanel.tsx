@@ -16,7 +16,6 @@ function NodeTagsEditor() {
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
   const updateNodeConfig = useCanvasStore((s) => s.updateNodeConfig);
-
   const node = nodes.find(n => n.id === selectedNodeId);
   if (!node) return null;
 
@@ -67,36 +66,50 @@ function NodeTagsEditor() {
     );
   }
 
-  // LB — blockedTags
-  if (componentType === 'load_balancer') {
+  // LB / API Gateway — tag management
+  if (componentType === 'load_balancer' || componentType === 'api_gateway') {
     const blocked = (config.blockedTags as string[] | undefined) ?? [];
     const blockedSet = new Set(blocked);
     const nodeMap = new Map(nodes.map(n => [n.id, n]));
     const allTags = new Set<string>();
-    for (const e of edges) {
-      if (e.target === node.id || e.source === node.id) {
-        const other = nodeMap.get(e.target === node.id ? e.source : e.target);
-        if (other) { const t = getNodeTags(other); if (t) t.forEach(tag => allTags.add(tag)); }
+
+    // Recursively collect tags that can reach this node through the graph
+    const visitedNodes = new Set<string>();
+    const collect = (nodeId: string) => {
+      if (visitedNodes.has(nodeId)) return;
+      visitedNodes.add(nodeId);
+      for (const e of edges) {
+        if (e.target !== nodeId) continue;
+        const src = nodeMap.get(e.source);
+        if (!src) continue;
+        const rules = (e.data?.routingRules as Array<{ tag: string; weight: number }> | undefined) ?? [];
+        const blockedByEdge = new Set(rules.filter(r => r.weight <= 0).map(r => r.tag));
+        const srcTags = getNodeTags(src);
+        if (srcTags) {
+          for (const t of srcTags) { if (!blockedByEdge.has(t)) allTags.add(t); }
+        } else {
+          collect(src.id);
+        }
       }
-    }
+    };
+    collect(node.id);
 
     const toggleBlock = (tag: string) => {
       const newBlocked = blockedSet.has(tag) ? blocked.filter(t => t !== tag) : [...blocked, tag];
       updateNodeConfig(node.id, { blockedTags: newBlocked.length > 0 ? newBlocked : undefined });
     };
 
-    return (
-      <div className="p-3">
-        <div className="text-xs font-semibold text-slate-200 mb-2">{name} — Tag Filter</div>
+    // Incoming tags block (shared by LB and GW)
+    const incomingBlock = (
+      <div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Incoming Tags</div>
         {allTags.size > 0 ? (
           <div className="space-y-1">
             {[...allTags].sort().map(tag => {
               const isBlocked = blockedSet.has(tag);
               return (
                 <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${isBlocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
-                  <button
-                    onClick={() => toggleBlock(tag)}
-                    title={isBlocked ? 'Unblock tag' : 'Block tag'}
+                  <button onClick={() => toggleBlock(tag)} title={isBlocked ? 'Unblock' : 'Block'}
                     className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${isBlocked ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'}`}
                   >{isBlocked ? '✕' : '✓'}</button>
                   <span className={`text-xs font-medium ${isBlocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
@@ -106,8 +119,90 @@ function NodeTagsEditor() {
             })}
           </div>
         ) : (
-          <div className="text-xs text-slate-500">Wildcard — all tags pass through</div>
+          <div className="text-xs text-slate-500">No incoming tags detected</div>
         )}
+      </div>
+    );
+
+    // LB — only incoming filter, no outgoing routing
+    if (componentType === 'load_balancer') {
+      return <div className="p-3">{incomingBlock}</div>;
+    }
+
+    // GW — incoming filter + tag split routes (stored on GW config, not per-edge)
+    // tagRoutes: Array<{ inTag: string; outTag: string; weight: number }>
+    type TagRoute = { inTag: string; outTag: string; weight: number };
+    const tagRoutes = (config.tagRoutes as TagRoute[] | undefined) ?? [];
+
+    const setTagRoutes = (routes: TagRoute[]) => {
+      updateNodeConfig(node.id, { tagRoutes: routes.length > 0 ? routes : undefined });
+    };
+
+    const addRoute = (inTag: string) => {
+      setTagRoutes([...tagRoutes, { inTag, outTag: '', weight: 1 }]);
+    };
+
+    const updateRoute = (idx: number, patch: Partial<TagRoute>) => {
+      const updated = tagRoutes.map((r, i) => i === idx ? { ...r, ...patch } : r);
+      setTagRoutes(updated);
+    };
+
+    const removeRoute = (idx: number) => {
+      setTagRoutes(tagRoutes.filter((_, i) => i !== idx));
+    };
+
+    // Group routes by inTag
+    const activeTags = [...allTags].sort().filter(t => !blockedSet.has(t));
+
+    return (
+      <div className="p-3 space-y-3">
+        {incomingBlock}
+
+        {/* Tag split routes — GW only */}
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Tag Routes</div>
+          {activeTags.length > 0 ? (
+            <div className="space-y-2">
+              {activeTags.map(inTag => {
+                const routes = tagRoutes.filter(r => r.inTag === inTag);
+                return (
+                  <div key={inTag}>
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="text-xs text-cyan-400 font-medium">{inTag}</span>
+                      <button
+                        onClick={() => addRoute(inTag)}
+                        title="Add split"
+                        className="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center bg-cyan-900/30 text-cyan-400 hover:bg-cyan-900/50 transition-colors"
+                      >+</button>
+                      {routes.length === 0 && <span className="text-[10px] text-slate-500 ml-1">pass-through</span>}
+                    </div>
+                    {routes.map((r, ri) => {
+                      const globalIdx = tagRoutes.indexOf(r);
+                      return (
+                        <div key={ri} className="flex items-center gap-1 ml-3 rounded-md px-2 py-0.5 bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]">
+                          <span className="text-slate-600 text-[10px]">→</span>
+                          <input type="text" value={r.outTag} placeholder="new tag"
+                            onChange={(e) => updateRoute(globalIdx, { outTag: e.target.value })}
+                            className={`flex-1 min-w-0 px-1 py-0.5 text-xs bg-[var(--color-surface)] border border-[var(--color-border)] rounded ${r.outTag ? 'text-amber-300' : 'text-slate-500'}`}
+                          />
+                          <input type="number" min={0.1} step={0.1} value={r.weight}
+                            onChange={(e) => { const v = Number(e.target.value); if (v > 0) updateRoute(globalIdx, { weight: v }); }}
+                            className="w-10 shrink-0 px-1 py-0.5 text-xs text-right bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-slate-200"
+                          />
+                          <button onClick={() => removeRoute(globalIdx)}
+                            className="w-4 h-4 shrink-0 rounded text-[10px] font-bold flex items-center justify-center text-red-400 hover:bg-red-900/30 transition-colors"
+                          >✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500">No active tags to route</div>
+          )}
+        </div>
       </div>
     );
   }

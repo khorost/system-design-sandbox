@@ -16,6 +16,8 @@ export type {
   TagTraffic,
   NodeTagTraffic,
   EdgeTagTraffic,
+  DbPoolMetrics,
+  ServiceNodeMetrics,
 } from './models.js';
 
 export {

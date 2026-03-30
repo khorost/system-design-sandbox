@@ -29,7 +29,160 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
     const replicas = (config.replicas as number) || (config.brokers as number) || (config.nodes as number) || def?.defaults?.replicas || 1;
     const maxRpsPerInstance = (config.max_rps_per_broker as number) || (config.max_rps_per_node as number) || (config.max_rps_per_instance as number) || (config.max_rps as number) || def?.defaults?.maxRps || 1000;
     const maxRps = maxRpsPerInstance * replicas;
-    const baseLatencyMs = (config.base_latency_ms as number) || def?.defaults?.baseLatencyMs || 10;
+    // For service containers, derive baseLatencyMs from pipeline steps
+    let baseLatencyMs: number;
+    const engineDbPools: Array<{
+      id: string;
+      poolSize: number;
+      queryDelay: number;
+      callsPerRequest: number;
+      parallel: boolean;
+    }> = [];
+    let engineConsumerConfig: { concurrency: number; processingDelayMs: number } | undefined;
+    let engineAsyncDispatch: { returnDelayMs: number } | undefined;
+    if (Array.isArray(config.pipelines)) {
+      // Type-assert to ServiceContainerConfig-like structure for computation
+      interface SvcPipelineStep {
+        processingDelay?: number;
+        calls?: Array<{
+          kind: string;
+          resourceId?: string;
+          count?: number;
+          parallel?: boolean;
+          payloadSize?: number;
+        }>;
+        response?: { kind: string; returnDelay?: number };
+      }
+      interface SvcPipeline {
+        trigger: { kind: string; concurrency?: number };
+        steps: SvcPipelineStep[];
+      }
+      interface SvcConfig {
+        pipelines: SvcPipeline[];
+        dbPools?: Array<{ id: string; poolSize: number; queryDelay: number }>;
+        persistentConns?: Array<{ id: string; cmdDelay: number }>;
+        producers?: Array<{ id: string; acks: string }>;
+        onDemandConns?: Array<{ id: string; setupDelay: number; keepAlive: boolean; requestDelay: number }>;
+      }
+
+      const svc = config as unknown as SvcConfig;
+      const pipelines = svc.pipelines;
+
+      // Build resource lookup maps
+      const dbPoolMap = new Map((svc.dbPools ?? []).map(p => [p.id, p]));
+      const persistentMap = new Map((svc.persistentConns ?? []).map(p => [p.id, p]));
+      const producerMap = new Map((svc.producers ?? []).map(p => [p.id, p]));
+      const onDemandMap = new Map((svc.onDemandConns ?? []).map(p => [p.id, p]));
+
+      // Compute effective latency per pipeline (sum over steps, max or sum over calls per step)
+      // approximating RPS at 50% load for utilization estimate
+      const pipelineLatencies = pipelines.map(pipeline => {
+        let pipelineLatency = 0;
+        for (const step of pipeline.steps) {
+          let stepLatency = step.processingDelay ?? 0.2;
+          const calls = step.calls ?? [];
+
+          const callDelays = calls.map(call => {
+            if (call.kind === 'db' && call.resourceId) {
+              const pool = dbPoolMap.get(call.resourceId);
+              if (pool) {
+                const count = call.count ?? 1;
+                // Approximate util: assume service runs at 50% load for latency estimate
+                const approxUtil = Math.min(0.8, (maxRps * 0.5 * (pool.queryDelay / 1000)) / pool.poolSize);
+                const queueDelay = approxUtil < 1
+                  ? pool.queryDelay * (approxUtil / (1 - approxUtil))
+                  : pool.queryDelay * 10;
+                const perQuery = pool.queryDelay + queueDelay;
+                return call.parallel ? perQuery : perQuery * count;
+              }
+            }
+            if (call.kind === 'persistent' && call.resourceId) {
+              const conn = persistentMap.get(call.resourceId);
+              if (conn) return conn.cmdDelay * (call.count ?? 1);
+            }
+            if (call.kind === 'producer' && call.resourceId) {
+              const producer = producerMap.get(call.resourceId);
+              if (producer) {
+                const ackLatency = producer.acks === 'none' ? 0.1 : producer.acks === 'all' ? 10 : 2;
+                return ackLatency;
+              }
+            }
+            if (call.kind === 'ondemand' && call.resourceId) {
+              const conn = onDemandMap.get(call.resourceId);
+              if (conn) return (conn.keepAlive ? 0 : conn.setupDelay) + conn.requestDelay;
+            }
+            return 0;
+          });
+
+          // Add call latencies to step latency (sequential calls sum up)
+          stepLatency += callDelays.reduce((a, b) => a + b, 0);
+          pipelineLatency += stepLatency;
+        }
+        return pipelineLatency;
+      });
+
+      baseLatencyMs = pipelineLatencies.length > 0
+        ? pipelineLatencies.reduce((a, b) => a + b, 0) / pipelineLatencies.length
+        : (def?.defaults?.baseLatencyMs ?? 10);
+
+      // Build serviceDbPools for real-time M/M/c contention
+
+      // Aggregate DB calls across all pipelines for each pool
+      const dbCallSums = new Map<string, { count: number; parallel: boolean }>();
+      for (const pipeline of svc.pipelines) {
+        for (const step of pipeline.steps) {
+          for (const call of (step.calls ?? [])) {
+            if (call.kind === 'db' && call.resourceId) {
+              const existing = dbCallSums.get(call.resourceId) ?? { count: 0, parallel: false };
+              dbCallSums.set(call.resourceId, {
+                count: existing.count + (call.count ?? 1),
+                parallel: call.parallel ?? false,
+              });
+            }
+          }
+        }
+      }
+
+      for (const pool of (svc.dbPools ?? [])) {
+        const callInfo = dbCallSums.get(pool.id);
+        if (callInfo && callInfo.count > 0) {
+          engineDbPools.push({
+            id: pool.id,
+            poolSize: pool.poolSize,
+            queryDelay: pool.queryDelay,
+            callsPerRequest: callInfo.count,
+            parallel: callInfo.parallel,
+          });
+        }
+      }
+
+      // Consumer config: aggregate from consumer-triggered pipelines
+      const consumerPipelines = svc.pipelines.filter(p => p.trigger.kind === 'consumer');
+      if (consumerPipelines.length > 0) {
+        const totalConcurrency = consumerPipelines.reduce((sum, p) => {
+          const t = p.trigger as { kind: 'consumer'; concurrency?: number };
+          return sum + (t.concurrency ?? 1);
+        }, 0);
+        const allSteps = consumerPipelines.flatMap(p => p.steps);
+        const avgStepDelay = allSteps.reduce((a, s) => a + (s.processingDelay ?? 0.2), 0) / Math.max(allSteps.length, 1);
+        engineConsumerConfig = {
+          concurrency: totalConcurrency,
+          processingDelayMs: avgStepDelay,
+        };
+      }
+
+      // Async dispatch config
+      const asyncPipelines = svc.pipelines.filter(p =>
+        p.steps.some(s => s.response?.kind === 'async')
+      );
+      if (asyncPipelines.length > 0) {
+        const firstAsyncStep = asyncPipelines[0].steps.find(s => s.response?.kind === 'async');
+        const resp = firstAsyncStep?.response as { kind: 'async'; returnDelay: number } | undefined;
+        engineAsyncDispatch = { returnDelayMs: resp?.returnDelay ?? 0.05 };
+      }
+    } else {
+      baseLatencyMs = (config.base_latency_ms as number) || def?.defaults?.baseLatencyMs || 10;
+    }
 
     // Client nodes: compute RPS from concurrent_users_k * 1000 * requests_per_user
     // Backward compat: if requests_per_sec exists but concurrent_users_k doesn't, use old value
@@ -95,11 +248,16 @@ export function convertNodesToComponents(nodes: ComponentNode[]): Map<string, Co
       ...(config.retry_enabled ? { retryEnabled: true, retryMax: (config.retry_max as number) || 2, retryBackoffMs: (config.retry_backoff_ms as number) || 100 } : {}),
       ...((config.blockedTags as string[] | undefined)?.length ? { blockedTags: config.blockedTags as string[] } : {}),
       ...(config.rate_limit_enabled && (config.rate_limit as number) > 0 ? { rateLimitRps: config.rate_limit as number } : {}),
+      // SC rate limiter — uses rateLimitEnabled/rateLimitRps instead of rate_limit_enabled/rate_limit
+      ...(config.rateLimitEnabled && (config.rateLimitRps as number) > 0 ? { rateLimitRps: (config.rateLimitRps as number) * replicas } : {}),
       ...(config.auth_enabled ? {
         authEnabled: true,
         authLatencyMs: (config.auth_latency_ms as number) || 5,
         authFailRate: ((config.auth_fail_rate as number) || 0) / 100,
       } : {}),
+      ...(engineDbPools.length > 0 ? { serviceDbPools: engineDbPools } : {}),
+      ...(engineConsumerConfig ? { consumerConfig: engineConsumerConfig } : {}),
+      ...(engineAsyncDispatch ? { asyncDispatch: engineAsyncDispatch } : {}),
     });
   }
 

@@ -51,6 +51,8 @@ export function aggregateMetrics(
     edgeTagTraffic: {},
     nodeCacheStats: {},
     circuitBreakerStates: {},
+    serviceInternalMetrics: {},
+    nodeLatencyP99: {},
   };
 }
 

@@ -20,8 +20,34 @@ function transmissionDelayMs(payloadKb: number, bandwidthMbps: number): number {
 export function calculateLatency(component: ComponentModel): number {
   const utilization = component.currentLoad / component.maxRps;
   if (utilization >= 1.0) return Infinity;
-  const queueDelay = component.baseLatencyMs * (utilization / (1 - utilization));
-  return component.baseLatencyMs + queueDelay;
+
+  // Async dispatch: use returnDelayMs for the sync fast-path
+  const base = component.asyncDispatch
+    ? component.asyncDispatch.returnDelayMs
+    : component.baseLatencyMs;
+
+  const queueDelay = base * (utilization / (1 - utilization));
+  let latency = base + queueDelay;
+
+  // DB Pool M/M/c contention — added on top of base processing latency
+  if (component.serviceDbPools) {
+    for (const pool of component.serviceDbPools) {
+      // Pool utilization = rps × (queryDelay/1000s) × callsPerRequest / poolSize
+      const poolUtil = Math.min(
+        (component.currentLoad * (pool.queryDelay / 1000) * pool.callsPerRequest) / pool.poolSize,
+        0.99,
+      );
+      const poolQueueDelay = poolUtil > 0
+        ? pool.queryDelay * (poolUtil / (1 - poolUtil))
+        : 0;
+      const effectiveQueryLatency = pool.queryDelay + poolQueueDelay;
+      latency += pool.parallel
+        ? effectiveQueryLatency                            // parallel: only one RTT
+        : effectiveQueryLatency * pool.callsPerRequest;   // sequential: sum
+    }
+  }
+
+  return latency;
 }
 
 export function propagateFailure(
@@ -118,6 +144,9 @@ export function createSimulationEngine(
     }
   }
 
+  // Consumer lag tracking: nodeId → estimated message backlog (messages)
+  const consumerLag = new Map<string, number>();
+
   let activeRequests: SimRequest[] = [];
   let profile: LoadProfile | null = null;
   let tickCount = 0;
@@ -163,6 +192,8 @@ export function createSimulationEngine(
           edgeThroughput: {}, edgeLatency: {},
           nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {},
           circuitBreakerStates: {},
+          serviceInternalMetrics: {},
+          nodeLatencyP99: {},
         };
       }
 
@@ -633,8 +664,25 @@ export function createSimulationEngine(
         retriesThisTick: totalRetries,
       };
 
+      // Compute per-node p99 latency from completed (non-failed) requests
+      const nodeLatencySamples: Record<string, number[]> = {};
+      for (const req of completed) {
+        if (req.failed) continue;
+        for (const nodeId of req.visited) {
+          (nodeLatencySamples[nodeId] ??= []).push(req.totalLatencyMs);
+        }
+      }
+      const nodeLatencyP99: Record<string, number> = {};
+      for (const [nodeId, samples] of Object.entries(nodeLatencySamples)) {
+        if (samples.length === 0) continue;
+        const sorted = [...samples].sort((a, b) => a - b);
+        const idx = Math.ceil(sorted.length * 0.99) - 1;
+        nodeLatencyP99[nodeId] = sorted[Math.max(0, idx)];
+      }
+
       const result = aggregateMetrics(completed, components, Date.now(), TICK_DURATION_SEC, edgeThroughput, edgeLatency);
       result.engineStats = engineStats;
+      result.nodeLatencyP99 = nodeLatencyP99;
       result.nodeTagTraffic = nodeTagTraffic;
       result.edgeTagTraffic = edgeTagTraffic;
 
@@ -684,6 +732,46 @@ export function createSimulationEngine(
         circuitBreakerStates[key] = cb.state;
       }
       result.circuitBreakerStates = circuitBreakerStates;
+
+      // Compute ServiceInternalMetrics for service container nodes
+      const serviceInternalMetrics: Record<string, import('./models.js').ServiceNodeMetrics> = {};
+      for (const [nodeId, comp] of components) {
+        if (!comp.serviceDbPools && !comp.consumerConfig && !comp.asyncDispatch) continue;
+
+        const dbPoolsMetrics: Record<string, import('./models.js').DbPoolMetrics> = {};
+        if (comp.serviceDbPools) {
+          for (const pool of comp.serviceDbPools) {
+            const poolUtil = Math.min(
+              (comp.currentLoad * (pool.queryDelay / 1000) * pool.callsPerRequest) / pool.poolSize,
+              0.99,
+            );
+            const poolQueueDelay = poolUtil > 0
+              ? pool.queryDelay * (poolUtil / (1 - poolUtil))
+              : 0;
+            dbPoolsMetrics[pool.id] = {
+              utilization: poolUtil,
+              avgLatencyMs: pool.queryDelay + poolQueueDelay,
+            };
+          }
+        }
+
+        // Consumer lag: if processing rate < incoming rate, lag grows
+        let lag = consumerLag.get(nodeId) ?? 0;
+        if (comp.consumerConfig) {
+          const processingRate = comp.consumerConfig.concurrency / Math.max(comp.consumerConfig.processingDelayMs / 1000, 0.001);
+          const incomingRate = comp.currentLoad;
+          const delta = (incomingRate - processingRate) * TICK_DURATION_SEC;
+          lag = Math.max(0, lag + delta);
+          consumerLag.set(nodeId, lag);
+        }
+
+        serviceInternalMetrics[nodeId] = {
+          dbPools: dbPoolsMetrics,
+          consumerLag: lag,
+          asyncQueueDepth: 0,
+        };
+      }
+      result.serviceInternalMetrics = serviceInternalMetrics;
 
       return result;
     },
