@@ -143,23 +143,13 @@ export function FlowEdge(props: EdgeProps) {
 
   if (!sourceNode || !targetNode) return null;
 
-  // When named handles are involved (e.g. ServiceContainer ports), use React Flow's
-  // handle-based positions so edges connect to the exact port centers.
-  // For unnamed handles, keep the floating-edge behaviour (nearest boundary point).
-  const hasNamedHandles = !!(props.sourceHandleId || props.targetHandleId);
-
-  let sx: number, sy: number, tx: number, ty: number;
-  let sourcePos, targetPos;
-  if (hasNamedHandles) {
-    sx = props.sourceX;
-    sy = props.sourceY;
-    tx = props.targetX;
-    ty = props.targetY;
-    sourcePos = props.sourcePosition;
-    targetPos = props.targetPosition;
-  } else {
-    ({ sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(sourceNode, targetNode));
-  }
+  // Always use React Flow's handle-based positions for accurate port targeting.
+  const sx = props.sourceX;
+  const sy = props.sourceY;
+  const tx = props.targetX;
+  const ty = props.targetY;
+  const sourcePos = props.sourcePosition;
+  const targetPos = props.targetPosition;
 
   let edgePath: string, labelX: number, labelY: number;
   switch (edgeRoutingMode) {

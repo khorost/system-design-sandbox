@@ -125,6 +125,13 @@
     0 0 14px rgba(110, 220, 255, 0.24);
 }
 
+/* Iso mode: hide handle interactivity (no reconnection in 3D) */
+.iso-mode .react-flow__handle {
+  pointer-events: none !important;
+  cursor: default !important;
+  opacity: 0.4;
+}
+
 @keyframes flowAnimation {
   from { stroke-dashoffset: 20; }
   to { stroke-dashoffset: 0; }

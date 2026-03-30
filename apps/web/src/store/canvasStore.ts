@@ -824,9 +824,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   toggleDisplayMode: () => {
-    set((state) => ({
-      displayMode: state.displayMode === '2d' ? '3d' : '2d',
-    }));
+    set((state) => {
+      // Normalize isoRotation to [-180, 180] so CSS transition to 0° is short
+      const norm = ((state.isoRotation % 360) + 360) % 360;
+      const normalized = norm > 180 ? norm - 360 : norm;
+      return {
+        displayMode: state.displayMode === '2d' ? '3d' : '2d',
+        isoRotation: normalized,
+      };
+    });
   },
 
   rotateIso: (dir) => {

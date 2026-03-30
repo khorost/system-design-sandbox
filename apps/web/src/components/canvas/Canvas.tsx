@@ -596,7 +596,7 @@ function CanvasInner() {
   return (
     <div
       ref={reactFlowWrapper}
-      className="w-full h-full relative"
+      className={`w-full h-full relative${is3d ? ' iso-mode' : ''}`}
       style={{
         backgroundImage: is3d
           ? 'radial-gradient(circle at 20% 0%, rgba(110,220,255,0.14), transparent 28%), radial-gradient(circle at 84% 16%, rgba(255,180,84,0.12), transparent 22%), linear-gradient(180deg, rgba(9,15,24,0.98), rgba(4,8,14,0.98))'

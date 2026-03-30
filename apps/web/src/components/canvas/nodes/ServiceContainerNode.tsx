@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { ComponentNode, ServiceContainerConfig } from '../../../types/index.ts';
+import { IsoShell, ISO_DEPTH } from './IsoShell.tsx';
 
 // ── Icons for each block type ─────────────────────────────────────────────────
 
@@ -227,8 +228,6 @@ function ExpandedView({ id, data, selected, cfg, displayMode }: {
   const replicas    = (data.config.replicas as number) ?? 1;
   const frameBorder = selected ? ACCENT : BORDER_COLOR;
   const is3d = displayMode === '3d';
-  const depthX = 14;
-  const depthY = 14;
 
   const { containerRef, setRowRef, tops } = useHandleAlignment(allRows.length, id);
 
@@ -240,49 +239,15 @@ function ExpandedView({ id, data, selected, cfg, displayMode }: {
     <div
       ref={containerRef}
       onClick={() => selectNode(id)}
-      className="cursor-pointer transition-all relative overflow-visible"
+      className="cursor-pointer transition-all"
     >
-      {is3d && (
-        <>
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              left: 0,
-              right: 0,
-              bottom: -depthY,
-              height: depthY + 1,
-              background: `linear-gradient(0deg, ${frameBorder}50, ${frameBorder}28)`,
-              transform: 'skewX(45deg)',
-              transformOrigin: 'top left',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              bottom: depthX - depthY,
-              right: -depthX,
-              top: 0,
-              width: depthX + 1,
-              background: `linear-gradient(0deg, ${frameBorder}30, rgba(6,10,18,0.55) 50%, ${frameBorder}18)`,
-              transform: 'skewY(45deg)',
-              transformOrigin: 'bottom left',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute z-[-1]"
-            style={{
-              inset: 0,
-              transform: `translate(${depthX * 0.5}px, ${depthY + 4}px)`,
-              borderRadius: 10,
-              background: 'rgba(0,4,10,0.45)',
-              filter: 'blur(14px)',
-            }}
-          />
-        </>
-      )}
-      <div
-        className="relative z-[1] rounded-lg"
-        style={{
+      <IsoShell
+        enabled={is3d}
+        faceColor={frameBorder}
+        depth={ISO_DEPTH.node}
+        wrapperClassName="relative overflow-visible"
+        frontClassName="relative z-[1] rounded-lg"
+        frontStyle={{
           minWidth: 300,
           background: is3d
             ? `linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 40%, rgba(4,8,15,0.06) 100%), ${BG_COLOR}`
@@ -292,8 +257,11 @@ function ExpandedView({ id, data, selected, cfg, displayMode }: {
             ? (is3d
               ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 14px 26px rgba(3,8,14,0.34)'
               : `0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22)`)
-            : (is3d ? `0 ${depthY + 4}px 22px rgba(3,8,14,0.30)` : '0 8px 16px rgba(3,8,14,0.18)'),
+            : (is3d ? `0 ${ISO_DEPTH.node.y + 4}px 22px rgba(3,8,14,0.30)` : '0 8px 16px rgba(3,8,14,0.18)'),
         }}
+        sheen={is3d ? {
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.08) 100%)',
+        } : null}
       >
         {selected && (
           <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
@@ -408,7 +376,7 @@ function ExpandedView({ id, data, selected, cfg, displayMode }: {
           </div>
           </div>
         )}
-      </div>
+      </IsoShell>
     </div>
   );
 }
@@ -460,8 +428,6 @@ export function ServiceContainerNode({ id, data, selected }: NodeProps<Component
   const bar = isRunning ? getUtilBar(maxUtil) : null;
   const frameBorder = selected ? ACCENT : BORDER_COLOR;
   const is3d = displayMode === '3d';
-  const depthX = 14;
-  const depthY = 14;
 
   if (!isCollapsed) {
     return <ExpandedView id={id} data={data} cfg={cfg} selected={selected ?? false} displayMode={displayMode} />;
@@ -471,49 +437,15 @@ export function ServiceContainerNode({ id, data, selected }: NodeProps<Component
     <div
       ref={containerRef}
       onClick={() => selectNode(id)}
-      className="cursor-pointer transition-all relative overflow-visible"
+      className="cursor-pointer transition-all"
     >
-      {is3d && (
-        <>
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              left: 0,
-              right: 0,
-              bottom: -depthY,
-              height: depthY + 1,
-              background: `linear-gradient(0deg, ${frameBorder}50, ${frameBorder}28)`,
-              transform: 'skewX(45deg)',
-              transformOrigin: 'top left',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              bottom: depthX - depthY,
-              right: -depthX,
-              top: 0,
-              width: depthX + 1,
-              background: `linear-gradient(0deg, ${frameBorder}30, rgba(6,10,18,0.55) 50%, ${frameBorder}18)`,
-              transform: 'skewY(45deg)',
-              transformOrigin: 'bottom left',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute z-[-1]"
-            style={{
-              inset: 0,
-              transform: `translate(${depthX * 0.5}px, ${depthY + 4}px)`,
-              borderRadius: 10,
-              background: 'rgba(0,4,10,0.45)',
-              filter: 'blur(14px)',
-            }}
-          />
-        </>
-      )}
-      <div
-        className="relative z-[1] rounded-lg"
-        style={{
+      <IsoShell
+        enabled={is3d}
+        faceColor={frameBorder}
+        depth={ISO_DEPTH.node}
+        wrapperClassName="relative overflow-visible"
+        frontClassName="relative z-[1] rounded-lg"
+        frontStyle={{
           minWidth: 200,
           background: is3d
             ? `linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 40%, rgba(4,8,15,0.06) 100%), ${BG_COLOR}`
@@ -523,8 +455,11 @@ export function ServiceContainerNode({ id, data, selected }: NodeProps<Component
             ? (is3d
               ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 14px 26px rgba(3,8,14,0.34)'
               : `0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22), 0 10px 20px rgba(3,8,14,0.24)`)
-            : (is3d ? `0 ${depthY + 4}px 22px rgba(3,8,14,0.30)` : '0 8px 16px rgba(3,8,14,0.18)'),
+            : (is3d ? `0 ${ISO_DEPTH.node.y + 4}px 22px rgba(3,8,14,0.30)` : '0 8px 16px rgba(3,8,14,0.18)'),
         }}
+        sheen={is3d ? {
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.08) 100%)',
+        } : null}
       >
         {selected && (
           <div className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
@@ -641,7 +576,7 @@ export function ServiceContainerNode({ id, data, selected }: NodeProps<Component
           <div className="flex-1" />
         )}
         </div>
-      </div>
+      </IsoShell>
     </div>
   );
 }

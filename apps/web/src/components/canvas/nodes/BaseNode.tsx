@@ -9,6 +9,7 @@ import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { ComponentNode, ComponentType } from '../../../types/index.ts';
 import { ComponentIcon } from '../../ui/ComponentIcon.tsx';
 import { getComponentIcon } from '../controls/paletteData.ts';
+import { IsoShell, ISO_DEPTH } from './IsoShell.tsx';
 
 interface BaseNodeProps {
   nodeProps: NodeProps<ComponentNode>;
@@ -201,8 +202,6 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
   const isClient = CLIENT_TYPES.has(data.componentType as ComponentType);
   const showReplicas = !isClient && replicas > 1;
   const is3d = displayMode === '3d';
-  const depthX = 14;
-  const depthY = 14;
   const shellBackground = is3d
     ? `linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 40%, rgba(0,0,0,0.06) 100%), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`
     : `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`;
@@ -212,78 +211,36 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
       : '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22), 0 10px 20px rgba(3,8,14,0.24)')
     : utilState
       ? (is3d
-        ? `0 ${depthY + 4}px 20px rgba(3,8,14,0.30), 0 0 0 1px ${utilState.glow}`
+        ? `0 ${ISO_DEPTH.node.y + 4}px 20px rgba(3,8,14,0.30), 0 0 0 1px ${utilState.glow}`
         : `0 0 0 1px ${utilState.glow}, 0 8px 14px ${utilState.glow}`)
       : (is3d
-        ? `0 ${depthY + 4}px 22px rgba(3,8,14,0.32)`
+        ? `0 ${ISO_DEPTH.node.y + 4}px 22px rgba(3,8,14,0.32)`
         : '0 8px 16px rgba(3,8,14,0.18)');
 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="min-w-[160px] max-w-[240px] cursor-pointer transition-all relative overflow-visible"
+      className="min-w-[160px] max-w-[240px] cursor-pointer transition-all"
     >
-      {is3d && (
-        <>
-          {/* Bottom face (near wall) */}
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              left: 0,
-              right: 0,
-              bottom: -depthY,
-              height: depthY + 1,
-              background: `linear-gradient(0deg, ${frameBorder}50, ${frameBorder}28)`,
-              transform: 'skewX(45deg)',
-              transformOrigin: 'top left',
-            }}
-          />
-          {/* Right face (side wall) */}
-          <div
-            className="pointer-events-none absolute z-0"
-            style={{
-              bottom: depthX - depthY,
-              right: -depthX,
-              top: 0,
-              width: depthX + 1,
-              background: `linear-gradient(0deg, ${frameBorder}30, rgba(6,10,18,0.55) 50%, ${frameBorder}18)`,
-              transform: 'skewY(45deg)',
-              transformOrigin: 'bottom left',
-            }}
-          />
-          {/* Drop shadow */}
-          <div
-            className="pointer-events-none absolute z-[-1]"
-            style={{
-              inset: 0,
-              transform: `translate(${depthX * 0.5}px, ${depthY + 4}px)`,
-              borderRadius: 10,
-              background: 'rgba(0,4,10,0.45)',
-              filter: 'blur(14px)',
-            }}
-          />
-        </>
-      )}
-      <div
-        className="relative z-[1] rounded-lg"
-        style={{
+      <IsoShell
+        enabled={is3d}
+        faceColor={frameBorder}
+        depth={ISO_DEPTH.node}
+        wrapperClassName="relative overflow-visible"
+        frontClassName="relative z-[1] rounded-lg"
+        frontStyle={{
           background: shellBackground,
           border: `1px solid ${frameBorder}`,
           boxShadow: shellShadow,
         }}
+        sheen={is3d ? {
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.10) 100%)',
+        } : null}
       >
         {selected ? (
           <div
             className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
             style={{ boxShadow: 'inset 0 0 0 1px rgba(244,251,255,0.22)' }}
-          />
-        ) : null}
-        {is3d ? (
-          <div
-            className="pointer-events-none absolute inset-[1px] z-[1] rounded-[inherit]"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.10) 100%)',
-            }}
           />
         ) : null}
         {!hideTargetHandle && (
@@ -339,7 +296,7 @@ export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: 
             boxShadow: is3d ? '0 2px 6px rgba(5,10,18,0.45)' : undefined,
           }}
         />
-      </div>
+      </IsoShell>
       {isRunning && ema && utilState && (
         <div
           className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-md border px-1.5 py-0.5 shadow-sm"
