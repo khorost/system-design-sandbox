@@ -2,6 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAuthStore } from '../../store/authStore.ts';
 
+const modalBackdropClass =
+  'fixed inset-0 z-50 flex items-center justify-center bg-[rgba(2,6,12,0.84)] px-4 backdrop-blur-lg';
+
+const modalPanelClass =
+  'w-full rounded-2xl border border-[rgba(110,220,255,0.28)] bg-[linear-gradient(180deg,rgba(18,29,41,0.995),rgba(8,13,22,0.995))] shadow-[0_28px_72px_rgba(3,8,14,0.68),inset_0_1px_0_rgba(255,255,255,0.06)]';
+
+const modalLabelClass = 'text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent-hover)]';
+const modalTitleClass = 'mt-2 text-2xl font-semibold tracking-[-0.02em] text-[var(--color-text)]';
+const modalMutedTextClass = 'text-slate-300';
+
 export function UserMenu() {
   const { user, logout } = useAuthStore();
   const [open, setOpen] = useState(false);
@@ -105,38 +115,38 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-[2px]" onClick={onClose}>
+    <div className={modalBackdropClass} onClick={onClose}>
       <div
-        className="w-full max-w-[36rem] rounded-2xl border border-[rgba(110,220,255,0.18)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(0,0,0,0.06)),#1f2937] px-6 py-6 shadow-[0_24px_64px_rgba(3,8,14,0.45)]"
+        className={`${modalPanelClass} max-w-[36rem] px-6 py-6`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Profile</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-slate-50">Edit Profile</h2>
-          <p className="mt-1 text-sm text-slate-400">Update your public name and avatar preference.</p>
+          <p className={modalLabelClass}>Profile</p>
+          <h2 className={modalTitleClass}>Edit Profile</h2>
+          <p className={`mt-1 text-sm ${modalMutedTextClass}`}>Update your public name and avatar preference.</p>
         </div>
 
         <form onSubmit={handleSave} className="space-y-5">
           <div>
-            <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Display Name</label>
+            <label className={`mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] ${modalMutedTextClass}`}>Display Name</label>
             <input
               type="text"
               value={displayName}
               onChange={(e) => { setDisplayName(e.target.value); clearError(); }}
-              className="h-14 w-full rounded-xl border border-slate-600/80 bg-[#0f172a] px-4 text-lg text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors focus:border-[var(--color-accent)] focus:outline-none"
+              className="h-14 w-full rounded-xl border border-[rgba(87,117,146,0.92)] bg-[rgba(11,18,31,0.98)] px-4 text-lg text-[var(--color-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors placeholder:text-slate-500 focus:border-[var(--color-accent-hover)] focus:outline-none focus:ring-2 focus:ring-[rgba(110,220,255,0.24)]"
             />
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700/80 bg-[#111827]/70 px-4 py-3 text-sm text-slate-200 transition-colors hover:border-slate-600">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[rgba(87,117,146,0.86)] bg-[rgba(11,18,31,0.96)] px-4 py-3 text-sm text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-[rgba(110,220,255,0.34)]">
             <input
               type="checkbox"
               checked={gravatarAllowed}
               onChange={(e) => setGravatarAllowed(e.target.checked)}
-              className="mt-0.5 rounded border-slate-600 bg-[#0f172a] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
+              className="mt-0.5 rounded border-[rgba(87,117,146,0.92)] bg-[rgba(7,12,19,0.98)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]"
             />
             <span className="flex-1">
-              <span className="block font-medium text-slate-100">Show Gravatar avatar</span>
-              <span className="mt-1 block text-xs text-slate-400">Use the avatar associated with your email when it is available.</span>
+              <span className="block text-[1.05rem] font-semibold leading-6 text-[var(--color-text)]">Show Gravatar avatar</span>
+              <span className={`mt-1 block text-xs ${modalMutedTextClass}`}>Use the avatar associated with your email when it is available.</span>
             </span>
           </label>
 
@@ -146,7 +156,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={onClose}
-              className="h-12 flex-1 rounded-xl border border-slate-700 bg-slate-700/60 text-base font-medium text-slate-200 transition-colors hover:border-slate-500 hover:bg-slate-700"
+              className="h-12 flex-1 rounded-xl border border-[rgba(87,117,146,0.88)] bg-[rgba(23,37,54,0.98)] text-base font-semibold text-[var(--color-text)] transition-colors hover:border-[rgba(110,220,255,0.34)] hover:bg-[rgba(30,47,67,1)]"
             >
               Cancel
             </button>
@@ -225,23 +235,23 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
   const hiddenCount = total - sessions.length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-[2px]" onClick={onClose}>
+    <div className={modalBackdropClass} onClick={onClose}>
       <div
-        className="w-full max-w-[42rem] rounded-2xl border border-[rgba(110,220,255,0.16)] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(0,0,0,0.06)),#1f2937] px-6 py-6 shadow-[0_24px_64px_rgba(3,8,14,0.45)] max-h-[80vh] overflow-y-auto"
+        className={`${modalPanelClass} max-h-[80vh] max-w-[42rem] overflow-y-auto px-6 py-6`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Security</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-slate-50">
-            Active Sessions
-              <span className="ml-2 text-base font-normal text-slate-400">({total})</span>
+            <p className={modalLabelClass}>Security</p>
+            <h2 className={modalTitleClass}>
+              Active Sessions
+              <span className={`ml-2 text-base font-normal ${modalMutedTextClass}`}>({total})</span>
             </h2>
-            <p className="mt-1 text-sm text-slate-400">Review where you are signed in and revoke sessions you no longer trust.</p>
+            <p className={`mt-1 text-sm ${modalMutedTextClass}`}>Review where you are signed in and revoke sessions you no longer trust.</p>
           </div>
           <button
             onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/60 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[rgba(69,98,124,0.82)] bg-[rgba(19,32,44,0.96)] text-slate-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-[rgba(110,220,255,0.32)] hover:text-white"
             aria-label="Close sessions"
           >
             &times;
@@ -249,28 +259,31 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {loading ? (
-          <p className="py-6 text-center text-sm text-slate-400">Loading...</p>
+          <p className={`py-6 text-center text-sm ${modalMutedTextClass}`}>Loading...</p>
         ) : (
           <div className="space-y-3">
             {sessions.map((s) => (
-              <div key={s.session_id} className="flex items-start justify-between gap-4 rounded-xl border border-slate-700/80 bg-[#111827]/78 px-4 py-4">
+              <div
+                key={s.session_id}
+                className="flex items-start justify-between gap-4 rounded-xl border border-[rgba(69,98,124,0.76)] bg-[rgba(10,17,28,0.92)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+              >
                 <div className="min-w-0">
-                  <p className="flex flex-wrap items-center gap-2 text-lg font-medium text-slate-100">
+                  <p className="flex flex-wrap items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
                     <span className="truncate">{s.geo || s.ip}</span>
                     {s.current && (
-                      <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300">
+                      <span className="rounded-full border border-emerald-300/35 bg-emerald-400/14 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-200">
                         Current
                       </span>
                     )}
                   </p>
-                  <p className="mt-1 text-sm text-slate-400">
+                  <p className={`mt-1 text-sm ${modalMutedTextClass}`}>
                     {s.geo ? `${s.ip} \u00b7 ` : ''}{new Date(s.created_at).toLocaleString()}
                   </p>
                 </div>
                 {!s.current && (
                   <button
                     onClick={() => handleRevoke(s.session_id)}
-                    className="shrink-0 rounded-lg border border-red-400/25 bg-red-400/8 px-3 py-2 text-sm font-medium text-red-300 transition-colors hover:bg-red-400/14"
+                    className="shrink-0 rounded-lg border border-red-300/30 bg-red-400/12 px-3 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-400/18"
                   >
                     Revoke
                   </button>
@@ -281,7 +294,7 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
             {hiddenCount > 0 && !showAll && (
               <button
                 onClick={handleShowAll}
-                className="w-full rounded-xl border border-slate-700/80 bg-[#111827]/60 py-3 text-sm font-medium text-[var(--color-accent)] transition-colors hover:border-slate-500"
+                className="w-full rounded-xl border border-[rgba(69,98,124,0.76)] bg-[rgba(10,17,28,0.88)] py-3 text-sm font-medium text-[var(--color-accent-hover)] transition-colors hover:border-[rgba(110,220,255,0.3)] hover:bg-[rgba(13,23,34,0.98)]"
               >
                 Show all sessions ({hiddenCount} more)
               </button>
@@ -292,7 +305,7 @@ function SessionsModal({ onClose }: { onClose: () => void }) {
         {total > 1 && (
           <button
             onClick={handleRevokeOthers}
-            className="mt-5 w-full rounded-xl border border-red-400/28 bg-red-400/8 py-3 text-sm font-medium text-red-300 transition-colors hover:bg-red-400/14"
+            className="mt-5 w-full rounded-xl border border-red-300/30 bg-red-400/12 py-3 text-sm font-medium text-red-200 transition-colors hover:bg-red-400/18"
           >
             Revoke all other sessions
           </button>
