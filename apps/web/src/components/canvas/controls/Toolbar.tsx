@@ -36,14 +36,12 @@ const tooltipByMode: Record<EdgeLabelMode, string> = {
 
 const labelByRoutingMode: Record<EdgeRoutingMode, string> = {
   bezier: 'Curved',
-  straight: 'Straight',
-  polyline: 'Polyline',
+  orthogonal: 'Ortho',
 };
 
 const tooltipByRoutingMode: Record<EdgeRoutingMode, string> = {
   bezier: 'Edges: Bezier curves',
-  straight: 'Edges: Straight lines',
-  polyline: 'Edges: Polyline with waypoints',
+  orthogonal: 'Edges: Orthogonal (Manhattan)',
 };
 
 const labelByDisplayMode: Record<CanvasDisplayMode, string> = {

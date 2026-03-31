@@ -97,19 +97,33 @@
   border-width: 0 !important;
   z-index: 20 !important;
   pointer-events: all !important;
-  /* Wide grab zone for easy resize */
-  padding: 10px !important;
-  margin: -10px !important;
+}
+/* Wide grab zones centered on each border edge */
+.react-flow__resize-control.container-resize-line.left {
+  width: 16px !important;
+  left: -8px !important;
+}
+.react-flow__resize-control.container-resize-line.right {
+  width: 16px !important;
+  right: -8px !important;
+}
+.react-flow__resize-control.container-resize-line.top {
+  height: 16px !important;
+  top: -8px !important;
+}
+.react-flow__resize-control.container-resize-line.bottom {
+  height: 16px !important;
+  bottom: -8px !important;
 }
 
 .react-flow__resize-control.container-resize-handle {
-  width: 28px !important;
-  height: 28px !important;
+  width: 32px !important;
+  height: 32px !important;
   background: transparent !important;
   border: 0 !important;
   border-radius: 999px !important;
   box-shadow: none !important;
-  z-index: 20 !important;
+  z-index: 21 !important;
   pointer-events: all !important;
 }
 

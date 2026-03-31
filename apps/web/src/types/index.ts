@@ -193,6 +193,7 @@ export interface EdgeData {
   timeoutMs: number;
   routingRules?: EdgeRoutingRule[];
   waypoints?: Array<{ x: number; y: number }>;
+  orthoExplicit?: boolean;  // true = waypoints are literal bend coordinates (new segment model)
   circuitBreaker?: {
     enabled: boolean;
     errorThreshold: number;    // % errors to trip (default 50)

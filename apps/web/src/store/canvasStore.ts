@@ -325,7 +325,7 @@ function flushSave() {
 }
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
-export type EdgeRoutingMode = 'bezier' | 'straight' | 'polyline';
+export type EdgeRoutingMode = 'bezier' | 'orthogonal';
 export type CanvasDisplayMode = '2d' | '3d';
 
 interface CanvasState {
@@ -869,7 +869,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   cycleEdgeRoutingMode: () => {
-    const order: EdgeRoutingMode[] = ['bezier', 'straight', 'polyline'];
+    const order: EdgeRoutingMode[] = ['bezier', 'orthogonal'];
     const cur = get().edgeRoutingMode;
     const next = order[(order.indexOf(cur) + 1) % order.length];
     set({ edgeRoutingMode: next });

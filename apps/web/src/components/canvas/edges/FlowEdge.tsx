@@ -1,11 +1,12 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps, useInternalNode } from '@xyflow/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { EdgeData } from '../../../types/index.ts';
-import { buildBezierPath, buildPolylinePath, buildStraightPath, getParallelEdgeInfo } from '../../../utils/edgePaths.ts';
-import { getFloatingEdgeParams } from '../../../utils/floatingEdge.ts';
+import { buildBezierPath, buildOrthogonalFromBends, buildOrthogonalFromBendsPoints, buildOrthogonalPath, buildOrthogonalRoutePoints } from '../../../utils/edgePaths.ts';
+import { orthoLog } from '../../../utils/orthoTelemetry.ts';
+// import { getFloatingEdgeParams } from '../../../utils/floatingEdge.ts';
 import { computeEffectiveLatency } from '../../../utils/networkLatency.ts';
 import { WaypointOverlay } from './WaypointOverlay.tsx';
 
@@ -105,10 +106,15 @@ export function FlowEdge(props: EdgeProps) {
   const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
   const displayMode = useCanvasStore((s) => s.displayMode);
   const nodes = useCanvasStore((s) => s.nodes);
+  const updateEdgeWaypoints = useCanvasStore((s) => s.updateEdgeWaypoints);
+  const updateEdgeData = useCanvasStore((s) => s.updateEdgeData);
   const isSelected = selected || selectedEdgeId === id!;
+  const anyEdgeSelected = selectedEdgeId != null;
+  const isDimmed = anyEdgeSelected && !isSelected;
   const is3d = displayMode === '3d';
+  const prevSelectedRef = useRef(isSelected);
   // Non-hook: reads edges snapshot directly — safe from infinite re-render
-  const parallelInfo = getParallelEdgeInfo(id!, source, target);
+  // const parallelInfo = getParallelEdgeInfo(id!, source, target);
 
   // Sum forward (out) and response (in) traffic — must be before early return for hooks
   let fwdRps = 0, fwdBytes = 0, respRps = 0, respBytes = 0;
@@ -141,6 +147,62 @@ export function FlowEdge(props: EdgeProps) {
     return () => clearTimeout(t);
   }, [wantRespRps, wantRespBw, respU.rps, respU.bw, respRps, respBytes]);
 
+  // Deselection cleanup: merge collinear bends when edge loses focus (Rule 6)
+  useEffect(() => {
+    const wasSelected = prevSelectedRef.current;
+    prevSelectedRef.current = isSelected;
+    if (wasSelected && !isSelected && data?.orthoExplicit && data.waypoints?.length && edgeRoutingMode === 'orthogonal') {
+      const sourcePosition = props.sourcePosition;
+      const targetPosition = props.targetPosition;
+      const pts = buildOrthogonalFromBendsPoints(
+        props.sourceX, props.sourceY, props.targetX, props.targetY,
+        sourcePosition, targetPosition, data.waypoints,
+      );
+      // Only remove truly redundant interior bends (collinear with neighbors).
+      // Preserve stubs (first 2, last 2 points) — only check interior range.
+      const newBends: Array<{ x: number; y: number }> = [];
+      for (let i = 2; i < pts.length - 2; i++) {
+        const prev = pts[i - 1];
+        const curr = pts[i];
+        const next = pts[i + 1];
+        const sameX = Math.abs(prev.x - curr.x) < 2 && Math.abs(curr.x - next.x) < 2;
+        const sameY = Math.abs(prev.y - curr.y) < 2 && Math.abs(curr.y - next.y) < 2;
+        if (!sameX && !sameY) newBends.push(curr); // keep non-collinear bends
+      }
+      if (newBends.length !== data.waypoints.length) {
+        updateEdgeWaypoints(id!, newBends);
+      }
+    }
+  }, [isSelected]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally only track selection
+
+  // Auto-bake: when in orthogonal mode, auto-convert legacy edges to orthoExplicit
+  // so that node movement only affects the nearest segment (Rule 5).
+  useEffect(() => {
+    if (edgeRoutingMode !== 'orthogonal' || data?.orthoExplicit || !sourceNode || !targetNode) return;
+    const sPos = props.sourcePosition;
+    const tPos = props.targetPosition;
+    const orthoPoints = buildOrthogonalRoutePoints(
+      props.sourceX, props.sourceY, props.targetX, props.targetY,
+      sPos, tPos, data?.waypoints?.length ? data.waypoints : undefined,
+    );
+    // Extract interior bends and remove collinear redundancies
+    const rawBends = orthoPoints.slice(2, -2);
+    const bends: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < rawBends.length; i++) {
+      const prev = i > 0 ? rawBends[i - 1] : orthoPoints[1]; // stubS
+      const curr = rawBends[i];
+      const next = i < rawBends.length - 1 ? rawBends[i + 1] : orthoPoints[orthoPoints.length - 2]; // stubT
+      const sameX = Math.abs(prev.x - curr.x) < 2 && Math.abs(curr.x - next.x) < 2;
+      const sameY = Math.abs(prev.y - curr.y) < 2 && Math.abs(curr.y - next.y) < 2;
+      if (!sameX && !sameY) bends.push(curr);
+    }
+    orthoLog('bake', id, {
+      sx: props.sourceX, sy: props.sourceY, tx: props.targetX, ty: props.targetY,
+      sPos, tPos, orthoPoints, rawBends, bends,
+    });
+    updateEdgeData(id!, { orthoExplicit: true, waypoints: bends } as Partial<EdgeData>);
+  }, [edgeRoutingMode]); // eslint-disable-line react-hooks/exhaustive-deps -- bake once on mode switch
+
   if (!sourceNode || !targetNode) return null;
 
   // Always use React Flow's handle-based positions for accurate port targeting.
@@ -152,15 +214,14 @@ export function FlowEdge(props: EdgeProps) {
   const targetPos = props.targetPosition;
 
   let edgePath: string, labelX: number, labelY: number;
-  switch (edgeRoutingMode) {
-    case 'straight':
-      [edgePath, labelX, labelY] = buildStraightPath(sx, sy, tx, ty, parallelInfo.index, parallelInfo.total);
-      break;
-    case 'polyline':
-      [edgePath, labelX, labelY] = buildPolylinePath(sx, sy, tx, ty, data?.waypoints);
-      break;
-    default:
-      [edgePath, labelX, labelY] = buildBezierPath(sx, sy, tx, ty, sourcePos, targetPos);
+  if (edgeRoutingMode === 'orthogonal') {
+    if (data?.orthoExplicit) {
+      [edgePath, labelX, labelY] = buildOrthogonalFromBends(sx, sy, tx, ty, sourcePos, targetPos, data.waypoints ?? []);
+    } else {
+      [edgePath, labelX, labelY] = buildOrthogonalPath(sx, sy, tx, ty, sourcePos, targetPos, data?.waypoints);
+    }
+  } else {
+    [edgePath, labelX, labelY] = buildBezierPath(sx, sy, tx, ty, sourcePos, targetPos);
   }
 
   const protocol = data?.protocol ?? 'REST';
@@ -229,6 +290,8 @@ export function FlowEdge(props: EdgeProps) {
     zIndex: 1000,
     background: is3d ? 'linear-gradient(145deg, rgba(41,58,74,0.96), rgba(15,23,33,0.92))' : 'rgba(15,23,33,0.9)',
     boxShadow: is3d ? '6px 8px 0 rgba(5,10,18,0.28), 0 14px 20px rgba(3,8,14,0.22)' : undefined,
+    opacity: isDimmed ? 0.1 : undefined,
+    transition: 'opacity 0.2s ease',
   };
 
   // Determine effective display mode
@@ -239,7 +302,8 @@ export function FlowEdge(props: EdgeProps) {
   const showLabel = effectiveMode !== null;
 
   const isCBOpen = cbState === 'OPEN' || cbState === 'HALF_OPEN';
-  const effectiveColor = isCBOpen ? '#f97316' : isSelected ? '#7ddcff' : strokeColor;
+  // Selected edge keeps its simulation color (red/orange/yellow/blue) — no override to light-blue
+  const effectiveColor = isCBOpen ? '#f97316' : strokeColor;
   const markerId = `edge-arrow-${id}`;
   const arrowSize = Math.max(8, strokeWidth * 2);
 
@@ -290,7 +354,7 @@ export function FlowEdge(props: EdgeProps) {
           orient="auto-start-reverse"
           markerUnits="userSpaceOnUse"
         >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={effectiveColor} />
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={effectiveColor} opacity={isDimmed ? 0.15 : 1} />
         </marker>
       </defs>
       {is3d && (
@@ -316,6 +380,8 @@ export function FlowEdge(props: EdgeProps) {
           animationIterationCount,
           animationPlayState,
           filter: edgeFilter,
+          opacity: isDimmed ? 0.15 : undefined,
+          transition: 'opacity 0.2s ease',
         }}
       />
       {showLabel && labelContent && (
@@ -328,12 +394,14 @@ export function FlowEdge(props: EdgeProps) {
           </div>
         </EdgeLabelRenderer>
       )}
-      {edgeRoutingMode === 'polyline' && isSelected && (
+      {edgeRoutingMode === 'orthogonal' && isSelected && (
         <EdgeLabelRenderer>
           <WaypointOverlay
             edgeId={id!}
             sx={sx} sy={sy} tx={tx} ty={ty}
             waypoints={data?.waypoints ?? []}
+            sourcePos={sourcePos}
+            targetPos={targetPos}
           />
         </EdgeLabelRenderer>
       )}
