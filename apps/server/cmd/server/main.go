@@ -115,12 +115,12 @@ func main() {
 	}
 	emailSender := auth.NewEmailSender(cfg.SMTP)
 
-	geo, err := geoip.Open(cfg.MaxMindPath)
+	geo, err := geoip.New(cfg.GeoIP.GRPCAddr, cfg.GeoIP.RESTURL)
 	if err != nil {
-		slog.Warn("geoip disabled: failed to open database", "error", err)
+		slog.Warn("geoip: initialization failed", "error", err)
 	}
 	if geo != nil {
-		defer func() { _ = geo.Close() }()
+		defer geo.Close()
 	}
 
 	// Metrics: hub first (collector depends on it)
