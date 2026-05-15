@@ -1,0 +1,48 @@
+syntax = "proto3";
+package geoip.v1;
+option go_package = "geoip/api/v1;geoipv1";
+
+service GeoIPService {
+  // Lookup by single IP
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  // Batch lookup (up to 100 IPs per request)
+  rpc BatchLookup(BatchLookupRequest) returns (BatchLookupResponse);
+  // Lookup caller's own IP
+  rpc MyIP(MyIPRequest) returns (LookupResponse);
+  // Get loaded database info
+  rpc GetDBInfo(DBInfoRequest) returns (DBInfoResponse);
+}
+
+message LookupRequest {
+  string ip = 1;
+}
+
+message LookupResponse {
+  string ip = 1;
+  string city = 2;
+  string country = 3;
+  string country_code = 4; // ISO 3166-1 alpha-2
+  double latitude = 5;
+  double longitude = 6;
+  string formatted = 7;    // "City, Country"
+  bool found = 8;
+}
+
+message BatchLookupRequest {
+  repeated string ips = 1; // max 100
+}
+
+message BatchLookupResponse {
+  repeated LookupResponse results = 1;
+}
+
+message MyIPRequest {}
+
+message DBInfoRequest {}
+
+message DBInfoResponse {
+  string db_type = 1;      // e.g. "GeoLite2-City"
+  int64  build_epoch = 2;  // unix timestamp of DB build
+  string build_date = 3;   // human-readable "2026-05-07"
+  bool   loaded = 4;       // true if DB is loaded and ready
+}
