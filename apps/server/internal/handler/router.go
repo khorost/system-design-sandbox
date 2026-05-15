@@ -16,7 +16,7 @@ import (
 	"github.com/system-design-sandbox/server/internal/storage"
 )
 
-func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender, geo *geoip.Lookup, collector *metrics.Collector, hub *metrics.Hub) *chi.Mux {
+func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.RedisAuth, emailSender auth.EmailSender, geo *geoip.Client, collector *metrics.Collector, hub *metrics.Hub) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Middleware safe for all routes including WebSocket.

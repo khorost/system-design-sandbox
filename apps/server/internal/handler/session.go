@@ -23,6 +23,7 @@ type sessionInfo struct {
 	SessionID    string `json:"session_id"`
 	IP           string `json:"ip"`
 	Geo          string `json:"geo"`
+	CountryCode  string `json:"country_code,omitempty"`
 	CreatedAt    string `json:"created_at"`
 	LastActiveAt string `json:"last_active_at"`
 	Current      bool   `json:"current"`
@@ -81,6 +82,7 @@ func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 			SessionID:    s.SessionID,
 			IP:           s.IP,
 			Geo:          s.Geo,
+			CountryCode:  s.CountryCode,
 			CreatedAt:    s.CreatedAt,
 			LastActiveAt: s.LastActiveAt,
 			Current:      s.Current,

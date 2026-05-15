@@ -22,7 +22,7 @@ type AuthHandler struct {
 	RedisAuth *auth.RedisAuth
 	Email     auth.EmailSender
 	Config    *config.Config
-	GeoIP     *geoip.Lookup
+	GeoIP     *geoip.Client
 }
 
 // --- Request/Response types ---
@@ -289,10 +289,12 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 
 	ip := clientIP(r)
 	now := time.Now().UTC().Format(time.RFC3339)
+	geo := h.GeoIP.Lookup(r.Context(), ip)
 	sessData := auth.SessionData{
 		UserID:       userIDStr,
 		IP:           ip,
-		Geo:          h.GeoIP.City(ip),
+		Geo:          geo.Formatted,
+		CountryCode:  geo.CountryCode,
 		CreatedAt:    now,
 		LastActiveAt: now,
 	}
@@ -305,12 +307,13 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	// Log login
 	if h.Config.SessionLogEnabled {
 		_ = h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-			UserID:    user.ID,
-			SessionID: sessionID,
-			Action:    "login",
-			IP:        ip,
-			UserAgent: r.UserAgent(),
-			Geo:       h.GeoIP.City(ip),
+			UserID:      user.ID,
+			SessionID:   sessionID,
+			Action:      "login",
+			IP:          ip,
+			UserAgent:   r.UserAgent(),
+			Geo:         geo.Formatted,
+			CountryCode: geo.CountryCode,
 		})
 	}
 
