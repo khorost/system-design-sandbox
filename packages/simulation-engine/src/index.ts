@@ -10,9 +10,14 @@ export type {
   SimRequest,
   RoutingRule,
   TagWeight,
+  CacheRule,
+  ResponseRule,
+  CacheTagStats,
   TagTraffic,
   NodeTagTraffic,
   EdgeTagTraffic,
+  DbPoolMetrics,
+  ServiceNodeMetrics,
 } from './models.js';
 
 export {

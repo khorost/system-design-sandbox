@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/system-design-sandbox/server/internal/storage"
 )
 
@@ -13,7 +14,6 @@ type ArchitectureHandler struct {
 }
 
 type createArchitectureRequest struct {
-	UserID      string          `json:"user_id"`
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	ScenarioID  *string         `json:"scenario_id,omitempty"`
@@ -31,95 +31,150 @@ type updateArchitectureRequest struct {
 }
 
 func (h *ArchitectureHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createArchitectureRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
 		return
 	}
 
-	userID, err := parseUUID(req.UserID)
+	var req createArchitectureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+		return
+	}
+
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
 	arch, err := h.Store.CreateArchitecture(r.Context(), userID, req.Name, req.Description, req.ScenarioID, req.Data, req.IsPublic, req.Tags)
 	if err != nil {
-		http.Error(w, "failed to create architecture", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "failed to create architecture")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(arch)
+	writeJSON(w, http.StatusCreated, arch)
 }
 
 func (h *ArchitectureHandler) Get(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
 	id, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
 
-	arch, err := h.Store.GetArchitecture(r.Context(), id)
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "architecture not found", http.StatusNotFound)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(arch)
+	arch, err := h.Store.GetArchitectureForUser(r.Context(), id, userID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not_found", "architecture not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "failed to get architecture")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, arch)
 }
 
-func (h *ArchitectureHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
-	userID, err := parseUUID(chi.URLParam(r, "userID"))
+func (h *ArchitectureHandler) ListMine(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
+	userID, err := parseUUID(authUser.UserID)
 	if err != nil {
-		http.Error(w, "invalid user_id", http.StatusBadRequest)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
 	archs, err := h.Store.ListArchitecturesByUser(r.Context(), userID)
 	if err != nil {
-		http.Error(w, "failed to list architectures", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal", "failed to list architectures")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(archs)
+	writeJSON(w, http.StatusOK, archs)
 }
 
 func (h *ArchitectureHandler) Update(w http.ResponseWriter, r *http.Request) {
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
 	id, err := parseUUID(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	userID, err := parseUUID(authUser.UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
 		return
 	}
 
 	var req updateArchitectureRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
-	arch, err := h.Store.UpdateArchitecture(r.Context(), id, req.Name, req.Description, req.Data, req.IsPublic, req.Tags)
+	arch, err := h.Store.UpdateArchitectureForUser(r.Context(), id, userID, req.Name, req.Description, req.Data, req.IsPublic, req.Tags)
 	if err != nil {
-		http.Error(w, "failed to update architecture", http.StatusInternalServerError)
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not_found", "architecture not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "failed to update architecture")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(arch)
+	writeJSON(w, http.StatusOK, arch)
 }
 
 func (h *ArchitectureHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+	authUser, ok := GetAuthUser(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
 		return
 	}
 
-	if err := h.Store.DeleteArchitecture(r.Context(), id); err != nil {
-		http.Error(w, "failed to delete architecture", http.StatusInternalServerError)
+	id, err := parseUUID(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	userID, err := parseUUID(authUser.UserID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "invalid session user")
+		return
+	}
+
+	if err := h.Store.DeleteArchitectureForUser(r.Context(), id, userID); err != nil {
+		if err == pgx.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not_found", "architecture not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal", "failed to delete architecture")
 		return
 	}
 

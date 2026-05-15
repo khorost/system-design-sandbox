@@ -44,8 +44,9 @@ type SessionLogEntry struct {
 	Action    string             `json:"action"`
 	IP        string             `json:"ip,omitempty"`
 	UserAgent string             `json:"user_agent,omitempty"`
-	Geo       string             `json:"geo,omitempty"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Geo         string             `json:"geo,omitempty"`
+	CountryCode string             `json:"country_code,omitempty"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type Architecture struct {

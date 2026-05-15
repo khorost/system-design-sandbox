@@ -11,11 +11,43 @@ const DEFAULT_RESPONSE_SIZE_KB: Record<string, number> = {
   local_ssd: 20, nvme: 20, network_disk: 20,
 };
 
+/** Transmission delay (ms) for payload over a link: KB→Kbit / Mbps = ms */
+function transmissionDelayMs(payloadKb: number, bandwidthMbps: number): number {
+  if (bandwidthMbps <= 0) return 0;
+  return (payloadKb * 8) / bandwidthMbps;
+}
+
 export function calculateLatency(component: ComponentModel): number {
   const utilization = component.currentLoad / component.maxRps;
   if (utilization >= 1.0) return Infinity;
-  const queueDelay = component.baseLatencyMs * (utilization / (1 - utilization));
-  return component.baseLatencyMs + queueDelay;
+
+  // Async dispatch: use returnDelayMs for the sync fast-path
+  const base = component.asyncDispatch
+    ? component.asyncDispatch.returnDelayMs
+    : component.baseLatencyMs;
+
+  const queueDelay = base * (utilization / (1 - utilization));
+  let latency = base + queueDelay;
+
+  // DB Pool M/M/c contention — added on top of base processing latency
+  if (component.serviceDbPools) {
+    for (const pool of component.serviceDbPools) {
+      // Pool utilization = rps × (queryDelay/1000s) × callsPerRequest / poolSize
+      const poolUtil = Math.min(
+        (component.currentLoad * (pool.queryDelay / 1000) * pool.callsPerRequest) / pool.poolSize,
+        0.99,
+      );
+      const poolQueueDelay = poolUtil > 0
+        ? pool.queryDelay * (poolUtil / (1 - poolUtil))
+        : 0;
+      const effectiveQueryLatency = pool.queryDelay + poolQueueDelay;
+      latency += pool.parallel
+        ? effectiveQueryLatency                            // parallel: only one RTT
+        : effectiveQueryLatency * pool.callsPerRequest;   // sequential: sum
+    }
+  }
+
+  return latency;
 }
 
 export function propagateFailure(
@@ -93,6 +125,28 @@ export function createSimulationEngine(
     if (comp.type === 'load_balancer') loadBalancerNodes.add(id);
   }
 
+  // Circuit breaker state machine per connection
+  interface CBState {
+    state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+    failCount: number;
+    successCount: number;
+    totalCount: number;
+    openedAtTick: number;
+    halfOpenPassed: number;
+  }
+  const cbStates = new Map<string, CBState>();
+  for (const conn of connections) {
+    if (conn.circuitBreaker?.enabled) {
+      cbStates.set(`${conn.from}->${conn.to}`, {
+        state: 'CLOSED', failCount: 0, successCount: 0, totalCount: 0,
+        openedAtTick: 0, halfOpenPassed: 0,
+      });
+    }
+  }
+
+  // Consumer lag tracking: nodeId → estimated message backlog (messages)
+  const consumerLag = new Map<string, number>();
+
   let activeRequests: SimRequest[] = [];
   let profile: LoadProfile | null = null;
   let tickCount = 0;
@@ -100,6 +154,7 @@ export function createSimulationEngine(
   function resetLoads() {
     for (const comp of components.values()) {
       comp.currentLoad = 0;
+      comp.concurrentConnections = 0;
     }
   }
 
@@ -132,9 +187,13 @@ export function createSimulationEngine(
           timestamp: Date.now(),
           latencyP50: 0, latencyP95: 0, latencyP99: 0,
           throughput: 0, errorRate: 0,
-          componentUtilization: {}, queueDepths: {},
+          totalInboundKBps: 0, totalOutboundKBps: 0,
+          componentUtilization: {}, connectionUtilization: {}, queueDepths: {},
           edgeThroughput: {}, edgeLatency: {},
-          nodeTagTraffic: {}, edgeTagTraffic: {},
+          nodeTagTraffic: {}, edgeTagTraffic: {}, nodeCacheStats: {},
+          circuitBreakerStates: {},
+          serviceInternalMetrics: {},
+          nodeLatencyP99: {},
         };
       }
 
@@ -162,6 +221,9 @@ export function createSimulationEngine(
 
         for (let i = 0; i < newCount; i++) {
           const tag = pickTag(comp.tagDistribution);
+          // Use per-tag requestSizeKb if available, else fall back to component-level payload
+          const tagEntry = comp.tagDistribution?.find(t => t.tag === tag);
+          const pKb = tagEntry?.requestSizeKb ?? (comp.payloadSizeKb || DEFAULT_PAYLOAD_SIZE_KB);
           activeRequests.push({
             id: `req-${++requestCounter}`,
             tag,
@@ -169,7 +231,7 @@ export function createSimulationEngine(
             visited: [entryId],
             totalLatencyMs: 0,
             failed: false,
-            payloadSizeKb: comp.payloadSizeKb || DEFAULT_PAYLOAD_SIZE_KB,
+            payloadSizeKb: pKb,
           });
         }
         generated += newCount;
@@ -178,12 +240,13 @@ export function createSimulationEngine(
       // 2. Reset current loads for this tick
       resetLoads();
 
-      // Count load per node from all active requests
+      // Count load and concurrent connections per node from all active requests
       for (const req of activeRequests) {
         if (req.failed) continue;
         const comp = components.get(req.currentNode);
         if (comp) {
           comp.currentLoad += 1 / TICK_DURATION_SEC; // Convert per-tick count to RPS
+          comp.concurrentConnections += 1; // Each active request = 1 connection
         }
       }
 
@@ -200,6 +263,13 @@ export function createSimulationEngine(
       const fwdNodeOutBytes: Record<string, Record<string, number>> = {};
       const fwdEdgeCount: Record<string, Record<string, number>> = {};
       const fwdEdgeBytes: Record<string, Record<string, number>> = {};
+      // Per-tag failed request counts (propagated along full path)
+      const failedNodeInCount: Record<string, Record<string, number>> = {};
+      const failedNodeOutCount: Record<string, Record<string, number>> = {};
+      const failedEdgeCount: Record<string, Record<string, number>> = {};
+      // CDN cache hit/miss accumulators: nodeId → tag → { hits, misses }
+      const cacheHits: Record<string, Record<string, number>> = {};
+      const cacheMisses: Record<string, Record<string, number>> = {};
 
       for (const req of activeRequests) {
         if (req.failed) {
@@ -225,6 +295,33 @@ export function createSimulationEngine(
 
         // Client nodes are traffic sources — skip capacity/latency checks
         if (!isClientType(comp.type)) {
+          // Rate limit check — hard threshold (immediate 429), before capacity check
+          if (comp.rateLimitRps && comp.rateLimitRps > 0 && comp.currentLoad > comp.rateLimitRps) {
+            req.failed = true;
+            req.failureReason = `Rate limited (429)`;
+            completed.push(req);
+            continue;
+          }
+
+          // Auth overhead (API Gateway)
+          if (comp.authEnabled) {
+            req.totalLatencyMs += comp.authLatencyMs ?? 5;
+            if (comp.authFailRate && comp.authFailRate > 0 && Math.random() < comp.authFailRate) {
+              req.failed = true;
+              req.failureReason = `Auth failed (401)`;
+              completed.push(req);
+              continue;
+            }
+          }
+
+          // Check connection pool exhaustion
+          if (comp.concurrentConnections > comp.maxConnections) {
+            req.failed = true;
+            req.failureReason = `Node ${req.currentNode} connections exhausted (${comp.concurrentConnections}/${comp.maxConnections})`;
+            completed.push(req);
+            continue;
+          }
+
           // Check if overloaded
           if (comp.currentLoad > comp.maxRps) {
             // Probabilistic failure based on overload degree
@@ -249,11 +346,38 @@ export function createSimulationEngine(
           req.totalLatencyMs += hopLatency;
         }
 
-        // Resolve next hops with fan-out
+        // CDN cache logic: needs origin (outgoing hops) to function
+        const currentComp = components.get(req.currentNode);
+
+        // Resolve next hops first — needed to check if origin exists
         const hops = resolveNextHops(
           req.currentNode, req.tag, req.visited,
-          adjacency, connectionMap, loadBalancerNodes,
+          adjacency, connectionMap, loadBalancerNodes, components,
         );
+
+        if (currentComp?.cacheRules) {
+          const cacheRule = currentComp.cacheRules.find(r => r.tag === req.tag);
+          if (cacheRule) {
+            // CDN without origin can't serve anything — cache can never be populated
+            if (hops.length === 0) {
+              req.failed = true;
+              req.failureReason = `CDN ${req.currentNode}: no origin for tag '${req.tag}'`;
+              (cacheMisses[req.currentNode] ??= {})[req.tag] = ((cacheMisses[req.currentNode])?.[req.tag] ?? 0) + 1;
+              completed.push(req);
+              continue;
+            }
+
+            if (Math.random() < cacheRule.hitRatio) {
+              // Cache hit — respond immediately without going to origin
+              (cacheHits[req.currentNode] ??= {})[req.tag] = ((cacheHits[req.currentNode])?.[req.tag] ?? 0) + 1;
+              completed.push(req);
+              continue;
+            } else {
+              // Cache miss — forward to origin
+              (cacheMisses[req.currentNode] ??= {})[req.tag] = ((cacheMisses[req.currentNode])?.[req.tag] ?? 0) + 1;
+            }
+          }
+        }
 
         if (hops.length === 0) {
           completed.push(req); // leaf node, done
@@ -265,6 +389,52 @@ export function createSimulationEngine(
           const edgeKey = `${req.currentNode}->${hop.target}`;
           const conn = connectionMap.get(edgeKey);
           const edgeLat = conn?.latencyMs ?? 0;
+
+          // Circuit breaker check
+          const cbState = cbStates.get(edgeKey);
+          if (cbState) {
+            const cbConfig = conn?.circuitBreaker;
+            if (cbConfig) {
+              const tickTimeSec = tickCount * TICK_DURATION_SEC;
+              const openDurationSec = (tickTimeSec - cbState.openedAtTick * TICK_DURATION_SEC);
+
+              if (cbState.state === 'OPEN') {
+                if (openDurationSec * 1000 >= cbConfig.timeoutMs) {
+                  cbState.state = 'HALF_OPEN';
+                  cbState.halfOpenPassed = 0;
+                  cbState.successCount = 0;
+                  cbState.failCount = 0;
+                } else {
+                  // Block all requests
+                  req.failed = true;
+                  req.failureReason = `Circuit breaker OPEN on ${edgeKey}`;
+                  completed.push(req);
+                  continue;
+                }
+              }
+
+              if (cbState.state === 'HALF_OPEN') {
+                if (cbState.halfOpenPassed >= cbConfig.halfOpenRequests) {
+                  // All probe requests sent, check results
+                  if (cbState.failCount > 0) {
+                    cbState.state = 'OPEN';
+                    cbState.openedAtTick = tickCount;
+                    req.failed = true;
+                    req.failureReason = `Circuit breaker re-OPENED on ${edgeKey}`;
+                    completed.push(req);
+                    continue;
+                  } else {
+                    cbState.state = 'CLOSED';
+                    cbState.totalCount = 0;
+                    cbState.failCount = 0;
+                    cbState.successCount = 0;
+                  }
+                } else {
+                  cbState.halfOpenPassed++;
+                }
+              }
+            }
+          }
 
           for (let i = 0; i < hop.count; i++) {
             edgeCounts[edgeKey] = (edgeCounts[edgeKey] || 0) + 1;
@@ -283,19 +453,56 @@ export function createSimulationEngine(
             (fwdEdgeCount[edgeKey] ??= {})[spawnedTag] = ((fwdEdgeCount[edgeKey])?.[spawnedTag] ?? 0) + 1;
             (fwdEdgeBytes[edgeKey] ??= {})[spawnedTag] = ((fwdEdgeBytes[edgeKey])?.[spawnedTag] ?? 0) + pKb;
 
+            // Retry policy: connection-level takes priority, then source node-level (LB)
+            const connRetry = conn?.retryPolicy;
+            const srcComp = components.get(req.currentNode);
+            const hasRetry = connRetry
+              ? { retriesLeft: connRetry.maxRetries, retryFromNode: req.currentNode, retryBackoffMs: connRetry.backoffMs }
+              : srcComp?.retryEnabled
+                ? { retriesLeft: srcComp.retryMax ?? 2, retryFromNode: req.currentNode, retryBackoffMs: srcComp.retryBackoffMs ?? 100 }
+                : null;
             nextActive.push({
               id: `req-${++requestCounter}`,
               tag: spawnedTag,
               currentNode: hop.target,
               visited: [...req.visited, hop.target],
-              totalLatencyMs: req.totalLatencyMs + edgeLat,
+              totalLatencyMs: req.totalLatencyMs + edgeLat + transmissionDelayMs(pKb, conn?.bandwidthMbps ?? 1000),
               failed: false,
               payloadSizeKb: pKb,
+              ...(hasRetry ?? {}),
             });
           }
         }
         // Original request consumed (not in completed — it branched)
       }
+
+      // Retry logic: re-enqueue failed requests that have retries left
+      const retried: SimRequest[] = [];
+      const finalCompleted: SimRequest[] = [];
+      for (const req of completed) {
+        if (req.failed && req.retriesLeft && req.retriesLeft > 0 && req.retryFromNode) {
+          // Re-enqueue from the source node with decremented retry count
+          retried.push(req);
+          nextActive.push({
+            id: `req-${++requestCounter}`,
+            tag: req.tag,
+            currentNode: req.retryFromNode,
+            visited: req.visited.slice(0, req.visited.indexOf(req.retryFromNode) + 1),
+            totalLatencyMs: req.totalLatencyMs + (req.retryBackoffMs ?? 100),
+            failed: false,
+            payloadSizeKb: req.payloadSizeKb,
+            retriesLeft: req.retriesLeft - 1,
+            retryFromNode: req.retryFromNode,
+            retryBackoffMs: req.retryBackoffMs,
+          });
+        } else {
+          finalCompleted.push(req);
+        }
+      }
+      completed.length = 0;
+      completed.push(...finalCompleted);
+      // Track retry count for metrics
+      const totalRetries = retried.length;
 
       // Safety: cap active requests to prevent exponential blowup
       activeRequests = nextActive.length <= MAX_ACTIVE
@@ -318,39 +525,104 @@ export function createSimulationEngine(
       const respEdgeCount: Record<string, Record<string, number>> = {};
       const respEdgeBytes: Record<string, Record<string, number>> = {};
 
+      const ERROR_RESPONSE_KB = 0.5; // HTTP error body (~500 bytes)
+
       for (const req of completed) {
-        if (req.failed) continue;
         const visited = req.visited;
         if (visited.length < 2) continue;
         const leafComp = components.get(visited[visited.length - 1]);
-        const respKb = leafComp?.responseSizeKb
-          || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
-          || DEFAULT_RESPONSE_FALLBACK_KB;
         const tag = req.tag;
 
+        // Failed requests still send error response (502/504 etc.) back to client
+        let respKb: number;
+        if (req.failed) {
+          respKb = ERROR_RESPONSE_KB;
+        } else {
+          // Per-tag responseSizeKb takes priority, then component-level, then type default
+          const respRule = leafComp?.responseRules?.find(r => r.tag === tag);
+          const tagRespEntry = leafComp?.tagDistribution?.find(t => t.tag === tag);
+          respKb = respRule?.responseSizeKb
+            ?? tagRespEntry?.responseSizeKb
+            ?? (leafComp?.responseSizeKb
+            || DEFAULT_RESPONSE_SIZE_KB[leafComp?.type ?? '']
+            || DEFAULT_RESPONSE_FALLBACK_KB);
+        }
+
+        // Response latency: traverse reverse path
+        let responseLat = 0;
         for (let i = visited.length - 1; i > 0; i--) {
           const from = visited[i - 1];
           const to = visited[i];
           const ek = `${from}->${to}`; // use forward edge key
-          // Response edge
+          const conn = connectionMap.get(ek);
+          // Edge latency + transmission delay for response payload
+          responseLat += (conn?.latencyMs ?? 0) + transmissionDelayMs(respKb, conn?.bandwidthMbps ?? 1000);
+          // Intermediate node base latency (not leaf, not origin)
+          if (i > 1) {
+            const intermediary = components.get(from);
+            if (intermediary && !CLIENT_TYPES.has(intermediary.type)) {
+              responseLat += intermediary.baseLatencyMs;
+            }
+          }
+          // Response byte tracking
           (respEdgeCount[ek] ??= {})[tag] = ((respEdgeCount[ek])?.[tag] ?? 0) + 1;
           (respEdgeBytes[ek] ??= {})[tag] = ((respEdgeBytes[ek])?.[tag] ?? 0) + respKb;
-          // Response: outgoing from `to`, incoming to `from`
           (respNodeOutCount[to] ??= {})[tag] = ((respNodeOutCount[to])?.[tag] ?? 0) + 1;
           (respNodeOutBytes[to] ??= {})[tag] = ((respNodeOutBytes[to])?.[tag] ?? 0) + respKb;
           (respNodeInCount[from] ??= {})[tag] = ((respNodeInCount[from])?.[tag] ?? 0) + 1;
           (respNodeInBytes[from] ??= {})[tag] = ((respNodeInBytes[from])?.[tag] ?? 0) + respKb;
         }
+        req.totalLatencyMs += responseLat;
+
+        // Update circuit breaker states based on request outcome
+        for (let i = 0; i < visited.length - 1; i++) {
+          const ek = `${visited[i]}->${visited[i + 1]}`;
+          const cb = cbStates.get(ek);
+          if (cb && cb.state !== 'OPEN') {
+            cb.totalCount++;
+            if (req.failed) {
+              cb.failCount++;
+            } else {
+              cb.successCount++;
+            }
+            // Check threshold in CLOSED state
+            if (cb.state === 'CLOSED' && cb.totalCount >= 10) {
+              const errRate = cb.failCount / cb.totalCount;
+              const threshold = (connectionMap.get(ek)?.circuitBreaker?.errorThreshold ?? 50) / 100;
+              if (errRate >= threshold) {
+                cb.state = 'OPEN';
+                cb.openedAtTick = tickCount;
+              }
+            }
+          }
+        }
+
+        // Propagate failed status along the entire path (forward + response)
+        if (req.failed) {
+          for (const nid of visited) {
+            (failedNodeInCount[nid] ??= {})[tag] = ((failedNodeInCount[nid])?.[tag] ?? 0) + 1;
+            (failedNodeOutCount[nid] ??= {})[tag] = ((failedNodeOutCount[nid])?.[tag] ?? 0) + 1;
+          }
+          for (let i = 0; i < visited.length - 1; i++) {
+            const ek = `${visited[i]}->${visited[i + 1]}`;
+            (failedEdgeCount[ek] ??= {})[tag] = ((failedEdgeCount[ek])?.[tag] ?? 0) + 1;
+          }
+        }
       }
 
       // Build per-tag traffic maps
-      function buildTagMap(counts: Record<string, number> | undefined, bytes: Record<string, number> | undefined): Record<string, TagTraffic> {
+      function buildTagMap(
+        counts: Record<string, number> | undefined,
+        bytes: Record<string, number> | undefined,
+        failed?: Record<string, number>,
+      ): Record<string, TagTraffic> {
         const result: Record<string, TagTraffic> = {};
         if (!counts) return result;
         for (const tag of Object.keys(counts)) {
           result[tag] = {
             rps: TICK_DURATION_SEC > 0 ? counts[tag] / TICK_DURATION_SEC : 0,
             bytesPerSec: TICK_DURATION_SEC > 0 ? (bytes?.[tag] ?? 0) / TICK_DURATION_SEC : 0,
+            failedRps: TICK_DURATION_SEC > 0 ? (failed?.[tag] ?? 0) / TICK_DURATION_SEC : 0,
           };
         }
         return result;
@@ -364,10 +636,10 @@ export function createSimulationEngine(
       const nodeTagTraffic: Record<string, NodeTagTraffic> = {};
       for (const nid of allNodeIds) {
         nodeTagTraffic[nid] = {
-          incoming: buildTagMap(fwdNodeInCount[nid], fwdNodeInBytes[nid]),
-          outgoing: buildTagMap(fwdNodeOutCount[nid], fwdNodeOutBytes[nid]),
-          responseIncoming: buildTagMap(respNodeInCount[nid], respNodeInBytes[nid]),
-          responseOutgoing: buildTagMap(respNodeOutCount[nid], respNodeOutBytes[nid]),
+          incoming: buildTagMap(fwdNodeInCount[nid], fwdNodeInBytes[nid], failedNodeInCount[nid]),
+          outgoing: buildTagMap(fwdNodeOutCount[nid], fwdNodeOutBytes[nid], failedNodeOutCount[nid]),
+          responseIncoming: buildTagMap(respNodeInCount[nid], respNodeInBytes[nid], failedNodeInCount[nid]),
+          responseOutgoing: buildTagMap(respNodeOutCount[nid], respNodeOutBytes[nid], failedNodeOutCount[nid]),
         };
       }
 
@@ -378,8 +650,8 @@ export function createSimulationEngine(
       const edgeTagTraffic: Record<string, EdgeTagTraffic> = {};
       for (const ek of allEdgeKeys) {
         edgeTagTraffic[ek] = {
-          forward: buildTagMap(fwdEdgeCount[ek], fwdEdgeBytes[ek]),
-          response: buildTagMap(respEdgeCount[ek], respEdgeBytes[ek]),
+          forward: buildTagMap(fwdEdgeCount[ek], fwdEdgeBytes[ek], failedEdgeCount[ek]),
+          response: buildTagMap(respEdgeCount[ek], respEdgeBytes[ek], failedEdgeCount[ek]),
         };
       }
 
@@ -389,12 +661,118 @@ export function createSimulationEngine(
         requestsGenerated: generated,
         requestsCompleted: completed.length,
         tickDurationMs: 0, // measured by worker wrapper
+        retriesThisTick: totalRetries,
       };
+
+      // Compute per-node p99 latency from completed (non-failed) requests
+      const nodeLatencySamples: Record<string, number[]> = {};
+      for (const req of completed) {
+        if (req.failed) continue;
+        for (const nodeId of req.visited) {
+          (nodeLatencySamples[nodeId] ??= []).push(req.totalLatencyMs);
+        }
+      }
+      const nodeLatencyP99: Record<string, number> = {};
+      for (const [nodeId, samples] of Object.entries(nodeLatencySamples)) {
+        if (samples.length === 0) continue;
+        const sorted = [...samples].sort((a, b) => a - b);
+        const idx = Math.ceil(sorted.length * 0.99) - 1;
+        nodeLatencyP99[nodeId] = sorted[Math.max(0, idx)];
+      }
 
       const result = aggregateMetrics(completed, components, Date.now(), TICK_DURATION_SEC, edgeThroughput, edgeLatency);
       result.engineStats = engineStats;
+      result.nodeLatencyP99 = nodeLatencyP99;
       result.nodeTagTraffic = nodeTagTraffic;
       result.edgeTagTraffic = edgeTagTraffic;
+
+      // Compute total inbound/outbound bandwidth across all nodes
+      let totalIn = 0;
+      let totalOut = 0;
+      for (const ntt of Object.values(nodeTagTraffic)) {
+        for (const t of Object.values(ntt.incoming)) totalIn += t.bytesPerSec;
+        for (const t of Object.values(ntt.responseIncoming)) totalIn += t.bytesPerSec;
+        for (const t of Object.values(ntt.outgoing)) totalOut += t.bytesPerSec;
+        for (const t of Object.values(ntt.responseOutgoing)) totalOut += t.bytesPerSec;
+      }
+      result.totalInboundKBps = totalIn;
+      result.totalOutboundKBps = totalOut;
+
+      // CDN cache stats
+      const nodeCacheStats: Record<string, Record<string, import('./models.js').CacheTagStats>> = {};
+      const allCacheNodes = new Set([...Object.keys(cacheHits), ...Object.keys(cacheMisses)]);
+      for (const nid of allCacheNodes) {
+        const comp = components.get(nid);
+        const allTags = new Set([...Object.keys(cacheHits[nid] ?? {}), ...Object.keys(cacheMisses[nid] ?? {})]);
+        const tagStats: Record<string, import('./models.js').CacheTagStats> = {};
+        for (const tag of allTags) {
+          const hits = (cacheHits[nid]?.[tag] ?? 0);
+          const misses = (cacheMisses[nid]?.[tag] ?? 0);
+          const total = hits + misses;
+          const rule = comp?.cacheRules?.find(r => r.tag === tag);
+          // Estimate fill: cumulative misses * avg response size / capacity
+          // Simplified: use miss rate * throughput as fill indicator
+          const capacityMb = rule?.capacityMb ?? 1024;
+          const missRateKBps = TICK_DURATION_SEC > 0 ? (misses * (DEFAULT_RESPONSE_SIZE_KB[comp?.type ?? ''] ?? 10)) / TICK_DURATION_SEC : 0;
+          const fillMb = Math.min(capacityMb, missRateKBps * TICK_DURATION_SEC / 1024);
+          tagStats[tag] = {
+            hits: TICK_DURATION_SEC > 0 ? hits / TICK_DURATION_SEC : 0,
+            misses: TICK_DURATION_SEC > 0 ? misses / TICK_DURATION_SEC : 0,
+            hitRate: total > 0 ? hits / total : 0,
+            fillMb,
+          };
+        }
+        nodeCacheStats[nid] = tagStats;
+      }
+      result.nodeCacheStats = nodeCacheStats;
+
+      // Circuit breaker states
+      const circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'> = {};
+      for (const [key, cb] of cbStates) {
+        circuitBreakerStates[key] = cb.state;
+      }
+      result.circuitBreakerStates = circuitBreakerStates;
+
+      // Compute ServiceInternalMetrics for service container nodes
+      const serviceInternalMetrics: Record<string, import('./models.js').ServiceNodeMetrics> = {};
+      for (const [nodeId, comp] of components) {
+        if (!comp.serviceDbPools && !comp.consumerConfig && !comp.asyncDispatch) continue;
+
+        const dbPoolsMetrics: Record<string, import('./models.js').DbPoolMetrics> = {};
+        if (comp.serviceDbPools) {
+          for (const pool of comp.serviceDbPools) {
+            const poolUtil = Math.min(
+              (comp.currentLoad * (pool.queryDelay / 1000) * pool.callsPerRequest) / pool.poolSize,
+              0.99,
+            );
+            const poolQueueDelay = poolUtil > 0
+              ? pool.queryDelay * (poolUtil / (1 - poolUtil))
+              : 0;
+            dbPoolsMetrics[pool.id] = {
+              utilization: poolUtil,
+              avgLatencyMs: pool.queryDelay + poolQueueDelay,
+            };
+          }
+        }
+
+        // Consumer lag: if processing rate < incoming rate, lag grows
+        let lag = consumerLag.get(nodeId) ?? 0;
+        if (comp.consumerConfig) {
+          const processingRate = comp.consumerConfig.concurrency / Math.max(comp.consumerConfig.processingDelayMs / 1000, 0.001);
+          const incomingRate = comp.currentLoad;
+          const delta = (incomingRate - processingRate) * TICK_DURATION_SEC;
+          lag = Math.max(0, lag + delta);
+          consumerLag.set(nodeId, lag);
+        }
+
+        serviceInternalMetrics[nodeId] = {
+          dbPools: dbPoolsMetrics,
+          consumerLag: lag,
+          asyncQueueDepth: 0,
+        };
+      }
+      result.serviceInternalMetrics = serviceInternalMetrics;
+
       return result;
     },
 

@@ -24,6 +24,7 @@ export type ComponentType =
   | 'dns'
   | 'waf'
   | 'service'
+  | 'service_container'
   | 'serverless_function'
   | 'worker'
   | 'cron_job'
@@ -40,7 +41,6 @@ export type ComponentType =
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
-  | 'event_bus'
   | 'nats'
   | 'circuit_breaker'
   | 'rate_limiter'
@@ -68,6 +68,102 @@ export type ComponentType =
 
 export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' | 'TCP' | 'NVMe' | 'SATA' | 'iSCSI' | 'NFS';
 
+// ── Service Container Types ───────────────────────────────────────────────────
+
+export interface DbPoolConfig {
+  id: string;
+  label: string;
+  targetNodeId: string;
+  poolSize: number;        // default 10
+  queryDelay: number;      // ms, default 5
+}
+
+export interface PersistentConnConfig {
+  id: string;
+  label: string;
+  targetNodeId: string;
+  pipelined: boolean;
+  cmdDelay: number;        // ms, default 0.5
+}
+
+export interface ProducerConfig {
+  id: string;
+  label: string;
+  targetNodeId: string;
+  topic: string;
+  acks: 'none' | 'leader' | 'all';
+  batchMode: boolean;
+}
+
+export interface OnDemandConnConfig {
+  id: string;
+  label: string;
+  targetNodeId: string;
+  setupDelay: number;      // ms, default 50
+  keepAlive: boolean;
+  requestDelay: number;    // ms, default 200
+}
+
+export type PipelineTrigger =
+  | {
+      kind: 'router';
+      protocol: 'REST' | 'WS' | 'gRPC';
+      port: number;
+      acceptedTags: string[];
+    }
+  | {
+      kind: 'consumer';
+      sourceBrokerNodeId: string;
+      topic: string;
+      consumerGroup: string;
+      concurrency: number;
+      ackMode: 'auto' | 'manual';
+    };
+
+export type PipelineCall =
+  | { kind: 'db';         resourceId: string; count: number; parallel: boolean; requestSizeKb?: number; responseSizeKb?: number }
+  | { kind: 'persistent'; resourceId: string; count: number; requestSizeKb?: number; responseSizeKb?: number }
+  | { kind: 'ondemand';   resourceId: string; requestSizeKb?: number; responseSizeKb?: number }
+  | { kind: 'producer';   resourceId: string; payloadSize: number };
+
+/** @deprecated Use PipelineStep.responseSizeKb instead. Kept for backward compat with saved schemas. */
+export type PipelineResponse =
+  | { kind: 'sync';  responseSize: number }
+  | { kind: 'async'; returnDelay: number }
+  | { kind: 'none' };
+
+export interface PipelineStep {
+  id: string;
+  processingDelay: number;  // ms, default 0.2
+  description: string;
+  calls: PipelineCall[];
+  /** @deprecated Use responseSizeKb instead */
+  response?: PipelineResponse;
+  /** If set, this step returns a response of this size (KB) to the caller.
+   *  Processing of subsequent steps continues regardless. */
+  responseSizeKb?: number;
+}
+
+export interface Pipeline {
+  id: string;
+  label: string;
+  trigger: PipelineTrigger;
+  steps: PipelineStep[];
+}
+
+export interface ServiceContainerConfig {
+  dbPools: DbPoolConfig[];
+  persistentConns: PersistentConnConfig[];
+  producers: ProducerConfig[];
+  onDemandConns: OnDemandConnConfig[];
+  pipelines: Pipeline[];
+  internalLatency: number;  // μs, default 2
+  collapsed: boolean;
+  rateLimitEnabled?: boolean;     // default false
+  rateLimitRps?: number;          // per-instance RPS cap, default 1000
+  rateLimitRedisNodeId?: string;  // required when replicas > 1; canvas node id of Redis
+}
+
 export const DISK_COMPONENT_TYPES = new Set(['local_ssd', 'nvme', 'network_disk', 'nfs']);
 
 export const NETWORK_PROTOCOLS: ProtocolType[] = ['REST', 'gRPC', 'WebSocket', 'GraphQL', 'async', 'TCP'];
@@ -79,6 +175,8 @@ export interface ComponentNodeData {
   category: ComponentCategory;
   icon: string;
   config: Record<string, unknown>;
+  collapsed?: boolean;
+  collapseMode?: 'spatial' | 'functional';
   [key: string]: unknown;
 }
 
@@ -94,6 +192,19 @@ export interface EdgeData {
   bandwidthMbps: number;
   timeoutMs: number;
   routingRules?: EdgeRoutingRule[];
+  waypoints?: Array<{ x: number; y: number }>;
+  orthoExplicit?: boolean;  // true = waypoints are literal bend coordinates (new segment model)
+  circuitBreaker?: {
+    enabled: boolean;
+    errorThreshold: number;    // % errors to trip (default 50)
+    timeoutMs: number;         // time in OPEN state (default 30000)
+    halfOpenRequests: number;  // probe requests in HALF_OPEN (default 3)
+  };
+  retryPolicy?: {
+    enabled: boolean;
+    maxRetries: number;        // max retry attempts (default 2)
+    backoffMs: number;         // backoff between retries (default 100)
+  };
   [key: string]: unknown;
 }
 
@@ -132,6 +243,7 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   dns: 'serviceNode',
   waf: 'serviceNode',
   service: 'serviceNode',
+  service_container: 'serviceNode',
   serverless_function: 'serviceNode',
   worker: 'serviceNode',
   cron_job: 'serviceNode',
@@ -148,7 +260,6 @@ export const NODE_TYPE_MAP: Record<string, string> = {
   elasticsearch: 'databaseNode',
   kafka: 'queueNode',
   rabbitmq: 'queueNode',
-  event_bus: 'queueNode',
   nats: 'queueNode',
   circuit_breaker: 'serviceNode',
   rate_limiter: 'serviceNode',

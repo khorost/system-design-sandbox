@@ -1,12 +1,15 @@
 import { getDefinition } from '@system-design-sandbox/component-library';
-import { Handle, type NodeProps,Position } from '@xyflow/react';
+import { Handle, type NodeProps, Position } from '@xyflow/react';
 
-import { LANGUAGE_COLORS,LANGUAGE_ICONS } from '../../../constants/colors.ts';
+import { LANGUAGE_COLORS, LANGUAGE_ICONS } from '../../../constants/colors.ts';
 import { CLIENT_TYPES } from '../../../constants/componentTypes.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { NodeEma } from '../../../store/simulationStore.ts';
 import { useSimulationStore } from '../../../store/simulationStore.ts';
 import type { ComponentNode, ComponentType } from '../../../types/index.ts';
+import { ComponentIcon } from '../../ui/ComponentIcon.tsx';
+import { getComponentIcon } from '../controls/paletteData.ts';
+import { IsoShell, ISO_DEPTH } from './IsoShell.tsx';
 
 interface BaseNodeProps {
   nodeProps: NodeProps<ComponentNode>;
@@ -15,11 +18,47 @@ interface BaseNodeProps {
   hideTargetHandle?: boolean;
 }
 
-function getUtilColor(util: number): string {
-  if (util > 0.8) return '#ef4444';
-  if (util > 0.5) return '#f59e0b';
-  if (util > 0) return '#22c55e';
-  return '';
+type UtilVisualState = {
+  badgeBg: string;
+  badgeBorder: string;
+  badgeText: string;
+  tint: string;
+  glow: string;
+  label: string;
+};
+
+function getUtilState(util: number): UtilVisualState | null {
+  if (util > 0.85) {
+    return {
+      badgeBg: 'rgba(248,113,113,0.96)',
+      badgeBorder: 'rgba(254,202,202,0.46)',
+      badgeText: '#fff7f7',
+      tint: 'rgba(248,113,113,0.08)',
+      glow: 'rgba(248,113,113,0.12)',
+      label: 'overload',
+    };
+  }
+  if (util > 0.6) {
+    return {
+      badgeBg: 'rgba(251,191,36,0.94)',
+      badgeBorder: 'rgba(254,240,138,0.38)',
+      badgeText: '#fff9eb',
+      tint: 'rgba(251,191,36,0.07)',
+      glow: 'rgba(251,191,36,0.10)',
+      label: 'hot',
+    };
+  }
+  if (util > 0.05) {
+    return {
+      badgeBg: 'rgba(34,197,94,0.94)',
+      badgeBorder: 'rgba(187,247,208,0.34)',
+      badgeText: '#f0fdf4',
+      tint: 'rgba(34,197,94,0.05)',
+      glow: 'rgba(34,197,94,0.08)',
+      label: 'normal',
+    };
+  }
+  return null;
 }
 
 function getTrendArrow(ema: NodeEma): string {
@@ -35,6 +74,9 @@ function fmtK(n: number): string {
   return String(n);
 }
 
+function formatComponentName(componentType: string): string {
+  return componentType.replaceAll('_', ' ');
+}
 
 function getNodeSummary(componentType: string, config: Record<string, unknown>): string[] {
   const def = getDefinition(componentType as Parameters<typeof getDefinition>[0]);
@@ -50,7 +92,7 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
   const replicas = v('replicas') as number | undefined;
   const nodes = v('nodes') as number | undefined;
   const brokers = v('brokers') as number | undefined;
-  const maxRps = v('max_rps_per_instance') as number | undefined;
+  const maxRps = (v('max_rps_per_broker') ?? v('max_rps_per_node') ?? v('max_rps_per_instance')) as number | undefined;
 
   switch (componentType) {
     case 'external_service':
@@ -59,8 +101,12 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
       return [`${nodes ?? 3} nodes, ${v('mode')}`];
     case 'service':
     case 'worker':
-    case 'auth_service':
-      return [`${replicas ?? 1}\u00d7 @ ${fmtK(maxRps ?? 0)} rps`];
+    case 'auth_service': {
+      const rlOn = v('rate_limit_enabled') as boolean | undefined;
+      const rl = v('rate_limit') as number | undefined;
+      const base = `${replicas ?? 1}\u00d7 @ ${fmtK(maxRps ?? 0)} rps`;
+      return rlOn && rl && rl > 0 ? [base, `lim ${fmtK(rl)}`] : [base];
+    }
     case 'serverless_function':
       return [`${fmtK(maxRps ?? 0)} rps, ${v('max_concurrent')} conc`];
     case 'postgresql':
@@ -76,13 +122,41 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
     case 'kafka':
       return [`${brokers ?? 3} brkrs, ${v('partitions')} parts`];
     case 'rabbitmq':
-      return [`${v('queues')} queues${v('ha_mode') ? ', HA' : ''}`];
-    case 'load_balancer':
-      return [`${v('algorithm')}`, `${fmtK((v('max_connections') as number) ?? 0)} conn`];
-    case 'api_gateway':
-      return [`${fmtK(maxRps ?? 0)} rps, lim ${fmtK((v('rate_limit') as number) ?? 0)}`];
-    case 'cdn':
-      return [`${Math.round(((v('cache_hit_ratio') as number) ?? 0.9) * 100)}% hit, ${v('edge_locations')} edges`];
+      return [`${nodes ?? 3} nodes, ${v('queues')} queues${v('ha_mode') ? ', HA' : ''}`];
+    case 'load_balancer': {
+      const retry = v('retry_enabled') as boolean | undefined;
+      const base = `${v('algorithm')}, ${fmtK((v('max_connections') as number) ?? 0)} conn`;
+      return retry ? [base, `retry \u00d7${v('retry_max') ?? 2}`] : [base];
+    }
+    case 'api_gateway': {
+      const rlOn = v('rate_limit_enabled') as boolean | undefined;
+      const rl = v('rate_limit') as number | undefined;
+      const auth = v('auth_enabled') as boolean | undefined;
+      const retry = v('retry_enabled') as boolean | undefined;
+      const parts = [`${fmtK(maxRps ?? 0)} rps`];
+      if (rlOn && rl && rl > 0) parts[0] += `, lim ${fmtK(rl)}`;
+      const flags: string[] = [];
+      if (auth) flags.push(`auth +${v('auth_latency_ms') ?? 5}ms`);
+      if (retry) flags.push(`retry \u00d7${v('retry_max') ?? 2}`);
+      if (flags.length) parts.push(flags.join(', '));
+      return parts;
+    }
+    case 'cdn': {
+      const rules = (config.cacheRules ?? def?.defaultConfig?.cacheRules) as Array<{ tag: string; hitRatio: number }> | undefined;
+      if (rules && rules.length > 0) {
+        const parts = rules.map(r => `${r.tag} ${Math.round(r.hitRatio * 100)}%`);
+        return [parts.join(', '), `${v('edge_locations')} edges`];
+      }
+      return [`${v('edge_locations')} edges`];
+    }
+    case 's3': {
+      const rules = (config.responseRules ?? def?.defaultConfig?.responseRules) as Array<{ tag: string; responseSizeKb: number }> | undefined;
+      if (rules && rules.length > 0) {
+        const parts = rules.map(r => `${r.tag} ${fmtK(r.responseSizeKb)}B`);
+        return [parts.join(', '), `${fmtK(maxRps ?? 0)} rps`];
+      }
+      return [`${fmtK(maxRps ?? 0)} rps`];
+    }
     default: {
       const r = replicas ?? nodes ?? brokers;
       if (r && r > 1 && maxRps) return [`${r}\u00d7 @ ${fmtK(maxRps)} rps`];
@@ -95,83 +169,164 @@ function getNodeSummary(componentType: string, config: Record<string, unknown>):
 export function BaseNode({ nodeProps, borderColor, bgColor, hideTargetHandle }: BaseNodeProps) {
   const { id, data, selected } = nodeProps;
   const selectNode = useCanvasStore((s) => s.selectNode);
+  const displayMode = useCanvasStore((s) => s.displayMode);
   const ema = useSimulationStore((s) => s.nodeEma[id]);
   const isRunning = useSimulationStore((s) => s.isRunning);
+  const nodeTraffic = useSimulationStore((s) => s.nodeTagTraffic[id]);
 
   const customColor = data.config.color as string | undefined;
   const customTextColor = data.config.textColor as string | undefined;
+  const displayName = ((data.config.name as string | undefined)?.trim()) || data.label;
+  const displayIcon = getComponentIcon(data.componentType as ComponentType, data.icon);
   const language = data.config.language as string | undefined;
   const maxEma = ema ? Math.max(ema.ema1, ema.ema5, ema.ema30) : 0;
-  const utilColor = isRunning ? getUtilColor(maxEma) : '';
-  const activeBorder = selected ? '#3b82f6' : utilColor || customColor || borderColor;
+  const utilState = isRunning ? getUtilState(maxEma) : null;
+
+  // Compute node error rate from incoming traffic
+  let nodeErrRate = 0;
+  if (isRunning && nodeTraffic?.incoming) {
+    let totalRps = 0, totalFailed = 0;
+    for (const t of Object.values(nodeTraffic.incoming)) {
+      totalRps += t.rps;
+      totalFailed += t.failedRps;
+    }
+    if (totalRps > 0) nodeErrRate = totalFailed / totalRps;
+  }
+
+  const errBorder = isRunning && nodeErrRate > 0.01;
+  const frameBorder = selected ? '#7ddcff' : errBorder ? '#ef4444' : (customColor || borderColor);
   const summaryLines = getNodeSummary(data.componentType, data.config);
+  const def = getDefinition(data.componentType as Parameters<typeof getDefinition>[0]);
+  const hasBrokersOrNodes = def?.params.some(p => p.key === 'brokers' || p.key === 'nodes');
+  const replicas = hasBrokersOrNodes ? 1 : ((data.config.replicas as number) ?? def?.defaults?.replicas ?? 1);
+  const isClient = CLIENT_TYPES.has(data.componentType as ComponentType);
+  const showReplicas = !isClient && replicas > 1;
+  const is3d = displayMode === '3d';
+  const shellBackground = is3d
+    ? `linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03) 40%, rgba(0,0,0,0.06) 100%), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`
+    : `linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08)), ${utilState?.tint ?? 'rgba(0,0,0,0)'}, ${bgColor}`;
+  const shellShadow = selected
+    ? (is3d
+      ? '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 6px rgba(110,220,255,0.14), 0 12px 24px rgba(3,8,14,0.32)'
+      : '0 0 0 2px rgba(125,220,255,0.72), 0 0 0 5px rgba(110,220,255,0.12), 0 0 20px rgba(92,141,255,0.22), 0 10px 20px rgba(3,8,14,0.24)')
+    : utilState
+      ? (is3d
+        ? `0 ${ISO_DEPTH.node.y + 4}px 20px rgba(3,8,14,0.30), 0 0 0 1px ${utilState.glow}`
+        : `0 0 0 1px ${utilState.glow}, 0 8px 14px ${utilState.glow}`)
+      : (is3d
+        ? `0 ${ISO_DEPTH.node.y + 4}px 22px rgba(3,8,14,0.32)`
+        : '0 8px 16px rgba(3,8,14,0.18)');
 
   return (
     <div
       onClick={() => selectNode(id)}
-      className="rounded shadow-lg min-w-[170px] cursor-pointer transition-all relative"
-      style={{
-        background: bgColor,
-        border: `2px solid ${activeBorder}`,
-        boxShadow: selected
-          ? '0 0 0 2px rgba(59,130,246,0.5)'
-          : utilColor
-            ? `0 0 8px ${utilColor}40`
-            : undefined,
-      }}
+      className="min-w-[160px] max-w-[240px] cursor-pointer transition-all"
     >
-      {isRunning && ema && maxEma > 0 && (
+      <IsoShell
+        enabled={is3d}
+        faceColor={frameBorder}
+        depth={ISO_DEPTH.node}
+        wrapperClassName="relative overflow-visible"
+        frontClassName="relative z-[1] rounded-lg"
+        frontStyle={{
+          background: shellBackground,
+          border: `1px solid ${frameBorder}`,
+          boxShadow: shellShadow,
+        }}
+        sheen={is3d ? {
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 20%, transparent 40%, rgba(4,8,15,0.10) 100%)',
+        } : null}
+      >
+        {selected ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[1] rounded-[inherit]"
+            style={{ boxShadow: 'inset 0 0 0 1px rgba(244,251,255,0.22)' }}
+          />
+        ) : null}
+        {!hideTargetHandle && (
+          <Handle
+            type="target"
+            position={Position.Left}
+            className={`${selected ? '!w-2.5 !h-2.5 !bg-[rgba(153,246,228,0.92)] !border-[rgba(236,253,245,0.95)]' : '!w-2 !h-2 !bg-[rgba(109,215,216,0.72)] !border-[rgba(167,243,208,0.62)]'} !rounded-full hover:!bg-[rgba(153,246,228,0.88)] hover:!border-[rgba(204,251,241,0.88)] !transition-colors`}
+            style={is3d ? { boxShadow: '0 2px 6px rgba(5,10,18,0.45)' } : undefined}
+          />
+        )}
+        <div className="relative z-[2] pl-3 pr-3.5 py-2.5">
+          <div className="flex items-start gap-1.5">
+            <ComponentIcon icon={displayIcon} alt={displayName} className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[1.15rem] leading-none" imgClassName="h-6 w-6 object-contain" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-sm font-semibold leading-tight truncate" style={{ color: customTextColor || '#edf4fb' }}>
+                  {displayName}
+                </span>
+                {showReplicas && (
+                  <span className="shrink-0 rounded border border-[rgba(110,220,255,0.25)] bg-[rgba(110,220,255,0.10)] px-1 py-px font-mono text-[9px] font-bold leading-none text-[var(--color-accent)]">
+                    &times;{replicas}
+                  </span>
+                )}
+                {language && LANGUAGE_ICONS[language] && (
+                  <span
+                    className="shrink-0 text-[8px] font-bold leading-none px-1 py-px rounded"
+                    style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
+                    title={language}
+                  >
+                    {LANGUAGE_ICONS[language]}
+                  </span>
+                )}
+              </div>
+              {summaryLines.length > 0 ? (
+                <div className="mt-0.5 text-[9px] font-mono text-slate-300 leading-tight truncate">
+                  {summaryLines.join('  \u00b7  ')}
+                </div>
+              ) : (
+                <div className="mt-0.5 text-[9px] text-slate-500">Ready for configuration</div>
+              )}
+              <div className="mt-0.5 text-[8px] uppercase tracking-[0.14em] text-slate-500 truncate">
+                {formatComponentName(data.componentType)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Handle
+          type="source"
+          position={Position.Right}
+          className={`${selected ? '!w-3 !h-3 !bg-[rgba(252,211,77,0.94)] !border-[rgba(254,240,138,0.95)]' : '!w-2.5 !h-2.5 !bg-[rgba(251,191,36,0.76)] !border-[rgba(253,224,71,0.66)]'} !rounded-sm hover:!bg-[rgba(252,211,77,0.92)] hover:!border-[rgba(254,240,138,0.88)] !transition-colors`}
+          style={{
+            transform: 'translate(50%, -50%) rotate(45deg)',
+            boxShadow: is3d ? '0 2px 6px rgba(5,10,18,0.45)' : undefined,
+          }}
+        />
+      </IsoShell>
+      {isRunning && ema && utilState && (
         <div
-          className="absolute -top-5 -right-5 rounded flex items-center gap-1.5 px-3 py-2 text-white z-10 shadow-md"
-          style={{ background: utilColor }}
+          className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-md border px-1.5 py-0.5 shadow-sm"
+          style={{ background: utilState.badgeBg, borderColor: utilState.badgeBorder, color: utilState.badgeText }}
         >
-          <span className="font-mono text-[9px] font-bold leading-none whitespace-nowrap">
+          <span className="text-[8px] font-semibold uppercase tracking-[0.08em] leading-none whitespace-nowrap">
+            {utilState.label}
+          </span>
+          <span className="font-mono text-[8px] font-bold leading-none whitespace-nowrap">
             {Math.round(ema.ema1 * 100)}/{Math.round(ema.ema5 * 100)}/{Math.round(ema.ema30 * 100)}
           </span>
           {getTrendArrow(ema) && (
-            <span className="text-[11px] leading-none">{getTrendArrow(ema)}</span>
+            <span className="text-[9px] leading-none">{getTrendArrow(ema)}</span>
           )}
         </div>
       )}
-      {/* Target (input) — circle, teal */}
-      {!hideTargetHandle && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          className="!w-2.5 !h-2.5 !rounded-full !bg-teal-500 !border-teal-400 hover:!bg-teal-300 hover:!border-teal-200 !transition-colors"
-        />
-      )}
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-lg">{data.icon}</span>
-          <span className="text-sm font-semibold truncate max-w-[120px]" style={{ color: customTextColor || '#e2e8f0' }}>
-            {data.label}
+      {isRunning && nodeErrRate > 0.01 && (
+        <div
+          className="absolute -top-2.5 left-2 z-10 flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 shadow-sm"
+          style={{
+            background: nodeErrRate > 0.5 ? 'rgba(239,68,68,0.95)' : 'rgba(239,68,68,0.80)',
+            borderColor: 'rgba(254,202,202,0.4)',
+            color: '#fff',
+          }}
+        >
+          <span className="text-[8px] font-bold leading-none whitespace-nowrap">
+            ⚠ {nodeErrRate >= 1 ? '100' : nodeErrRate >= 0.1 ? Math.round(nodeErrRate * 100) : (nodeErrRate * 100).toFixed(1)}%
           </span>
-          {language && LANGUAGE_ICONS[language] && (
-            <span
-              className="text-[9px] font-bold leading-none px-1.5 py-0.5 rounded"
-              style={{ background: LANGUAGE_COLORS[language] + '30', color: LANGUAGE_COLORS[language] }}
-              title={language}
-            >
-              {LANGUAGE_ICONS[language]}
-            </span>
-          )}
         </div>
-        {summaryLines.length > 0 && (
-          <div className="space-y-1 mb-2 pl-1">
-            {summaryLines.map((line, i) => (
-              <div key={i} className="text-[11px] font-mono text-slate-400 leading-snug">{line}</div>
-            ))}
-          </div>
-        )}
-        <div className="text-[10px] text-slate-400 mt-1">{data.componentType}</div>
-      </div>
-      {/* Source (output) — diamond, amber */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-3 !h-3 !rounded-sm !rotate-45 !bg-amber-500 !border-amber-400 hover:!bg-amber-300 hover:!border-amber-200 !transition-colors"
-      />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { createArchitecture, updateArchitecture } from '../../../api/architectures.ts';
 import { useAuthStore } from '../../../store/authStore.ts';
-import type { EdgeLabelMode } from '../../../store/canvasStore.ts';
+import type { CanvasDisplayMode, EdgeLabelMode, EdgeRoutingMode } from '../../../store/canvasStore.ts';
 import { useCanvasStore } from '../../../store/canvasStore.ts';
 import type { ArchitectureSchema } from '../../../types/index.ts';
 import { notify } from '../../../utils/notifications.ts';
@@ -34,6 +34,40 @@ const tooltipByMode: Record<EdgeLabelMode, string> = {
   full: 'Labels: All info',
 };
 
+const labelByRoutingMode: Record<EdgeRoutingMode, string> = {
+  bezier: 'Curved',
+  orthogonal: 'Ortho',
+};
+
+const tooltipByRoutingMode: Record<EdgeRoutingMode, string> = {
+  bezier: 'Edges: Bezier curves',
+  orthogonal: 'Edges: Orthogonal (Manhattan)',
+};
+
+const labelByDisplayMode: Record<CanvasDisplayMode, string> = {
+  '2d': '2D',
+  '3d': 'Iso',
+};
+
+const tooltipByDisplayMode: Record<CanvasDisplayMode, string> = {
+  '2d': 'Canvas: flat 2D view',
+  '3d': 'Canvas: isometric diorama view (read-only)',
+};
+
+const IconRoute = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="4 17 10 11 16 15 20 7" />
+  </svg>
+);
+
+const IconCube = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z" />
+    <path d="M12 20v-9.5" />
+    <path d="M20 6.5l-8 4.5-8-4.5" />
+  </svg>
+);
+
 function MenuItem({ onClick, icon, children, hint, variant = 'default', disabled = false }: {
   onClick: () => void;
   icon: ReactNode;
@@ -63,7 +97,24 @@ function MenuDivider() {
   return <div className="my-1.5 h-px bg-[var(--color-border)]" />;
 }
 
-function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: string; onClick: () => void; variant?: 'default' | 'danger'; disabled?: boolean }[][] }) {
+type ToolbarMenuGroup = {
+  icon: ReactNode;
+  label: string;
+  hint?: string;
+  onClick: () => void;
+  variant?: 'default' | 'danger';
+  disabled?: boolean;
+};
+
+function DropdownMenu({
+  label,
+  ariaLabel,
+  items,
+}: {
+  label: string;
+  ariaLabel: string;
+  items: ToolbarMenuGroup[][];
+}) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -89,12 +140,12 @@ function FileMenu({ items }: { items: { icon: ReactNode; label: string; hint?: s
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label="File menu"
+        aria-label={ariaLabel}
         aria-haspopup="true"
         aria-expanded={open}
         className="px-2 py-1 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1"
       >
-        File {IconChevron}
+        {label} {IconChevron}
       </button>
       {open && (
         <div role="menu" className="absolute top-full left-0 mt-1 min-w-[180px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-1.5 shadow-lg z-50">
@@ -125,6 +176,8 @@ const IconUndo = <svg {...s}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15
 const IconRedo = <svg {...s}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>;
 const IconCloud = <svg {...s}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>;
 const IconCopy = <svg {...s}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+const IconClipboardCopy = <svg {...s}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><polyline points="17 8 12 3 7 8"/></svg>;
+const IconClipboardPaste = <svg {...s}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><polyline points="7 14 12 19 17 14"/></svg>;
 const IconFolder = <svg {...s}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>;
 
 function buildSchemaForSave(): ArchitectureSchema {
@@ -148,6 +201,11 @@ export function Toolbar() {
   const importDsl = useCanvasStore((s) => s.importDsl);
   const edgeLabelMode = useCanvasStore((s) => s.edgeLabelMode);
   const cycleEdgeLabelMode = useCanvasStore((s) => s.cycleEdgeLabelMode);
+  const edgeRoutingMode = useCanvasStore((s) => s.edgeRoutingMode);
+  const cycleEdgeRoutingMode = useCanvasStore((s) => s.cycleEdgeRoutingMode);
+  const displayMode = useCanvasStore((s) => s.displayMode);
+  const toggleDisplayMode = useCanvasStore((s) => s.toggleDisplayMode);
+  const rotateIso = useCanvasStore((s) => s.rotateIso);
   const undo = useCanvasStore((s) => s.undo);
   const redo = useCanvasStore((s) => s.redo);
   const canUndo = useCanvasStore((s) => s._history.past.length > 0);
@@ -176,7 +234,7 @@ export function Toolbar() {
         await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
         notify.success('Saved');
       } else {
-        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        const result = await createArchitecture(schemaName, schemaDescription, data, isPublic, schemaTags);
         setArchitectureId(result.id);
         notify.success('Saved');
       }
@@ -192,7 +250,7 @@ export function Toolbar() {
     const { schemaDescription, schemaTags } = useCanvasStore.getState();
     try {
       const data = buildSchemaForSave();
-      const result = await createArchitecture(user.id, name, schemaDescription, data, isPublic, schemaTags);
+      const result = await createArchitecture(name, schemaDescription, data, isPublic, schemaTags);
       setArchitectureId(result.id);
       setSchemaName(name);
       notify.success('Saved as new copy');
@@ -262,6 +320,26 @@ export function Toolbar() {
     e.target.value = '';
   };
 
+  const handleCopyToClipboard = async () => {
+    const json = exportSchema();
+    await navigator.clipboard.writeText(json);
+    notify.success('Schema copied to clipboard');
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const result = importSchema(text);
+      if (!result.ok) {
+        notify.error(`Paste failed: ${result.error}`);
+      } else {
+        notify.success('Schema imported from clipboard');
+      }
+    } catch {
+      notify.error('Cannot read clipboard. Check browser permissions.');
+    }
+  };
+
   const handleClear = () => {
     if (window.confirm('Clear canvas? You can undo with Ctrl+Z.')) {
       clear();
@@ -284,7 +362,7 @@ export function Toolbar() {
     return () => document.removeEventListener('keydown', handler);
   });
 
-  const menuItems = [
+  const fileMenuItems: ToolbarMenuGroup[][] = [
     [
       { icon: IconCloud, label: 'Save to server', hint: 'Ctrl+S — Requires sign-in', onClick: handleSaveToServer, disabled: !canSaveToServer },
       { icon: IconCopy, label: 'Save As...', hint: 'Save a copy with a new name', onClick: handleSaveAs, disabled: !isAuthenticated },
@@ -302,6 +380,17 @@ export function Toolbar() {
       { icon: IconExport, label: 'Export DSL', hint: 'Compact text format (.sds)', onClick: handleDslExport },
       { icon: IconImport, label: 'Import DSL', hint: 'Restore from .sds file', onClick: handleDslImport },
     ],
+  ];
+
+  const bufferMenuItems: ToolbarMenuGroup[][] = [
+    [
+      { icon: IconClipboardCopy, label: 'Copy to clipboard', hint: 'Copy schema as JSON', onClick: handleCopyToClipboard },
+      { icon: IconClipboardPaste, label: 'Paste from clipboard', hint: 'Import schema from clipboard', onClick: handlePasteFromClipboard },
+    ],
+    [
+      { icon: IconUndo, label: 'Undo', hint: 'Ctrl+Z', onClick: undo, disabled: !canUndo },
+      { icon: IconRedo, label: 'Redo', hint: 'Ctrl+Shift+Z', onClick: redo, disabled: !canRedo },
+    ],
     [
       { icon: IconTrash, label: 'Clear canvas', onClick: handleClear, variant: 'danger' as const },
     ],
@@ -309,36 +398,55 @@ export function Toolbar() {
 
   return (
     <>
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-1.5 shadow-lg">
-        <span className="text-sm font-bold text-slate-200 mr-2">System Design Sandbox</span>
-        <div className="w-px h-5 bg-[var(--color-border)]" />
-        <FileMenu items={menuItems} />
-        <div className="w-px h-5 bg-[var(--color-border)]" />
+      <div className="absolute top-3 left-3 right-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-x-2 gap-y-2 rounded-xl border border-[var(--color-border)] bg-[rgba(19,32,44,0.88)] px-3 py-2 shadow-[var(--shadow-panel)] backdrop-blur lg:left-1/2 lg:right-auto lg:w-auto lg:max-w-none lg:-translate-x-1/2 lg:flex-nowrap lg:gap-1 lg:py-1.5">
+        <span className="mr-1 flex min-w-[4.5rem] flex-col lg:mr-2">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">Workbench</span>
+          <span className="text-sm font-bold text-slate-100 lg:hidden">Tools</span>
+          <span className="hidden text-sm font-bold text-slate-100 lg:block">Canvas Tools</span>
+        </span>
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
+        <DropdownMenu label="Files" ariaLabel="File actions menu" items={fileMenuItems} />
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
+        <DropdownMenu label="Buffer" ariaLabel="Buffer actions menu" items={bufferMenuItems} />
+        <div className="hidden h-5 w-px bg-[var(--color-border)] lg:block" />
         <button
-          onClick={undo}
-          disabled={!canUndo}
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo (Ctrl+Z)"
-          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={toggleDisplayMode}
+          title={tooltipByDisplayMode[displayMode]}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
         >
-          {IconUndo}
+          {IconCube} {labelByDisplayMode[displayMode]}
         </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo}
-          title="Redo (Ctrl+Shift+Z)"
-          aria-label="Redo (Ctrl+Shift+Z)"
-          className="px-1.5 py-1 text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {IconRedo}
-        </button>
-        <div className="w-px h-5 bg-[var(--color-border)]" />
+        {displayMode === '3d' && (
+          <>
+            <button
+              onClick={() => rotateIso(-1)}
+              title="Rotate view left"
+              className="inline-flex items-center justify-center rounded w-7 h-7 text-slate-400 transition-colors hover:bg-[var(--color-surface-hover)] hover:text-slate-200"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button
+              onClick={() => rotateIso(1)}
+              title="Rotate view right"
+              className="inline-flex items-center justify-center rounded w-7 h-7 text-slate-400 transition-colors hover:bg-[var(--color-surface-hover)] hover:text-slate-200"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+            </button>
+          </>
+        )}
         <button
           onClick={cycleEdgeLabelMode}
           title={tooltipByMode[edgeLabelMode]}
-          className="px-2 py-1 text-sm text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors inline-flex items-center gap-1.5"
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
         >
           {IconTag} {labelByMode[edgeLabelMode]}
+        </button>
+        <button
+          onClick={cycleEdgeRoutingMode}
+          title={tooltipByRoutingMode[edgeRoutingMode]}
+          className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-300 transition-colors hover:bg-[var(--color-surface-hover)]"
+        >
+          {IconRoute} {labelByRoutingMode[edgeRoutingMode]}
         </button>
         <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
         <input ref={dslFileInputRef} type="file" accept=".sds,.txt" className="hidden" onChange={handleDslFileChange} />

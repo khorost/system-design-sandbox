@@ -28,7 +28,7 @@ pnpm preview    # Превью продакшн-сборки
 - `apps/web` — React 19 + Vite SPA, основное фронтенд-приложение
 - `apps/server` — серверная часть на Go
 - `packages/simulation-engine` — ядро DES (Discrete Event Simulation), модели латентности и отказов
-- `packages/component-library` — 36+ определений системных компонентов в 10 категориях с моделями ценообразования
+- `packages/component-library` — 36+ определений системных компонентов в 11 категориях. Messaging: Kafka (brokers), RabbitMQ (nodes), NATS (nodes). Каждый компонент может определять `defaultConfig` с `tagDistribution`, `cacheRules` или `responseRules`.
 - `packages/scenario-pack` — сценарии уроков курса OTUS с критериями успеха
 
 **Ключевые технологии:** React Flow (`@xyflow/react`) — визуальный редактор графов, Zustand — управление состоянием, Tailwind CSS — стили, Framer Motion — анимации, Recharts — графики метрик.
@@ -39,15 +39,28 @@ pnpm preview    # Превью продакшн-сборки
 
 **Компоненты канваса** (`apps/web/src/components/canvas/`):
 - `Canvas.tsx` — обёртка над React Flow
-- `nodes/` — 7 типов кастомных узлов (Service, Database, Cache, Queue, Gateway, LoadBalancer, Generic), все наследуют `BaseNode`
+- `nodes/` — 7 типов кастомных узлов (Service, Database, Cache, Queue, Gateway, LoadBalancer, Generic) наследуют `BaseNode`; `ContainerNode` (Datacenter, Rack, Docker, K8s, VM) — перемещение за заголовок, тело пропускает canvas pan (`pointer-events: none` на wrapper)
 - `edges/` — рендереры связей
 - `controls/` — тулбар и палитра компонентов
 
-**Боковые панели** (`apps/web/src/components/panels/`) — 6 панелей: Properties, Simulation, Metrics, Chaos, Cost, HealthReport
+**Боковые панели** (`apps/web/src/components/panels/`) — Properties (компонент/соединение), Traffic (per-tag трафик + cache stats для CDN), Simulation, Metrics, Cost. Правая панель скроллится при нехватке места.
 
 **Анализатор архитектуры** (`apps/web/src/analysis/`) — проверки на основе правил (обнаружение SPOF, архитектурные антипаттерны, скоринг здоровья). Правила в `analysis/rules/`.
 
-**Симуляция** — клиентский DES-движок. Модель латентности: `base + queue_delay`, где `queue_delay = base * (util / (1 - util))` (модель очереди M/M/c). Каскадное распространение отказов. Сейчас stub-реализация (Фаза 2).
+**Утилиты** (`apps/web/src/utils/`):
+- `nodeTags.ts` — `getNodeTags(node)` (извлечение явных тегов узла), `getConnectionTags(source, target)` (пересечение тегов для соединения). Wildcard-узлы (без явных тегов) принимают любой трафик.
+
+**Симуляция** — клиентский DES-движок (`packages/simulation-engine/`). Модель латентности: `base + queue_delay`, где `queue_delay = base * (util / (1 - util))` (модель очереди M/M/c). Каскадное распространение отказов.
+
+Тег-ориентированная маршрутизация:
+- **Клиенты** (`tagDistribution`) — описывают генерируемый трафик (теги + вес + размер запроса).
+- **CDN** (`cacheRules`) — per-tag cache hit ratio и ёмкость. При cache hit запрос не идёт к origin.
+- **Storage/S3** (`responseRules`) — per-tag размер ответа (web=2KB, content=400KB).
+- **Все остальные узлы** — wildcard, принимают любой тег.
+- **Соединения** — показывают только пересечение тегов source/target, балансируют весами (weight=0 блокирует тег).
+- `supportedTags` на `ComponentModel` фильтрует трафик в `resolveNextHops`.
+
+Метрики симуляции: `NodeTagTraffic` (per-tag RPS/bandwidth), `CacheTagStats` (hits/misses/hitRate per CDN per tag), `EdgeTagTraffic`.
 
 **Сценарии** (`apps/web/src/scenarios/`, `packages/scenario-pack/`) — сценарии уроков, организованные по модулям курса с уровнями сложности и валидацией критериев успеха.
 

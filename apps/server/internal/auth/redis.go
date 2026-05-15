@@ -31,6 +31,7 @@ type SessionData struct {
 	UserID       string
 	IP           string
 	Geo          string
+	CountryCode  string
 	CreatedAt    string
 	LastActiveAt string
 }
@@ -223,6 +224,7 @@ const (
 	fUserID       = "uid"
 	fIP           = "ip"
 	fGeo          = "geo"
+	fCountryCode  = "cc"
 	fCreatedAt    = "cat"
 	fLastActiveAt = "lat"
 )
@@ -238,6 +240,7 @@ func (ra *RedisAuth) CreateSession(ctx context.Context, sessionID string, data S
 		fUserID:       data.UserID,
 		fIP:           data.IP,
 		fGeo:          data.Geo,
+		fCountryCode:  data.CountryCode,
 		fCreatedAt:    data.CreatedAt,
 		fLastActiveAt: data.LastActiveAt,
 	})
@@ -261,6 +264,7 @@ func (ra *RedisAuth) GetSession(ctx context.Context, sessionID string) (*Session
 		UserID:       m[fUserID],
 		IP:           m[fIP],
 		Geo:          m[fGeo],
+		CountryCode:  m[fCountryCode],
 		CreatedAt:    m[fCreatedAt],
 		LastActiveAt: m[fLastActiveAt],
 	}, nil
@@ -276,6 +280,7 @@ type SessionInfoItem struct {
 	SessionID    string
 	IP           string
 	Geo          string
+	CountryCode  string
 	CreatedAt    string
 	LastActiveAt string
 	Current      bool
@@ -312,6 +317,7 @@ func (ra *RedisAuth) ListUserSessionsFull(ctx context.Context, userID, currentSe
 			SessionID:    ids[i],
 			IP:           m[fIP],
 			Geo:          m[fGeo],
+			CountryCode:  m[fCountryCode],
 			CreatedAt:    m[fCreatedAt],
 			LastActiveAt: m[fLastActiveAt],
 			Current:      ids[i] == currentSessionID,
@@ -397,6 +403,7 @@ func (ra *RedisAuth) ValidateAndTouchSession(ctx context.Context, sessionID stri
 		UserID:       m[fUserID],
 		IP:           m[fIP],
 		Geo:          m[fGeo],
+		CountryCode:  m[fCountryCode],
 		CreatedAt:    m[fCreatedAt],
 		LastActiveAt: latStr,
 	}, nil

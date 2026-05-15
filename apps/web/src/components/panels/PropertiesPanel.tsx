@@ -8,17 +8,33 @@ import { CLIENT_TYPES } from '../../constants/componentTypes.ts';
 import { useAuthStore } from '../../store/authStore.ts';
 import { useCanvasStore } from '../../store/canvasStore.ts';
 import type { ArchitectureSchema } from '../../types/index.ts';
-import type { EdgeRoutingRule,ProtocolType } from '../../types/index.ts';
-import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS,NETWORK_PROTOCOLS } from '../../types/index.ts';
+import type { EdgeRoutingRule, ProtocolType } from '../../types/index.ts';
+import { DISK_COMPONENT_TYPES, DISK_PROTOCOLS, NETWORK_PROTOCOLS } from '../../types/index.ts';
 import { computeEffectiveLatency, CONTAINER_TYPES, isValidNesting } from '../../utils/networkLatency.ts';
+import { getConnectionTags, getNodeTags } from '../../utils/nodeTags.ts';
 import { notify } from '../../utils/notifications.ts';
-import { paletteItems } from '../canvas/controls/paletteData.ts';
+import { getComponentIcon, paletteItems } from '../canvas/controls/paletteData.ts';
 import { SavedArchitecturesModal } from '../SavedArchitecturesModal.tsx';
+import { ComponentIcon } from '../ui/ComponentIcon.tsx';
 import { NumberInput } from '../ui/NumberInput.tsx';
+import { ServiceContainerPanel, ServiceUpgradeButton } from './ServiceContainerPanel.tsx';
 
 interface TagWeightEntry {
   tag: string;
   weight: number;
+  requestSizeKb?: number;
+  responseSizeKb?: number;
+}
+
+interface CacheRuleEntry {
+  tag: string;
+  hitRatio: number;
+  capacityMb: number;
+}
+
+interface ResponseRuleEntry {
+  tag: string;
+  responseSizeKb: number;
 }
 
 function getDefaultColor(componentType: string, nodeType?: string): string {
@@ -35,7 +51,7 @@ function getProtocolOptions(targetComponentType?: string): ProtocolType[] {
 interface ParamDef {
   key: string;
   label: string;
-  type: 'number' | 'text' | 'select';
+  type: 'number' | 'text' | 'select' | 'boolean';
   options?: string[];
   min?: number;
   max?: number;
@@ -82,6 +98,15 @@ const COMPONENT_PARAMS: Record<string, ParamDef[]> = {
     { key: 'partitions', label: 'Partitions', type: 'number', min: 1, max: 100000 },
     { key: 'replication_factor', label: 'Replication Factor', type: 'number', min: 1, max: 10 },
   ],
+  rabbitmq: [
+    { key: 'nodes', label: 'Nodes', type: 'number', min: 1, max: 1000 },
+    { key: 'queues', label: 'Queues', type: 'number', min: 1, max: 100000 },
+    { key: 'ha_mode', label: 'HA Mode', type: 'boolean' },
+  ],
+  nats: [
+    { key: 'nodes', label: 'Cluster Nodes', type: 'number', min: 1, max: 1000 },
+    { key: 'mode', label: 'Mode', type: 'select', options: ['core', 'jetstream'] },
+  ],
   load_balancer: [
     { key: 'algorithm', label: 'Algorithm', type: 'select', options: ['round_robin', 'least_conn', 'ip_hash'] },
     { key: 'max_connections', label: 'Max Connections', type: 'number', min: 1, max: 1000000 },
@@ -113,7 +138,26 @@ const COMPONENT_PARAMS: Record<string, ParamDef[]> = {
   ],
 };
 
-const inputClass = "w-full mt-1 px-3 py-2 text-sm bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500";
+const inputClass = "w-full mt-1 px-3 py-2 text-sm bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md text-slate-200 focus:outline-none focus:border-[rgba(110,220,255,0.35)]";
+const compactInputClass = "bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md text-slate-200 focus:outline-none focus:border-[rgba(110,220,255,0.35)]";
+const labelClass = "text-[11px] font-medium text-slate-400";
+const sectionClass = "rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] p-3";
+const secondaryButtonClass = "w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[rgba(255,255,255,0.03)] rounded-md transition-colors";
+const primaryButtonClass = "w-full px-3 py-2 text-sm text-slate-100 bg-[#4f6382] hover:bg-[#5b7193] disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors";
+const destructiveButtonClass = "w-full px-4 py-2 text-sm text-rose-300 border border-rose-500/20 bg-transparent hover:bg-rose-500/8 transition-colors rounded-md";
+
+function formatComponentName(componentType: string): string {
+  return componentType.replaceAll('_', ' ');
+}
+
+function getNodeDisplayName(node: { data: { label: string; config: Record<string, unknown> } }): string {
+  const configuredName = typeof node.data.config.name === 'string' ? node.data.config.name.trim() : '';
+  return configuredName || node.data.label;
+}
+
+function formatContainerOptionLabel(node: { data: { label: string; componentType: string; config: Record<string, unknown> } }): string {
+  return `${getNodeDisplayName(node)} (${formatComponentName(node.data.componentType)})`;
+}
 
 function EdgeProperties() {
   const selectedEdgeId = useCanvasStore((s) => s.selectedEdgeId);
@@ -146,11 +190,11 @@ function EdgeProperties() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xl">{'🔗'}</span>
           <div>
-            <h2 className="text-base font-bold text-slate-200">Connection</h2>
+            <h2 className="text-sm font-bold text-slate-200">Connection</h2>
             <p className="text-xs text-slate-400 truncate">
               {sourceNode?.data.label ?? edge.source} → {targetNode?.data.label ?? edge.target}
             </p>
@@ -158,9 +202,9 @@ function EdgeProperties() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
-          <label htmlFor={`edge-${edge.id}-protocol`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Protocol</label>
+          <label htmlFor={`edge-${edge.id}-protocol`} className={labelClass}>Protocol</label>
           <select
             id={`edge-${edge.id}-protocol`}
             value={effectiveProtocol}
@@ -174,7 +218,7 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label htmlFor={`edge-${edge.id}-latency`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Latency Override (ms)</label>
+          <label htmlFor={`edge-${edge.id}-latency`} className={labelClass}>Latency Override (ms)</label>
           <NumberInput
             id={`edge-${edge.id}-latency`}
             value={data?.latencyMs ?? 1}
@@ -188,15 +232,17 @@ function EdgeProperties() {
         {(() => {
           const effLatency = computeEffectiveLatency(edge.source, edge.target, nodes);
           return effLatency > 0 ? (
-            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20">
-              <span className="text-xs font-semibold text-slate-300">Effective Latency (auto)</span>
-              <span className="text-sm font-mono font-bold text-blue-400">{effLatency.toFixed(2)} ms</span>
+            <div className={sectionClass}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">Effective latency</span>
+                <span className="text-sm font-mono font-semibold text-slate-200">{effLatency.toFixed(2)} ms</span>
+              </div>
             </div>
           ) : null;
         })()}
 
         <div>
-          <label htmlFor={`edge-${edge.id}-bandwidth`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bandwidth (Mbps)</label>
+          <label htmlFor={`edge-${edge.id}-bandwidth`} className={labelClass}>Bandwidth (Mbps)</label>
           <NumberInput
             id={`edge-${edge.id}-bandwidth`}
             value={data?.bandwidthMbps ?? 1000}
@@ -208,7 +254,7 @@ function EdgeProperties() {
         </div>
 
         <div>
-          <label htmlFor={`edge-${edge.id}-timeout`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Timeout (ms)</label>
+          <label htmlFor={`edge-${edge.id}-timeout`} className={labelClass}>Timeout (ms)</label>
           <NumberInput
             id={`edge-${edge.id}-timeout`}
             value={data?.timeoutMs ?? 5000}
@@ -219,13 +265,18 @@ function EdgeProperties() {
           />
         </div>
 
-        <EdgeRoutingRulesEditor edgeId={edge.id} rules={(data?.routingRules as EdgeRoutingRule[] | undefined) ?? []} updateEdgeData={updateEdgeData} />
+        {/* Tag routing moved to Tags tab */}
+
+        {/* Circuit Breaker */}
+        <CircuitBreakerEditor edgeId={edge.id} cb={data?.circuitBreaker as { enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number } | undefined} updateEdgeData={updateEdgeData} />
+
+        <RetryPolicyEditor edgeId={edge.id} retry={data?.retryPolicy as { enabled: boolean; maxRetries: number; backoffMs: number } | undefined} updateEdgeData={updateEdgeData} />
       </div>
 
-      <div className="p-4 border-t border-[var(--color-border)]">
+      <div className="p-3 border-t border-[var(--color-border)]">
         <button
           onClick={handleDelete}
-          className="w-full px-4 py-2 text-sm text-red-400 border border-red-400/30 rounded hover:bg-red-400/10 transition-colors"
+          className={destructiveButtonClass}
         >
           Delete Connection
         </button>
@@ -234,118 +285,151 @@ function EdgeProperties() {
   );
 }
 
-function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData }: {
+
+export function EdgeRoutingRulesEditor({ edgeId, rules, updateEdgeData, sourceNode, targetNode, allEdges }: {
   edgeId: string;
   rules: EdgeRoutingRule[];
   updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+  sourceNode: import('../../types/index.ts').ComponentNode | undefined;
+  targetNode: import('../../types/index.ts').ComponentNode | undefined;
+  allEdges: import('../../types/index.ts').ComponentEdge[];
 }) {
-  const [newTag, setNewTag] = useState('');
+  // Determine tags that can flow through this connection (intersection of source/target)
+  const connectionTags = sourceNode && targetNode ? getConnectionTags(sourceNode, targetNode) : null;
+
+  const getRule = (tag: string) => rules.find(r => r.tag === tag);
+  const getCoeff = (tag: string) => getRule(tag)?.weight ?? 1;
 
   const update = (updated: EdgeRoutingRule[]) => {
     updateEdgeData(edgeId, { routingRules: updated.length > 0 ? updated : undefined });
   };
 
-  const addRule = () => {
-    const tag = newTag.trim() || 'default';
-    if (rules.some(r => r.tag === tag)) return;
-    update([...rules, { tag, weight: 1.0 }]);
-    setNewTag('');
+  const setCoeff = (tag: string, coeff: number) => {
+    const existing = rules.filter(r => r.tag !== tag);
+    if (coeff === 1) {
+      update(existing); // default — remove rule (implicit 1)
+    } else {
+      const oldRule = getRule(tag);
+      update([...existing, { tag, weight: coeff, ...(oldRule?.outTag ? { outTag: oldRule.outTag } : {}) }]);
+    }
   };
 
-  const removeRule = (idx: number) => {
-    update(rules.filter((_, i) => i !== idx));
+  // Block: store previous weight as negative; Unblock: restore from negative
+  const toggleBlock = (tag: string) => {
+    const rule = getRule(tag);
+    const currentWeight = rule?.weight ?? 1;
+    if (currentWeight <= 0) {
+      // Unblock — restore previous weight (stored as negative, or default 1)
+      const prevWeight = (rule as Record<string, unknown> | undefined)?._prevWeight as number | undefined;
+      setCoeff(tag, prevWeight && prevWeight > 0 ? prevWeight : 1);
+    } else {
+      // Block — save current weight, set to 0
+      const existing = rules.filter(r => r.tag !== tag);
+      update([...existing, { tag, weight: 0, _prevWeight: currentWeight, ...(rule?.outTag ? { outTag: rule.outTag } : {}) } as EdgeRoutingRule]);
+    }
   };
 
-  const updateRule = (idx: number, field: 'tag' | 'weight' | 'outTag', value: string | number) => {
-    const updated = rules.map((r, i) => {
-      if (i !== idx) return r;
-      if (field === 'outTag' && value === '') {
-        const { outTag: _, ...rest } = r;
-        return rest;
-      }
-      return { ...r, [field]: value };
-    });
-    update(updated);
+  const setOutTag = (tag: string, outTag: string) => {
+    const existing = rules.filter(r => r.tag !== tag);
+    const currentRule = getRule(tag);
+    const weight = currentRule?.weight ?? 1;
+    // Don't normalize during typing — only strip empty. Comparing to tag name would reset input mid-type.
+    const cleanOutTag = outTag === '' ? undefined : outTag;
+    if (weight === 1 && !cleanOutTag) {
+      update(existing);
+    } else {
+      update([...existing, { tag, weight, ...(cleanOutTag ? { outTag: cleanOutTag } : {}) }]);
+    }
+  };
+
+  // Compute share among sibling edges from same source
+  const siblingEdges = sourceNode ? allEdges.filter(e => e.source === sourceNode.id) : [];
+  const getTagShare = (tag: string): number => {
+    const thisCoeff = getCoeff(tag);
+    if (thisCoeff <= 0) return 0;
+    let totalCoeff = 0;
+    for (const se of siblingEdges) {
+      const seRules = (se.data?.routingRules as EdgeRoutingRule[] | undefined) ?? [];
+      const seRule = seRules.find(r => r.tag === tag);
+      totalCoeff += seRule != null ? seRule.weight : 1;
+    }
+    return totalCoeff > 0 ? thisCoeff / totalCoeff : 0;
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Routing Rules</label>
-        <button
-          onClick={addRule}
-          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
-        >
-          + Add Rule
-        </button>
-      </div>
-      {rules.length === 0 ? (
-        <p className="text-xs text-slate-400">No rules — equal distribution</p>
+      <label className={labelClass}>Tag Routing</label>
+      {connectionTags === null ? (
+        <p className="text-xs text-slate-400 mt-1">All tags pass through (both nodes accept any traffic)</p>
+      ) : connectionTags.length === 0 ? (
+        <p className="text-xs text-amber-400/80 mt-1">No matching tags between source and target</p>
       ) : (
-        <div className="space-y-2">
-          {rules.map((rule, idx) => (
-            <div key={idx} className="space-y-1">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  id={`edge-${edgeId}-rule-${idx}-tag`}
-                  value={rule.tag}
-                  placeholder="tag"
-                  aria-label={`Rule ${idx + 1} tag`}
-                  onChange={(e) => updateRule(idx, 'tag', e.target.value)}
-                  className="flex-1 min-w-0 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                />
-                <input
-                  type="number"
-                  id={`edge-${edgeId}-rule-${idx}-weight`}
-                  min={0}
-                  step={0.1}
-                  value={rule.weight}
-                  aria-label={`Rule ${idx + 1} weight`}
-                  onChange={(e) => updateRule(idx, 'weight', Number(e.target.value))}
-                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                />
+        <div className="mt-1 space-y-1">
+          {connectionTags.map((tag) => {
+            const coeff = getCoeff(tag);
+            const share = getTagShare(tag);
+            const blocked = coeff <= 0;
+            return (
+              <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${blocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
                 <button
-                  onClick={() => removeRule(idx)}
-                  aria-label={`Remove rule ${idx + 1}`}
-                  className="text-red-400 hover:text-red-300 text-xs px-1"
-                >
-                  x
-                </button>
+                  onClick={() => toggleBlock(tag)}
+                  title={blocked ? 'Unblock tag' : 'Block tag'}
+                  className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${blocked ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'}`}
+                >{blocked ? '✕' : '✓'}</button>
+                <span className={`text-xs font-medium w-14 shrink-0 truncate ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
+                {!blocked && (
+                  <>
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={coeff}
+                      aria-label={`Weight for tag ${tag}`}
+                      onChange={(e) => { const v = Number(e.target.value); if (v > 0) setCoeff(tag, v); }}
+                      className={`w-10 shrink-0 px-1 py-0.5 text-xs text-right ${compactInputClass}`}
+                    />
+                    <span className="text-slate-600 text-[10px]">→</span>
+                    <input
+                      type="text"
+                      value={getRule(tag)?.outTag ?? ''}
+                      placeholder={tag}
+                      aria-label={`Rename tag ${tag}`}
+                      onChange={(e) => setOutTag(tag, e.target.value)}
+                      className={`w-16 shrink-0 px-1 py-0.5 text-xs ${compactInputClass} ${getRule(tag)?.outTag ? 'text-amber-300' : 'text-slate-500'}`}
+                    />
+                  </>
+                )}
+                {blocked ? (
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>
+                ) : (
+                  <span className="text-[10px] text-slate-500 ml-auto shrink-0">{Math.round(share * 100)}%</span>
+                )}
               </div>
-              <div className="flex items-center gap-1 pl-1">
-                <span className="text-[10px] text-slate-400">→</span>
-                <input
-                  type="text"
-                  value={rule.outTag ?? ''}
-                  placeholder="rewrite tag"
-                  onChange={(e) => updateRule(idx, 'outTag', e.target.value)}
-                  className="flex-1 min-w-0 px-2 py-0.5 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      <div className="flex items-center gap-2 mt-2">
-        <input
-          type="text"
-          value={newTag}
-          placeholder="new tag name"
-          onChange={(e) => setNewTag(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addRule()}
-          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
-        />
-      </div>
     </div>
   );
 }
 
-function NodeLink({ node, onClick }: { node: { data: { icon: string; label: string } }; onClick: () => void }) {
+function NodeLink({
+  node,
+  onClick,
+  subtitle,
+}: {
+  node: { data: { icon: string; label: string; componentType: string } };
+  onClick: () => void;
+  subtitle?: string;
+}) {
+  const icon = getComponentIcon(node.data.componentType as Parameters<typeof getComponentIcon>[0], node.data.icon);
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
-      <span>{node.data.icon}</span>
-      <span className="flex-1 text-left truncate">{node.data.label}</span>
+    <button onClick={onClick} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-[var(--color-surface-hover)] rounded transition-colors">
+      <ComponentIcon icon={icon} alt={node.data.label} className="flex h-4 w-4 shrink-0 items-center justify-center text-sm leading-none" imgClassName="h-4 w-4 object-contain" />
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate">{node.data.label}</span>
+        {subtitle ? <span className="block text-[10px] uppercase tracking-[0.16em] text-slate-500">{subtitle}</span> : null}
+      </span>
       <span className="text-slate-400">&rarr;</span>
     </button>
   );
@@ -381,195 +465,214 @@ function NodeProperties() {
     if (config[key] != null) return config[key];
     return def?.params.find(p => p.key === key)?.default;
   };
+  const modelParams = params.filter((p) => p.key !== 'replicas');
+  const showStandaloneReplicas = !CLIENT_TYPES.has(selectedNode.data.componentType) && !CONTAINER_TYPES.has(selectedNode.data.componentType) && !def?.params.some(p => p.key === 'brokers' || p.key === 'nodes');
+  const validParents = nodes.filter(n =>
+    CONTAINER_TYPES.has(n.data.componentType) &&
+    n.id !== selectedNode.id &&
+    isValidNesting(selectedNode.data.componentType, n.data.componentType),
+  );
+  const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
+  const children = CONTAINER_TYPES.has(selectedNode.data.componentType)
+    ? nodes.filter(n => n.parentId === selectedNode.id)
+    : [];
+  const selectedNodeIcon = getComponentIcon(selectedNode.data.componentType, selectedNode.data.icon);
+  const effectiveRps = CLIENT_TYPES.has(selectedNode.data.componentType)
+    ? (((configVal('concurrent_users_k') as number) ?? 1) * 1000 * ((configVal('requests_per_user') as number) ?? 0.1))
+    : null;
+
+  // Service Container: render dedicated panel
+  if (selectedNode.data.componentType === 'service_container' ||
+      (selectedNode.data.componentType === 'service' && Array.isArray(config.pipelines))) {
+    return <ServiceContainerPanel node={selectedNode} />;
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{paletteItem?.icon || selectedNode.data.icon}</span>
-          <div>
-            <h2 className="text-base font-bold text-slate-200">{selectedNode.data.label}</h2>
-            <p className="text-xs text-slate-400">{selectedNode.data.componentType}</p>
+          <ComponentIcon icon={selectedNodeIcon} alt={formatComponentName(selectedNode.data.componentType)} className="flex h-7 w-7 shrink-0 items-center justify-center text-[1.75rem] leading-none" imgClassName="h-7 w-7 object-contain" />
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-100 truncate">{formatComponentName(selectedNode.data.componentType)}</span>
+            {paletteItem?.category ? (
+              <span className="shrink-0 rounded-full border border-[rgba(138,167,198,0.14)] bg-[rgba(255,255,255,0.04)] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                {paletteItem.category}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div>
-          <label htmlFor={`node-${selectedNode.id}-name`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
-          <input
-            type="text"
-            id={`node-${selectedNode.id}-name`}
-            value={(config.name as string) || selectedNode.data.label}
-            onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
-            maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
-            className={inputClass}
-          />
-        </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        <div className={sectionClass}>
+          <div className="space-y-2">
+            {/* Name + Colors — compact row */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                id={`node-${selectedNode.id}-name`}
+                value={(config.name as string) || selectedNode.data.label}
+                onChange={(e) => updateNodeConfig(selectedNode.id, { name: e.target.value })}
+                maxLength={CONFIG.UI.LABEL_MAX_LENGTH}
+                className={`flex-1 ${inputClass}`}
+                placeholder="Name"
+              />
+              {(() => {
+                const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
+                const defaultTextColor = '#e2e8f0';
+                return (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input type="color" value={(config.color as string) || defaultColor}
+                      onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
+                      title="Border color" aria-label="Border color"
+                      className="w-6 h-6 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded-sm"
+                    />
+                    <input type="color" value={(config.textColor as string) || defaultTextColor}
+                      onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
+                      title="Text color" aria-label="Text color"
+                      className="w-6 h-6 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded-sm"
+                    />
+                  </div>
+                );
+              })()}
+            </div>
 
-        {(() => {
-          const defaultColor = getDefaultColor(selectedNode.data.componentType, selectedNode.type);
-          const defaultTextColor = '#e2e8f0';
-          return (
-            <div>
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Colors</label>
-              <div className="flex items-center gap-3 mt-1">
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    id={`node-${selectedNode.id}-borderColor`}
-                    value={(config.color as string) || defaultColor}
-                    onChange={(e) => updateNodeConfig(selectedNode.id, { color: e.target.value })}
-                    title="Border color"
-                    aria-label="Border color"
-                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
-                  />
-                  <span className="text-[10px] text-slate-400">Border</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    id={`node-${selectedNode.id}-textColor`}
-                    value={(config.textColor as string) || defaultTextColor}
-                    onChange={(e) => updateNodeConfig(selectedNode.id, { textColor: e.target.value })}
-                    title="Text color"
-                    aria-label="Text color"
-                    className="w-7 h-7 rounded border border-[var(--color-border)] bg-transparent cursor-pointer [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded"
-                  />
-                  <span className="text-[10px] text-slate-400">Text</span>
-                </div>
-                {(config.color != null || config.textColor != null) && (
-                  <button
-                    onClick={() => updateNodeConfig(selectedNode.id, { color: undefined, textColor: undefined })}
-                    className="ml-auto text-xs text-slate-400 hover:text-slate-300 transition-colors"
+            {validParents.length > 0 ? (
+              <div>
+                <label htmlFor={`node-${selectedNode.id}-parent`} className={labelClass}>Parent Container</label>
+                <div className="mt-1 flex items-center gap-2">
+                  <select
+                    id={`node-${selectedNode.id}-parent`}
+                    value={selectedNode.parentId ?? ''}
+                    onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
+                    className={`mt-0 flex-1 ${inputClass}`}
                   >
-                    Reset
+                    <option value="">None (top-level)</option>
+                    {validParents.map((c) => (
+                      <option key={c.id} value={c.id}>{c.data.icon} {formatContainerOptionLabel(c)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => parentNode && focusNode(parentNode.id)}
+                    disabled={!parentNode}
+                    className="inline-flex h-[2.35rem] w-[2.35rem] shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[rgba(7,12,19,0.40)] text-slate-300 transition-colors hover:bg-[rgba(255,255,255,0.03)] hover:text-slate-100 disabled:cursor-not-allowed disabled:text-slate-600"
+                    title={parentNode ? 'Locate parent container on canvas' : 'No parent container selected'}
+                    aria-label="Locate parent container on canvas"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M15 3h6v6" />
+                      <path d="M10 14 21 3" />
+                      <path d="M21 14v7H3V3h7" />
+                    </svg>
                   </button>
+                </div>
+              </div>
+            ) : null}
+
+            {CONTAINER_TYPES.has(selectedNode.data.componentType) ? (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2">
+                  <span className="text-[11px] text-slate-400">Children</span>
+                  <span className="text-sm font-mono font-semibold text-slate-200">{children.length}</span>
+                </div>
+                {children.length > 0 && (
+                  <div className="border-t border-[var(--color-border)]">
+                    {children.map(child => (
+                      <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          );
-        })()}
+            ) : null}
+          </div>
+        </div>
 
-        {params.map((param) => (
-          <div key={param.key}>
-            <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              {param.label}
-            </label>
-            {param.type === 'select' ? (
-              <select
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as string) || param.options?.[0] || ''}
-                onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
-                className={inputClass}
-              >
-                {param.options?.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            ) : param.type === 'number' ? (
-              <NumberInput
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as number) ?? 0}
-                onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
-                min={param.min}
-                max={param.max}
-                step={param.step}
-                className={inputClass}
-              />
-            ) : (
-              <input
-                type={param.type}
-                id={`node-${selectedNode.id}-param-${param.key}`}
-                value={(configVal(param.key) as string) ?? ''}
-                onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
-                maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
-                className={inputClass}
-              />
+        <div className={sectionClass}>
+          <div className="mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--color-accent-warm)]">Simulation Model</div>
+            <div className="mt-1 text-[11px] text-slate-500">Capacity, replication and behavior in simulation</div>
+          </div>
+
+          <div className="space-y-3">
+            {showStandaloneReplicas && (
+              <div>
+                <label htmlFor={`node-${selectedNode.id}-replicas`} className={labelClass}>Instances (replicas)</label>
+                <NumberInput
+                  id={`node-${selectedNode.id}-replicas`}
+                  value={(config.replicas as number) ?? def?.defaults?.replicas ?? 1}
+                  onChange={(n) => updateNodeConfig(selectedNode.id, { replicas: n })}
+                  min={1}
+                  max={10000}
+                  className={inputClass}
+                />
+              </div>
+            )}
+
+            {modelParams.map((param) => (
+              <div key={param.key}>
+                <label htmlFor={`node-${selectedNode.id}-param-${param.key}`} className={labelClass}>
+                  {param.label}
+                </label>
+                {param.type === 'select' ? (
+                  <select
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as string) || param.options?.[0] || ''}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
+                    className={inputClass}
+                  >
+                    {param.options?.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : param.type === 'number' ? (
+                  <NumberInput
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as number) ?? 0}
+                    onChange={(n) => updateNodeConfig(selectedNode.id, { [param.key]: n })}
+                    min={param.min}
+                    max={param.max}
+                    step={param.step}
+                    className={inputClass}
+                  />
+                ) : (
+                  <input
+                    type={param.type}
+                    id={`node-${selectedNode.id}-param-${param.key}`}
+                    value={(configVal(param.key) as string) ?? ''}
+                    onChange={(e) => updateNodeConfig(selectedNode.id, { [param.key]: e.target.value })}
+                    maxLength={CONFIG.UI.CONFIG_VALUE_MAX_LENGTH}
+                    className={inputClass}
+                  />
+                )}
+              </div>
+            ))}
+
+            {effectiveRps != null ? (
+              <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.18)] p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">Effective RPS</span>
+                  <span className="text-sm font-mono font-semibold text-slate-200">{Math.round(effectiveRps)}/s</span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Tag editors moved to Tags tab */}
+
+            {!showStandaloneReplicas && modelParams.length === 0 && effectiveRps == null && (
+              <p className="text-sm text-slate-400">No simulation parameters for this component type.</p>
             )}
           </div>
-        ))}
-
-        {/* Container children list */}
-        {CONTAINER_TYPES.has(selectedNode.data.componentType) && (() => {
-          const children = nodes.filter(n => n.parentId === selectedNode.id);
-          return (
-            <div className="rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2">
-                <span className="text-xs font-semibold text-slate-300">Children</span>
-                <span className="text-sm font-mono font-bold text-purple-400">{children.length}</span>
-              </div>
-              {children.length > 0 && (
-                <div className="border-t border-purple-500/20">
-                  {children.map(child => (
-                    <NodeLink key={child.id} node={child} onClick={() => focusNode(child.id)} />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Parent container dropdown — for all node types */}
-        {(() => {
-          const validParents = nodes.filter(n =>
-            CONTAINER_TYPES.has(n.data.componentType) &&
-            n.id !== selectedNode.id &&
-            isValidNesting(selectedNode.data.componentType, n.data.componentType)
-          );
-          const parentNode = selectedNode.parentId ? nodes.find(n => n.id === selectedNode.parentId) : undefined;
-          return validParents.length > 0 ? (
-            <div>
-              <label htmlFor={`node-${selectedNode.id}-parent`} className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Parent Container</label>
-              {parentNode && (
-                <div className="mt-1 mb-1 rounded border border-purple-500/20 bg-purple-500/10 overflow-hidden">
-                  <NodeLink node={parentNode} onClick={() => focusNode(parentNode.id)} />
-                </div>
-              )}
-              <select
-                id={`node-${selectedNode.id}-parent`}
-                value={selectedNode.parentId ?? ''}
-                onChange={(e) => setNodeParent(selectedNode.id, e.target.value || null)}
-                className={inputClass}
-              >
-                <option value="">None (top-level)</option>
-                {validParents.map((c) => (
-                  <option key={c.id} value={c.id}>{c.data.icon} {c.data.label} ({c.data.componentType})</option>
-                ))}
-              </select>
-            </div>
-          ) : null;
-        })()}
-
-        {CLIENT_TYPES.has(selectedNode.data.componentType) && (() => {
-          const usersK = (configVal('concurrent_users_k') as number) ?? 1;
-          const rpu = (configVal('requests_per_user') as number) ?? 0.1;
-          const effectiveRps = usersK * 1000 * rpu;
-          return (
-            <div className="flex items-center justify-between px-3 py-2 bg-blue-500/10 rounded border border-blue-500/20">
-              <span className="text-xs font-semibold text-slate-300">Effective RPS</span>
-              <span className="text-sm font-mono font-bold text-blue-400">{Math.round(effectiveRps)}/s</span>
-            </div>
-          );
-        })()}
-
-        {CLIENT_TYPES.has(selectedNode.data.componentType) && (
-          <TagDistributionEditor
-            nodeId={selectedNode.id}
-            tags={(config.tagDistribution as TagWeightEntry[] | undefined) ?? []}
-            updateNodeConfig={updateNodeConfig}
-          />
-        )}
-
-        {params.length === 0 && (
-          <p className="text-sm text-slate-400">No configurable parameters for this component type.</p>
-        )}
+        </div>
       </div>
 
-      <div className="p-4 border-t border-[var(--color-border)]">
+      <div className="p-3 border-t border-[var(--color-border)] space-y-2">
+        {selectedNode.data.componentType === 'service' && (
+          <ServiceUpgradeButton node={selectedNode} />
+        )}
         <button
           onClick={() => removeNode(selectedNode.id)}
-          className="w-full px-4 py-2 text-sm text-red-400 border border-red-400/30 rounded hover:bg-red-400/10 transition-colors"
+          className={destructiveButtonClass}
         >
           Delete Component
         </button>
@@ -578,7 +681,194 @@ function NodeProperties() {
   );
 }
 
-function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
+export function CacheRulesEditor({ nodeId, rules, updateNodeConfig }: {
+  nodeId: string;
+  rules: CacheRuleEntry[];
+  updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: CacheRuleEntry[]) => {
+    updateNodeConfig(nodeId, { cacheRules: updated.length > 0 ? updated : undefined });
+  };
+
+  const addRule = () => {
+    const tag = newTag.trim() || 'misc';
+    if (rules.some(r => r.tag === tag)) return;
+    update([...rules, { tag, hitRatio: 0.8, capacityMb: 256 }]);
+    setNewTag('');
+  };
+
+  const removeRule = (idx: number) => update(rules.filter((_, i) => i !== idx));
+
+  const updateRule = (idx: number, field: keyof CacheRuleEntry, value: string | number) => {
+    update(rules.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className={labelClass}>Cache Rules</label>
+        <button
+          onClick={addRule}
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+        >
+          + Add Rule
+        </button>
+      </div>
+      {rules.length === 0 ? (
+        <p className="text-xs text-slate-400">No cache rules — all traffic passes through to origin</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-0.5">
+            <span className="w-16 shrink-0">Tag</span>
+            <span className="w-14 shrink-0">Hit %</span>
+            <span className="w-16 shrink-0">Cache MB</span>
+          </div>
+          {rules.map((rule, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={rule.tag}
+                placeholder="tag"
+                aria-label={`Rule ${idx + 1} tag`}
+                onChange={(e) => updateRule(idx, 'tag', e.target.value)}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Math.round(rule.hitRatio * 100)}
+                aria-label={`Rule ${idx + 1} hit ratio`}
+                onChange={(e) => updateRule(idx, 'hitRatio', Number(e.target.value) / 100)}
+                className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={1}
+                step={64}
+                value={rule.capacityMb}
+                aria-label={`Rule ${idx + 1} capacity MB`}
+                onChange={(e) => updateRule(idx, 'capacityMb', Number(e.target.value))}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <button
+                onClick={() => removeRule(idx)}
+                aria-label={`Remove rule ${idx + 1}`}
+                className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="tag name"
+          aria-label="New cache rule tag"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addRule()}
+          className={`w-16 px-1.5 py-1 text-xs ${compactInputClass}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function ResponseRulesEditor({ nodeId, rules, updateNodeConfig }: {
+  nodeId: string;
+  rules: ResponseRuleEntry[];
+  updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+}) {
+  const [newTag, setNewTag] = useState('');
+
+  const update = (updated: ResponseRuleEntry[]) => {
+    updateNodeConfig(nodeId, { responseRules: updated.length > 0 ? updated : undefined });
+  };
+
+  const addRule = () => {
+    const tag = newTag.trim() || 'data';
+    if (rules.some(r => r.tag === tag)) return;
+    update([...rules, { tag, responseSizeKb: 100 }]);
+    setNewTag('');
+  };
+
+  const removeRule = (idx: number) => update(rules.filter((_, i) => i !== idx));
+
+  const updateRule = (idx: number, field: keyof ResponseRuleEntry, value: string | number) => {
+    update(rules.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className={labelClass}>Response Rules</label>
+        <button
+          onClick={addRule}
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+        >
+          + Add Rule
+        </button>
+      </div>
+      {rules.length === 0 ? (
+        <p className="text-xs text-slate-400">No rules — all tags return default response size</p>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 px-0.5">
+            <span className="w-16 shrink-0">Tag</span>
+            <span className="w-16 shrink-0">Size KB</span>
+          </div>
+          {rules.map((rule, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={rule.tag}
+                placeholder="tag"
+                aria-label={`Rule ${idx + 1} tag`}
+                onChange={(e) => updateRule(idx, 'tag', e.target.value)}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <input
+                type="number"
+                min={0.01}
+                step={1}
+                value={rule.responseSizeKb}
+                aria-label={`Rule ${idx + 1} response size KB`}
+                onChange={(e) => updateRule(idx, 'responseSizeKb', Number(e.target.value))}
+                className={`w-16 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+              />
+              <button
+                onClick={() => removeRule(idx)}
+                aria-label={`Remove rule ${idx + 1}`}
+                className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          type="text"
+          value={newTag}
+          placeholder="tag name"
+          aria-label="New response rule tag"
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addRule()}
+          className={`w-16 px-1.5 py-1 text-xs ${compactInputClass}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   nodeId: string;
   tags: TagWeightEntry[];
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
@@ -592,7 +882,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   const addTag = () => {
     const tag = newTag.trim() || 'read';
     if (tags.some(t => t.tag === tag)) return;
-    update([...tags, { tag, weight: 1.0 }]);
+    update([...tags, { tag, weight: 1.0, requestSizeKb: 0.1 }]);
     setNewTag('');
   };
 
@@ -600,7 +890,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
     update(tags.filter((_, i) => i !== idx));
   };
 
-  const updateTag = (idx: number, field: 'tag' | 'weight', value: string | number) => {
+  const updateTag = (idx: number, field: keyof TagWeightEntry, value: string | number) => {
     const updated = tags.map((t, i) => i === idx ? { ...t, [field]: value } : t);
     update(updated);
   };
@@ -610,10 +900,10 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Traffic Tags</label>
+        <label className={labelClass}>Traffic Tags</label>
         <button
           onClick={addTag}
-          className="text-xs px-2 py-0.5 text-blue-400 border border-blue-400/30 rounded hover:bg-blue-400/10 transition-colors"
+          className="text-xs px-2 py-1 text-slate-300 border border-[var(--color-border)] rounded-md hover:bg-[rgba(255,255,255,0.03)] transition-colors"
         >
           + Add Tag
         </button>
@@ -625,7 +915,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
           {tags.map((entry, idx) => {
             const pct = totalWeight > 0 ? ((entry.weight / totalWeight) * 100).toFixed(0) : '0';
             return (
-              <div key={idx} className="flex items-center gap-2">
+              <div key={idx} className="flex items-center gap-1.5">
                 <input
                   type="text"
                   id={`node-${nodeId}-dist-tag-${idx}`}
@@ -633,7 +923,7 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
                   placeholder="tag"
                   aria-label={`Tag ${idx + 1} name`}
                   onChange={(e) => updateTag(idx, 'tag', e.target.value)}
-                  className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
                 />
                 <input
                   type="number"
@@ -643,13 +933,27 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
                   value={entry.weight}
                   aria-label={`Tag ${idx + 1} weight`}
                   onChange={(e) => updateTag(idx, 'weight', Number(e.target.value))}
-                  className="w-16 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                  className={`w-12 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
                 />
-                <span className="text-xs text-slate-400 w-10 text-right">{pct}%</span>
+                <span className="text-[10px] text-slate-500 w-8 shrink-0 text-right">{pct}%</span>
+                {entry.requestSizeKb != null && (
+                  <>
+                    <input
+                      type="number"
+                      min={0.01}
+                      step={0.1}
+                      value={entry.requestSizeKb}
+                      aria-label={`Tag ${idx + 1} request size KB`}
+                      onChange={(e) => updateTag(idx, 'requestSizeKb', Number(e.target.value))}
+                      className={`w-14 shrink-0 px-1.5 py-1 text-xs ${compactInputClass}`}
+                    />
+                    <span className="text-[10px] text-slate-500 shrink-0">KB</span>
+                  </>
+                )}
                 <button
                   onClick={() => removeTag(idx)}
                   aria-label={`Remove tag ${idx + 1}`}
-                  className="text-red-400 hover:text-red-300 text-xs px-1"
+                  className="text-slate-500 hover:text-rose-300 text-xs px-0.5 shrink-0 ml-auto"
                 >
                   x
                 </button>
@@ -658,16 +962,16 @@ function TagDistributionEditor({ nodeId, tags, updateNodeConfig }: {
           })}
         </div>
       )}
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex items-center gap-1.5 mt-2">
         <input
           type="text"
           id={`node-${nodeId}-dist-new-tag`}
           value={newTag}
-          placeholder="new tag name"
+          placeholder="tag name"
           aria-label="New tag name"
           onChange={(e) => setNewTag(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTag()}
-          className="flex-1 px-2 py-1 text-xs bg-[var(--color-bg)] border border-[var(--color-border)] rounded text-slate-200 focus:outline-none focus:border-blue-500"
+          className={`w-14 px-1.5 py-1 text-xs ${compactInputClass}`}
         />
       </div>
     </div>
@@ -737,7 +1041,7 @@ function SchemaProperties() {
         await updateArchitecture(architectureId, schemaName, schemaDescription, data, isPublic, schemaTags);
         notify.success('Saved');
       } else {
-        const result = await createArchitecture(user.id, schemaName, schemaDescription, data, isPublic, schemaTags);
+        const result = await createArchitecture(schemaName, schemaDescription, data, isPublic, schemaTags);
         setArchitectureId(result.id);
         notify.success('Saved');
       }
@@ -753,7 +1057,7 @@ function SchemaProperties() {
     setSaving(true);
     try {
       const data = buildSchema(nodes, edges, saveAsName);
-      const result = await createArchitecture(user.id, saveAsName, schemaDescription, data, isPublic, schemaTags);
+      const result = await createArchitecture(saveAsName, schemaDescription, data, isPublic, schemaTags);
       setArchitectureId(result.id);
       setSchemaName(saveAsName);
       setShowSaveAs(false);
@@ -768,7 +1072,7 @@ function SchemaProperties() {
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      <div className="px-4 py-3 border-b border-[var(--color-border)]">
+      <div className="px-3 py-2 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <span className="text-xl">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
@@ -776,15 +1080,15 @@ function SchemaProperties() {
             </svg>
           </span>
           <div>
-            <h2 className="text-base font-bold text-slate-200">Architecture</h2>
+            <h2 className="text-sm font-bold text-slate-200">Architecture</h2>
             <p className="text-xs text-slate-400">Schema properties</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div>
-          <label htmlFor="schema-name" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+          <label htmlFor="schema-name" className={labelClass}>Name</label>
           <input
             type="text"
             id="schema-name"
@@ -797,7 +1101,7 @@ function SchemaProperties() {
         </div>
 
         <div>
-          <label htmlFor="schema-description" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Description</label>
+          <label htmlFor="schema-description" className={labelClass}>Description</label>
           <textarea
             id="schema-description"
             value={schemaDescription}
@@ -810,12 +1114,12 @@ function SchemaProperties() {
         </div>
 
         <div>
-          <label htmlFor="schema-tags" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tags</label>
-          <div className="mt-1 flex flex-wrap gap-1 p-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded min-h-[34px]">
+          <label htmlFor="schema-tags" className={labelClass}>Tags</label>
+          <div className="mt-1 flex flex-wrap gap-1 p-1.5 bg-[rgba(7,12,19,0.52)] border border-[var(--color-border)] rounded-md min-h-[34px]">
             {schemaTags.map((tag) => (
-              <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded">
+              <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded-md border border-[rgba(110,220,255,0.12)] bg-[rgba(110,220,255,0.08)] text-slate-200">
                 {tag}
-                <button onClick={() => removeTag(tag)} className="text-blue-400/60 hover:text-blue-300 ml-0.5">&times;</button>
+                <button onClick={() => removeTag(tag)} className="text-slate-500 hover:text-slate-200 ml-0.5">&times;</button>
               </span>
             ))}
             <input
@@ -829,7 +1133,7 @@ function SchemaProperties() {
               className="flex-1 min-w-[60px] bg-transparent text-xs text-slate-200 outline-none px-1 py-0.5"
             />
           </div>
-          <p className="text-[10px] text-slate-500 mt-0.5">Press Enter or comma to add</p>
+          <p className="text-[10px] text-slate-500 mt-1">Press Enter or comma to add</p>
         </div>
 
         {isAuthenticated && (
@@ -845,20 +1149,20 @@ function SchemaProperties() {
           </div>
         )}
 
-        <div className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] overflow-hidden">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)] overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]">
-            <span className="text-xs font-semibold text-slate-400">Nodes</span>
-            <span className="text-sm font-mono font-bold text-slate-200">{nodes.length}</span>
+            <span className="text-[11px] text-slate-400">Nodes</span>
+            <span className="text-sm font-mono font-semibold text-slate-200">{nodes.length}</span>
           </div>
           <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-xs font-semibold text-slate-400">Connections</span>
-            <span className="text-sm font-mono font-bold text-slate-200">{edges.length}</span>
+            <span className="text-[11px] text-slate-400">Connections</span>
+            <span className="text-sm font-mono font-semibold text-slate-200">{edges.length}</span>
           </div>
         </div>
 
         {isAuthenticated ? (
           <div className="space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cloud Storage</div>
+            <div className={labelClass}>Cloud Storage</div>
 
             {architectureId && (
               <p className="text-xs text-slate-400 truncate" title={architectureId}>
@@ -869,7 +1173,7 @@ function SchemaProperties() {
             <button
               onClick={handleSave}
               disabled={!canSave || saving}
-              className="w-full px-3 py-2 text-sm text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+              className={primaryButtonClass}
             >
               {saving ? 'Saving...' : architectureId ? 'Save' : 'Save to server'}
             </button>
@@ -879,7 +1183,7 @@ function SchemaProperties() {
             )}
 
             {showSaveAs ? (
-              <div className="space-y-2 p-2 rounded border border-[var(--color-border)] bg-[var(--color-bg)]">
+              <div className="space-y-2 p-2 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)]">
                 <input
                   type="text"
                   value={saveAsName}
@@ -894,13 +1198,13 @@ function SchemaProperties() {
                   <button
                     onClick={handleSaveAs}
                     disabled={!saveAsName.trim() || saving}
-                    className="flex-1 px-2 py-1.5 text-xs text-slate-200 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded transition-colors"
+                    className="flex-1 px-2 py-1.5 text-xs text-slate-100 bg-[#4f6382] hover:bg-[#5b7193] disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
                   >
                     Save copy
                   </button>
                   <button
                     onClick={() => setShowSaveAs(false)}
-                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-[var(--color-border)] rounded transition-colors"
+                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 border border-[var(--color-border)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
@@ -909,7 +1213,7 @@ function SchemaProperties() {
             ) : (
               <button
                 onClick={() => { setSaveAsName(schemaName); setShowSaveAs(true); }}
-                className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+                className={secondaryButtonClass}
               >
                 Save As...
               </button>
@@ -917,13 +1221,13 @@ function SchemaProperties() {
 
             <button
               onClick={() => setShowOpenModal(true)}
-              className="w-full px-3 py-2 text-sm text-slate-300 border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+              className={secondaryButtonClass}
             >
               Open from server...
             </button>
           </div>
         ) : (
-          <div className="px-3 py-3 rounded border border-blue-500/20 bg-blue-500/5">
+          <div className="px-3 py-3 rounded-lg border border-[var(--color-border)] bg-[rgba(7,12,19,0.28)]">
             <p className="text-xs text-slate-400">Sign in to save to cloud</p>
           </div>
         )}
@@ -947,4 +1251,183 @@ export function PropertiesPanel() {
   }
 
   return <SchemaProperties />;
+}
+
+
+export function TagFilterEditor({ nodeId, blockedTags, updateNodeConfig }: {
+  nodeId: string;
+  blockedTags: string[];
+  updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
+}) {
+  // Compute tags flowing through this LB from incoming edges' sources and outgoing targets
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+
+  const incomingTags = new Set<string>();
+  const outgoingTags = new Set<string>();
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  for (const e of edges) {
+    if (e.target === nodeId) {
+      const src = nodeMap.get(e.source);
+      if (src) {
+        const tags = getNodeTags(src);
+        if (tags) tags.forEach(t => incomingTags.add(t));
+      }
+    }
+    if (e.source === nodeId) {
+      const tgt = nodeMap.get(e.target);
+      if (tgt) {
+        const tags = getNodeTags(tgt);
+        if (tags) tags.forEach(t => outgoingTags.add(t));
+      }
+    }
+  }
+
+  // Passthrough tags = union of all discovered tags (LB is wildcard, passes what sources send)
+  const allTags = new Set([...incomingTags, ...outgoingTags]);
+  if (allTags.size === 0) return null;
+
+  const blockedSet = new Set(blockedTags);
+
+  const toggleTag = (tag: string) => {
+    const newBlocked = blockedSet.has(tag)
+      ? blockedTags.filter(t => t !== tag)
+      : [...blockedTags, tag];
+    updateNodeConfig(nodeId, { blockedTags: newBlocked.length > 0 ? newBlocked : undefined });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Tag Filter</div>
+      <div className="space-y-1">
+        {[...allTags].sort().map(tag => {
+          const blocked = blockedSet.has(tag);
+          return (
+            <div key={tag} className={`flex items-center gap-1.5 rounded-md px-2 py-1 ${blocked ? 'bg-rose-500/8 border border-rose-500/16' : 'bg-[rgba(7,12,19,0.28)] border border-[rgba(138,167,198,0.08)]'}`}>
+              <button
+                onClick={() => toggleTag(tag)}
+                title={blocked ? 'Unblock tag' : 'Block tag'}
+                className={`w-5 h-5 shrink-0 rounded text-[10px] font-bold flex items-center justify-center transition-colors ${blocked ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60' : 'bg-emerald-900/30 text-emerald-400 hover:bg-emerald-900/50'}`}
+              >{blocked ? '✕' : '✓'}</button>
+              <span className={`text-xs font-medium ${blocked ? 'text-rose-300/60 line-through' : 'text-slate-200'}`}>{tag}</span>
+              {blocked && <span className="text-[9px] font-semibold uppercase tracking-wider text-rose-400/70 ml-auto">blocked</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+function CircuitBreakerEditor({ edgeId, cb, updateEdgeData }: {
+  edgeId: string;
+  cb?: { enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number };
+  updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+}) {
+  const enabled = cb?.enabled ?? false;
+  const errorThreshold = cb?.errorThreshold ?? 50;
+  const timeoutMs = cb?.timeoutMs ?? 30000;
+  const halfOpenRequests = cb?.halfOpenRequests ?? 3;
+
+  const update = (patch: Partial<{ enabled: boolean; errorThreshold: number; timeoutMs: number; halfOpenRequests: number }>) => {
+    updateEdgeData(edgeId, {
+      circuitBreaker: { enabled, errorThreshold, timeoutMs, halfOpenRequests, ...patch },
+    });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Circuit Breaker</span>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <span className="text-xs text-slate-400">{enabled ? 'On' : 'Off'}</span>
+        </label>
+      </div>
+      {enabled && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Error Threshold (%)</label>
+            <input type="number" value={errorThreshold} min={1} max={100} step={1}
+              onChange={(e) => update({ errorThreshold: Math.max(1, Math.min(100, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Timeout (ms)</label>
+            <input type="number" value={timeoutMs} min={100} max={300000} step={1000}
+              onChange={(e) => update({ timeoutMs: Math.max(100, Math.min(300000, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Half-Open Requests</label>
+            <input type="number" value={halfOpenRequests} min={1} max={100} step={1}
+              onChange={(e) => update({ halfOpenRequests: Math.max(1, Math.min(100, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function RetryPolicyEditor({ edgeId, retry, updateEdgeData }: {
+  edgeId: string;
+  retry?: { enabled: boolean; maxRetries: number; backoffMs: number };
+  updateEdgeData: (id: string, data: Record<string, unknown>) => void;
+}) {
+  const enabled = retry?.enabled ?? false;
+  const maxRetries = retry?.maxRetries ?? 2;
+  const backoffMs = retry?.backoffMs ?? 100;
+
+  const update = (patch: Partial<{ enabled: boolean; maxRetries: number; backoffMs: number }>) => {
+    updateEdgeData(edgeId, {
+      retryPolicy: { enabled, maxRetries, backoffMs, ...patch },
+    });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Retry Policy</span>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => update({ enabled: e.target.checked })}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <span className="text-xs text-slate-400">{enabled ? 'On' : 'Off'}</span>
+        </label>
+      </div>
+      {enabled && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Max Retries</label>
+            <input type="number" value={maxRetries} min={1} max={10} step={1}
+              onChange={(e) => update({ maxRetries: Math.max(1, Math.min(10, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 block mb-0.5">Backoff (ms)</label>
+            <input type="number" value={backoffMs} min={10} max={10000} step={50}
+              onChange={(e) => update({ backoffMs: Math.max(10, Math.min(10000, Number(e.target.value))) })}
+              className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-slate-200"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

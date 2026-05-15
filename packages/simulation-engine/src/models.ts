@@ -9,6 +9,7 @@ export type ComponentType =
   | 'dns'
   | 'waf'
   | 'service'
+  | 'service_container'
   | 'serverless_function'
   | 'worker'
   | 'cron_job'
@@ -25,7 +26,6 @@ export type ComponentType =
   | 'elasticsearch'
   | 'kafka'
   | 'rabbitmq'
-  | 'event_bus'
   | 'nats'
   | 'circuit_breaker'
   | 'rate_limiter'
@@ -56,6 +56,21 @@ export type ProtocolType = 'REST' | 'gRPC' | 'WebSocket' | 'GraphQL' | 'async' |
 export interface TagWeight {
   tag: string;
   weight: number; // relative weight, normalized to probability
+  requestSizeKb?: number;  // outgoing request payload size for this tag
+  responseSizeKb?: number; // response payload size for this tag (used by leaf/CDN nodes)
+}
+
+/** Per-tag cache rule for CDN-like components */
+export interface CacheRule {
+  tag: string;           // traffic tag to match (e.g. 'web', 'content', 'api')
+  hitRatio: number;      // probability of cache hit (0..1)
+  capacityMb: number;    // cache capacity allocated for this tag (MB)
+}
+
+/** Per-tag response rule for storage/origin components — defines what response size to return per tag */
+export interface ResponseRule {
+  tag: string;           // traffic tag to match
+  responseSizeKb: number; // average response size for this tag (KB)
 }
 
 export interface ComponentModel {
@@ -73,6 +88,10 @@ export interface ComponentModel {
   baseLatencyMs: number;
   loadLatencyFactor: number;
 
+  // Connection pool
+  maxConnections: number;
+  concurrentConnections: number;
+
   // Reliability
   failureRate: number;
   isAlive: boolean;
@@ -85,6 +104,52 @@ export interface ComponentModel {
 
   // Tag-based traffic routing (entry/client nodes)
   tagDistribution?: TagWeight[];
+
+  // CDN cache rules — per-tag hit ratio and capacity
+  cacheRules?: CacheRule[];
+
+  // Storage/origin response rules — per-tag response size
+  responseRules?: ResponseRule[];
+
+  // Explicit tags this node accepts (undefined = wildcard, accepts any tag)
+  supportedTags?: string[];
+
+  // Load balancer algorithm
+  lbAlgorithm?: 'round_robin' | 'least_conn' | 'ip_hash';
+
+  // Tags explicitly blocked by this node (e.g. LB tag filter)
+  blockedTags?: string[];
+
+  // Node-level retry policy (LB: auto-applies to all outgoing connections)
+  retryEnabled?: boolean;
+  retryMax?: number;
+  retryBackoffMs?: number;
+
+  // Rate limiting (hard threshold — immediate 429, unlike maxRps which is soft capacity)
+  rateLimitRps?: number;
+
+  // Auth overhead (API Gateway)
+  authEnabled?: boolean;
+  authLatencyMs?: number;    // extra latency per request for token validation
+  authFailRate?: number;     // fraction of requests that fail auth (0..1)
+
+  // Service Container internals
+  serviceDbPools?: Array<{
+    id: string;
+    poolSize: number;
+    queryDelay: number;      // ms per query
+    callsPerRequest: number; // total DB calls per request across all pipeline steps
+    parallel: boolean;       // if true, calls run in parallel (take max, not sum)
+  }>;
+
+  consumerConfig?: {
+    concurrency: number;
+    processingDelayMs: number; // avg step delay for consumer pipelines
+  };
+
+  asyncDispatch?: {
+    returnDelayMs: number; // latency for sync jobId return (fast path)
+  };
 
   // Traffic sizing
   payloadSizeKb: number;
@@ -109,6 +174,12 @@ export interface ConnectionModel {
     backoffMs: number;
   };
   routingRules?: RoutingRule[];
+  circuitBreaker?: {
+    enabled: boolean;
+    errorThreshold: number;
+    timeoutMs: number;
+    halfOpenRequests: number;
+  };
 }
 
 export interface EngineStats {
@@ -117,6 +188,15 @@ export interface EngineStats {
   requestsGenerated: number;
   requestsCompleted: number;
   tickDurationMs: number;
+  retriesThisTick: number;
+}
+
+/** Per-tag cache statistics for CDN nodes */
+export interface CacheTagStats {
+  hits: number;      // requests served from cache this tick
+  misses: number;    // requests forwarded to origin this tick
+  hitRate: number;   // actual hit rate (0..1)
+  fillMb: number;    // estimated cache fill (MB)
 }
 
 export interface SimulationMetrics {
@@ -126,13 +206,31 @@ export interface SimulationMetrics {
   latencyP99: number;
   throughput: number;
   errorRate: number;
+  totalInboundKBps: number;   // Total inbound traffic across all nodes (KB/s)
+  totalOutboundKBps: number;  // Total outbound traffic across all nodes (KB/s)
   componentUtilization: Record<string, number>;
+  connectionUtilization: Record<string, number>;
   queueDepths: Record<string, number>;
   edgeThroughput: Record<string, number>;
   edgeLatency: Record<string, number>;
   engineStats?: EngineStats;
   nodeTagTraffic: Record<string, NodeTagTraffic>;
   edgeTagTraffic: Record<string, EdgeTagTraffic>;
+  nodeCacheStats: Record<string, Record<string, CacheTagStats>>; // nodeId → tag → stats
+  circuitBreakerStates: Record<string, 'CLOSED' | 'OPEN' | 'HALF_OPEN'>; // edgeKey → state
+  serviceInternalMetrics: Record<string, ServiceNodeMetrics>;
+  nodeLatencyP99: Record<string, number>;
+}
+
+export interface DbPoolMetrics {
+  utilization: number;   // 0..1, fraction of pool capacity used
+  avgLatencyMs: number;  // base + queue delay at current load
+}
+
+export interface ServiceNodeMetrics {
+  dbPools: Record<string, DbPoolMetrics>;    // poolId → metrics
+  consumerLag: number;                        // estimated message backlog (messages)
+  asyncQueueDepth: number;                    // pending async jobs
 }
 
 export interface FailureReport {
@@ -156,11 +254,15 @@ export interface SimRequest {
   failed: boolean;
   failureReason?: string;
   payloadSizeKb: number;
+  retriesLeft?: number;         // remaining retries for this request
+  retryFromNode?: string;       // node to retry from (the source of the failing connection)
+  retryBackoffMs?: number;      // backoff latency per retry
 }
 
 export interface TagTraffic {
   rps: number;
   bytesPerSec: number; // KB/s
+  failedRps: number;   // failed requests per second for this tag
 }
 
 export interface NodeTagTraffic {

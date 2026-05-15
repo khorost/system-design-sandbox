@@ -13,13 +13,13 @@ import { create } from 'zustand';
 import { CONFIG } from '../config/constants.ts';
 import { autoLayout } from '../dsl/layout.ts';
 import { parseDsl } from '../dsl/parser.ts';
-import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 import { exportDsl as serializeDsl } from '../dsl/serializer.ts';
 import type { ArchitectureSchema, ComponentEdge, ComponentNode, EdgeData, ProtocolType } from '../types/index.ts';
 import { DEFAULT_EDGE_DATA, DISK_COMPONENT_TYPES } from '../types/index.ts';
 import { CONTAINER_TYPES, getAbsolutePosition } from '../utils/networkLatency.ts';
 import { notify } from '../utils/notifications.ts';
 import { sanitizeConfig,sanitizeLabel } from '../utils/sanitize.ts';
+import { onTabMessage, postTabMessage } from '../utils/tabChannel.ts';
 
 const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
   local_ssd: 'SATA',
@@ -29,6 +29,7 @@ const DISK_DEFAULT_PROTOCOL: Record<string, ProtocolType> = {
 };
 
 const STORAGE_KEY = 'sds-architecture';
+const DISPLAY_MODE_KEY = 'sds-canvas-display-mode';
 const MAX_HISTORY = CONFIG.HISTORY.MAX_UNDO_ENTRIES;
 
 type Snapshot = { nodes: ComponentNode[]; edges: ComponentEdge[] };
@@ -69,13 +70,198 @@ function sortNodesParentFirst(nodes: ComponentNode[]): ComponentNode[] {
   return [...cleaned].sort((a, b) => depthOf(a) - depthOf(b));
 }
 
+function clampPositionToContainer(_node: ComponentNode, _parent: ComponentNode, position: { x: number; y: number }) {
+  // Only enforce minimum left/top padding; auto-expand handles right/bottom overflow.
+  return {
+    x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, position.x),
+    y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, position.y),
+  };
+}
+
+function getNodeDimensions(node: ComponentNode): { w: number; h: number } {
+  const isContainer = CONTAINER_TYPES.has(node.data.componentType);
+  // Prefer measured (actual DOM size) over fallback. Fallback 280x90 is a safe upper bound for BaseNode.
+  return {
+    w: (node.style?.width as number) ?? node.measured?.width ?? node.width ?? (isContainer ? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH : 280),
+    h: (node.style?.height as number) ?? node.measured?.height ?? node.height ?? (isContainer ? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT : 90),
+  };
+}
+
+const CONTAINER_PADDING_RIGHT = 12;
+const CONTAINER_PADDING_BOTTOM = 12;
+
+/** Expand parent containers so all children fit inside. Cascades up the tree. */
+function expandContainersToFitChildren(nodes: ComponentNode[]): ComponentNode[] {
+  const result = nodes.map(n => ({ ...n }));
+  const map = new Map(result.map(n => [n.id, n]));
+
+  // Iterate until stable (max 10 passes for deeply nested hierarchies)
+  for (let pass = 0; pass < 10; pass++) {
+    let changed = false;
+
+    // Group children by parentId
+    const childrenOf = new Map<string, ComponentNode[]>();
+    for (const n of result) {
+      if (!n.parentId) continue;
+      const arr = childrenOf.get(n.parentId) ?? [];
+      arr.push(n);
+      childrenOf.set(n.parentId, arr);
+    }
+
+    for (const [parentId, children] of childrenOf) {
+      const parent = map.get(parentId);
+      if (!parent) continue;
+
+      const { w: pw, h: ph } = getNodeDimensions(parent);
+
+      let requiredW = pw;
+      let requiredH = ph;
+
+      for (const child of children) {
+        const { w: cw, h: ch } = getNodeDimensions(child);
+        requiredW = Math.max(requiredW, child.position.x + cw + CONTAINER_PADDING_RIGHT);
+        requiredH = Math.max(requiredH, child.position.y + ch + CONTAINER_PADDING_BOTTOM);
+      }
+
+      if (requiredW > pw || requiredH > ph) {
+        const newW = Math.max(requiredW, CONFIG.CANVAS.CONTAINER_MIN_WIDTH);
+        const newH = Math.max(requiredH, CONFIG.CANVAS.CONTAINER_MIN_HEIGHT);
+        parent.style = { ...parent.style, width: newW, height: newH };
+        parent.width = newW;
+        parent.height = newH;
+        if (parent.measured) {
+          parent.measured = { ...parent.measured, width: newW, height: newH };
+        }
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  return result;
+}
+
+function clampNodesToContainerPadding(nodes: ComponentNode[]): ComponentNode[] {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+
+  // 1. Clamp positions (left/top minimum only)
+  const clamped = nodes.map((node) => {
+    if (!node.parentId) return node;
+    const parent = nodeMap.get(node.parentId);
+    if (!parent) return node;
+    return {
+      ...node,
+      position: clampPositionToContainer(node, parent, node.position),
+    };
+  });
+
+  // 2. Expand containers to fit children (cascades up)
+  const expanded = expandContainersToFitChildren(clamped);
+
+  // 3. Assign z-index by depth
+  const expandedMap = new Map(expanded.map((node) => [node.id, node]));
+  return expanded.map((node) => {
+    let depth = 0;
+    let current = node;
+    while (current.parentId) {
+      depth++;
+      const parent = expandedMap.get(current.parentId);
+      if (!parent) break;
+      current = parent;
+    }
+
+    return {
+      ...node,
+      zIndex: CONTAINER_TYPES.has(node.data.componentType) ? -100 + depth * 10 : 100 + depth * 10,
+    };
+  });
+}
+
+/** Find free space inside a container for panel-based reparenting. */
+function findFreeSpaceInContainer(
+  node: ComponentNode,
+  parent: ComponentNode,
+  allNodes: ComponentNode[],
+): { x: number; y: number } {
+  const { w: nw, h: nh } = getNodeDimensions(node);
+  const { w: pw, h: ph } = getNodeDimensions(parent);
+  const gap = 15;
+  const padL = CONFIG.CANVAS.CONTAINER_PADDING_LEFT;
+  const padT = CONFIG.CANVAS.CONTAINER_PADDING_TOP;
+
+  // Existing children (excluding the node being moved)
+  const siblings = allNodes.filter(n => n.parentId === parent.id && n.id !== node.id);
+  const rects = siblings.map(n => {
+    const { w, h } = getNodeDimensions(n);
+    return { x: n.position.x, y: n.position.y, w, h };
+  });
+
+  const overlaps = (x: number, y: number) =>
+    rects.some(r =>
+      x < r.x + r.w + gap && x + nw + gap > r.x &&
+      y < r.y + r.h + gap && y + nh + gap > r.y,
+    );
+
+  // Scan grid positions within current container bounds
+  for (let y = padT; y + nh <= ph - CONTAINER_PADDING_BOTTOM; y += gap) {
+    for (let x = padL; x + nw <= pw - CONTAINER_PADDING_RIGHT; x += gap) {
+      if (!overlaps(x, y)) return { x, y };
+    }
+  }
+
+  // No space inside current bounds — place at bottom of content, auto-expand will handle it
+  const maxBottom = rects.reduce((max: number, r) => Math.max(max, r.y + r.h + gap), padT as number);
+  return { x: padL, y: maxBottom };
+}
+
+function attachNodeAtCanvasPosition(
+  nodes: ComponentNode[],
+  nodeId: string,
+  parentId: string,
+  position: { x: number; y: number },
+): ComponentNode[] {
+  const nodeMap = new Map(nodes.map(nd => [nd.id, nd]));
+
+  return nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+
+    const newParent = nodeMap.get(parentId);
+    if (!newParent) return n;
+
+    const parentAbs = getAbsolutePosition(newParent, nodeMap);
+    return {
+      ...n,
+      parentId,
+      position: clampPositionToContainer(n, newParent, {
+        x: position.x - parentAbs.x,
+        y: position.y - parentAbs.y,
+      }),
+    };
+  });
+}
+
+function detachNodeAtCanvasPosition(
+  nodes: ComponentNode[],
+  nodeId: string,
+  position: { x: number; y: number },
+): ComponentNode[] {
+  return nodes.map((n) => {
+    if (n.id !== nodeId) return n;
+    const { parentId: _p, extent: _e, ...rest } = n as ComponentNode & { extent?: string };
+    void _p; void _e;
+    return { ...rest, position } as ComponentNode;
+  });
+}
+
 function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; schemaName: string; schemaDescription: string; schemaTags: string[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { nodes: [], edges: [], schemaName: '', schemaDescription: '', schemaTags: [] };
     const schema: ArchitectureSchema = JSON.parse(raw);
+    const normalizedNodes = clampNodesToContainerPadding(sortNodesParentFirst(schema.nodes ?? []));
     return {
-      nodes: sortNodesParentFirst(schema.nodes ?? []),
+      nodes: normalizedNodes,
       edges: schema.edges ?? [],
       schemaName: schema.metadata?.name ?? '',
       schemaDescription: schema.metadata?.description ?? '',
@@ -84,6 +270,12 @@ function loadInitialState(): { nodes: ComponentNode[]; edges: ComponentEdge[]; s
   } catch {
     return { nodes: [], edges: [], schemaName: '', schemaDescription: '', schemaTags: [] };
   }
+}
+
+function loadDisplayMode(): CanvasDisplayMode {
+  // Always start in 2D — 3D/Iso is a view-only mode that distorts
+  // handle measurements if active during initial layout.
+  return '2d';
 }
 
 const initial = loadInitialState();
@@ -133,6 +325,8 @@ function flushSave() {
 }
 
 export type EdgeLabelMode = 'auto' | 'protocol' | 'traffic' | 'full';
+export type EdgeRoutingMode = 'bezier' | 'orthogonal';
+export type CanvasDisplayMode = '2d' | '3d';
 
 interface CanvasState {
   nodes: ComponentNode[];
@@ -140,10 +334,20 @@ interface CanvasState {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   focusNodeId: string | null;
+  displayMode: CanvasDisplayMode;
+  isoRotation: number;
   edgeLabelMode: EdgeLabelMode;
+  edgeRoutingMode: EdgeRoutingMode;
   schemaName: string;
   schemaDescription: string;
   schemaTags: string[];
+  dragSourceContainerId: string | null;
+  dragTargetContainerId: string | null;
+  dragBlockedContainerId: string | null;
+  activeDragNodeId: string | null;
+  dragOriginParentId: string | null;
+  dragGrabOffset: { x: number; y: number } | null;
+  dragBoundaryLocked: boolean;
   architectureId: string | null;
   isPublic: boolean;
   _history: { past: Snapshot[]; future: Snapshot[] };
@@ -155,16 +359,32 @@ interface CanvasState {
 
   addNode: (node: ComponentNode) => void;
   removeNode: (id: string) => void;
+  removeEdgesWhere: (predicate: (e: ComponentEdge) => boolean) => void;
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void;
+  toggleContainerCollapse: (nodeId: string) => void;
   selectNode: (id: string | null) => void;
   focusNode: (id: string) => void;
   clearFocus: () => void;
   selectEdge: (id: string | null) => void;
   updateEdgeData: (id: string, data: Partial<EdgeData>) => void;
   setNodeParent: (nodeId: string, parentId: string | null) => void;
+  setNodeParentAtCanvasPosition: (nodeId: string, parentId: string, position: { x: number; y: number }) => void;
+  liveSetNodeParentAtCanvasPosition: (nodeId: string, parentId: string, position: { x: number; y: number }) => void;
+  detachNodeToCanvasPosition: (nodeId: string, position: { x: number; y: number }) => void;
+  liveDetachNodeToCanvasPosition: (nodeId: string, position: { x: number; y: number }) => void;
+  setDragContainerHints: (sourceId: string | null, targetId: string | null, blockedId?: string | null) => void;
+  clearDragContainerHints: () => void;
+  setActiveDrag: (nodeId: string, originParentId: string | null, grabOffset: { x: number; y: number }) => void;
+  setDragBoundaryLocked: (locked: boolean) => void;
+  clearActiveDrag: () => void;
+  normalizeNodes: () => void;
   getChildren: (nodeId: string) => ComponentNode[];
   getAncestors: (nodeId: string) => string[];
+  toggleDisplayMode: () => void;
+  rotateIso: (dir: 1 | -1) => void;
   cycleEdgeLabelMode: () => void;
+  cycleEdgeRoutingMode: () => void;
+  updateEdgeWaypoints: (edgeId: string, waypoints: Array<{ x: number; y: number }>) => void;
 
   setSchemaName: (name: string) => void;
   setSchemaDescription: (desc: string) => void;
@@ -193,28 +413,130 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   selectedNodeId: null,
   selectedEdgeId: null,
   focusNodeId: null,
+  displayMode: loadDisplayMode(),
+  isoRotation: 45,
   edgeLabelMode: 'auto',
+  edgeRoutingMode: 'bezier',
   schemaName: initial.schemaName,
   schemaDescription: initial.schemaDescription,
   schemaTags: initial.schemaTags,
+  dragSourceContainerId: null,
+  dragTargetContainerId: null,
+  dragBlockedContainerId: null,
+  activeDragNodeId: null,
+  dragOriginParentId: null,
+  dragGrabOffset: null,
+  dragBoundaryLocked: false,
   architectureId: null,
   isPublic: false,
   _history: { past: [], future: [] },
   _skipAutoSave: false,
 
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) });
+    const { activeDragNodeId } = get();
+    if (activeDragNodeId) {
+      // Suppress ALL position changes for the dragged node — we handle position in onNodeDrag
+      changes = changes.filter(c =>
+        !(c.type === 'position' && c.id === activeDragNodeId && c.position),
+      );
+    }
+    let updated = applyNodeChanges(changes, get().nodes);
+    // Re-run clamp/expand/z-index on structural changes
+    const needsClamp = changes.some(c => c.type === 'select' || c.type === 'dimensions' || c.type === 'position');
+    if (needsClamp) {
+      updated = clampNodesToContainerPadding(updated);
+    }
+    set({ nodes: updated });
   },
 
   onEdgesChange: (changes) => {
     const hasRemoval = changes.some(c => c.type === 'remove');
     if (hasRemoval) set({ ...pushHistory(get) });
+
+    // When an SC-resource edge is deleted, clear the corresponding targetNodeId
+    // so the panel stays in sync with the canvas.
+    if (hasRemoval) {
+      const removedIds = new Set(changes.filter(c => c.type === 'remove').map(c => c.id));
+      const edgesBefore = get().edges;
+      for (const edge of edgesBefore) {
+        if (!removedIds.has(edge.id)) continue;
+        const sh = edge.sourceHandle;
+        if (!sh) continue;
+        const scNode = get().nodes.find(n => n.id === edge.source);
+        if (!scNode || scNode.data.componentType !== 'service_container') continue;
+        const cfg = scNode.data.config as unknown as import('../types/index.ts').ServiceContainerConfig;
+        const patch: Record<string, unknown> = {};
+        if (sh === 'ratelimit-redis') {
+          patch.rateLimitRedisNodeId = '';
+        } else {
+          const match = sh.match(/^(dbpool|persistent|producer|ondemand):(.+)$/);
+          if (!match) continue;
+          const [, kind, resId] = match;
+          if (kind === 'dbpool')     patch.dbPools = cfg.dbPools.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'persistent') patch.persistentConns = cfg.persistentConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'producer')   patch.producers = cfg.producers.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+          if (kind === 'ondemand')   patch.onDemandConns = cfg.onDemandConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+        }
+        // Update the SC node config inline (history already pushed above)
+        set({
+          nodes: get().nodes.map(n =>
+            n.id === edge.source ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n,
+          ),
+        });
+      }
+    }
+
     set({ edges: applyEdgeChanges(changes, get().edges) as ComponentEdge[] });
   },
 
   onConnect: (connection: Connection) => {
+    const sourceNode = get().nodes.find(n => n.id === connection.source);
     const targetNode = get().nodes.find(n => n.id === connection.target);
+    const sourceType = sourceNode?.data.componentType;
     const targetType = targetNode?.data.componentType;
+
+    const sourceName = (sourceNode?.data.config.name as string)?.trim() || sourceNode?.data.label || sourceType || '?';
+    const targetName = (targetNode?.data.config.name as string)?.trim() || targetNode?.data.label || targetType || '?';
+
+    // Reject duplicate (source, sourceHandle, target, targetHandle) — each port pair must be unique
+    const isDuplicate = get().edges.some(e =>
+      e.source === connection.source &&
+      e.target === connection.target &&
+      (e.sourceHandle ?? null) === (connection.sourceHandle ?? null) &&
+      (e.targetHandle ?? null) === (connection.targetHandle ?? null),
+    );
+    if (isDuplicate) {
+      notify.warn(`Connection ${sourceName} → ${targetName} already exists`);
+      return;
+    }
+
+    // Validate SC consumer ports — only brokers (kafka, rabbitmq, nats) can connect to consumer handles
+    if (connection.targetHandle?.startsWith('consumer:') && sourceType) {
+      const SC_CONSUMER_ALLOWED_SOURCES = new Set(['kafka', 'rabbitmq', 'nats']);
+      if (!SC_CONSUMER_ALLOWED_SOURCES.has(sourceType)) {
+        notify.warn(`Consumer port accepts only message brokers (Kafka, RabbitMQ, NATS), not ${sourceType}`);
+        return;
+      }
+    }
+
+    // Validate LB targets — only compute/gateway nodes
+    if (sourceType === 'load_balancer' && targetType) {
+      const LB_ALLOWED_TARGETS = new Set(['service', 'service_container', 'api_gateway', 'auth_service', 'serverless_function']);
+      if (!LB_ALLOWED_TARGETS.has(targetType)) {
+        notify.warn(`Load Balancer can only route to compute nodes, not ${targetType}`);
+        return;
+      }
+    }
+
+    // Validate API Gateway targets — route to services, LB, CDN, auth, serverless
+    if (sourceType === 'api_gateway' && targetType) {
+      const GW_ALLOWED_TARGETS = new Set(['service', 'service_container', 'load_balancer', 'auth_service', 'serverless_function', 'cdn']);
+      if (!GW_ALLOWED_TARGETS.has(targetType)) {
+        notify.warn(`API Gateway can only route to services, LB or CDN, not ${targetType}`);
+        return;
+      }
+    }
+
     let protocol: ProtocolType = 'REST';
     if (targetType && DISK_COMPONENT_TYPES.has(targetType)) {
       protocol = DISK_DEFAULT_PROTOCOL[targetType] ?? 'NVMe';
@@ -244,11 +566,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           insertIdx++;
         }
         updated.splice(insertIdx, 0, node);
-        set({ ...hist, nodes: updated });
+        set({ ...hist, nodes: clampNodesToContainerPadding(updated) });
         return;
       }
     }
-    set({ ...hist, nodes: [...nodes, node] });
+    set({ ...hist, nodes: clampNodesToContainerPadding([...nodes, node]) });
   },
 
   removeNode: (id) => {
@@ -261,12 +583,42 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     };
     collect(id);
+
+    // Before removing edges, clear targetNodeId on SC resources whose edges are being removed.
+    // This preserves the resource config (pool size, delays, etc.) — only the binding is cleared.
+    let nodes = get().nodes;
+    const removedEdges = get().edges.filter(e => toRemove.has(e.source) || toRemove.has(e.target));
+    for (const edge of removedEdges) {
+      const sh = edge.sourceHandle;
+      if (!sh) continue;
+      const match = sh.match(/^(dbpool|persistent|producer|ondemand):(.+)$/);
+      if (!match) continue;
+      const [, kind, resId] = match;
+      const scNode = nodes.find(n => n.id === edge.source);
+      if (!scNode || scNode.data.componentType !== 'service_container') continue;
+      const cfg = scNode.data.config as unknown as import('../types/index.ts').ServiceContainerConfig;
+      const patch: Record<string, unknown> = {};
+      if (kind === 'dbpool')     patch.dbPools = cfg.dbPools.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'persistent') patch.persistentConns = cfg.persistentConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'producer')   patch.producers = cfg.producers.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      if (kind === 'ondemand')   patch.onDemandConns = cfg.onDemandConns.map(r => r.id === resId ? { ...r, targetNodeId: '' } : r);
+      nodes = nodes.map(n =>
+        n.id === edge.source ? { ...n, data: { ...n.data, config: { ...n.data.config, ...patch } } } : n,
+      );
+    }
+
     set({
       ...pushHistory(get),
-      nodes: get().nodes.filter((n) => !toRemove.has(n.id)),
+      nodes: nodes.filter((n) => !toRemove.has(n.id)),
       edges: get().edges.filter((e) => !toRemove.has(e.source) && !toRemove.has(e.target)),
       selectedNodeId: toRemove.has(get().selectedNodeId ?? '') ? null : get().selectedNodeId,
     });
+  },
+
+  removeEdgesWhere: (predicate) => {
+    const filtered = get().edges.filter((e) => !predicate(e));
+    if (filtered.length === get().edges.length) return; // nothing changed
+    set({ ...pushHistory(get), edges: filtered });
   },
 
   updateNodeConfig: (id, config) => {
@@ -278,8 +630,81 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
   },
 
+  toggleContainerCollapse: (nodeId) => {
+    set((state) => {
+      const node = state.nodes.find(n => n.id === nodeId);
+      if (!node) return {};
+
+      const isCurrentlyCollapsed = !!(node.data.config.collapsed as boolean);
+      const newCollapsed = !isCurrentlyCollapsed;
+
+      // Update node config and size
+      const HEADER_HEIGHT = 44; // CONFIG.CANVAS.CONTAINER_HEADER_HEIGHT
+      const updatedNodes = state.nodes.map(n => {
+        if (n.id === nodeId) {
+          const currentStyle = n.style ?? {};
+          const currentConfig = n.data.config;
+          // Save/restore expanded dimensions in config (not style — style goes to DOM)
+          const expandedH = newCollapsed
+            ? ((currentStyle.height as number) ?? 300)
+            : (currentConfig._expandedHeight as number | undefined);
+          const expandedW = newCollapsed
+            ? ((currentStyle.width as number) ?? 400)
+            : (currentConfig._expandedWidth as number | undefined);
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              config: {
+                ...currentConfig,
+                collapsed: newCollapsed,
+                ...(newCollapsed
+                  ? { _expandedHeight: expandedH, _expandedWidth: expandedW }
+                  : { _expandedHeight: undefined, _expandedWidth: undefined }
+                ),
+              },
+            },
+            style: newCollapsed
+              ? { ...currentStyle, height: HEADER_HEIGHT }
+              : { ...currentStyle, height: expandedH ?? 300, width: expandedW ?? 400 },
+          };
+        }
+        // Hide/show direct children
+        if (n.parentId === nodeId) {
+          return { ...n, hidden: newCollapsed };
+        }
+        return n;
+      });
+
+      // Get IDs of direct children that are being hidden/shown
+      const childIds = new Set(
+        state.nodes
+          .filter(n => n.parentId === nodeId)
+          .map(n => n.id)
+      );
+
+      // Hide/show edges that connect to hidden children
+      const updatedEdges = state.edges.map(e => {
+        const touchesChild = childIds.has(e.source) || childIds.has(e.target);
+        if (!touchesChild) return e;
+        return { ...e, hidden: newCollapsed };
+      });
+
+      return {
+        ...pushHistory(get),
+        nodes: updatedNodes,
+        edges: updatedEdges,
+      };
+    });
+    debouncedSave();
+  },
+
   selectNode: (id) => {
-    set({ selectedNodeId: id, selectedEdgeId: null });
+    set({
+      selectedNodeId: id,
+      selectedEdgeId: null,
+      nodes: get().nodes.map(n => ({ ...n, selected: n.id === id })),
+    });
   },
 
   focusNode: (id) => {
@@ -326,28 +751,61 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         return { ...rest, position: { x: abs.x, y: abs.y } } as ComponentNode;
       }
 
-      // Attach: compute position relative to new parent's absolute position
+      // Attach via panel: find free space inside the container
       const newParent = nodeMap.get(parentId);
       if (!newParent) return n;
-      const parentAbs = getAbsolutePosition(newParent, nodeMap);
-      const relX = abs.x - parentAbs.x;
-      const relY = abs.y - parentAbs.y;
-      // Clamp inside parent with some padding (35px top for header)
-      const pw = (newParent.style?.width as number) ?? (newParent.width ?? CONFIG.CANVAS.CONTAINER_DEFAULT_WIDTH);
-      const ph = (newParent.style?.height as number) ?? (newParent.height ?? CONFIG.CANVAS.CONTAINER_DEFAULT_HEIGHT);
-      return {
-        ...n,
-        parentId,
-        extent: 'parent' as const,
-        position: {
-          x: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_LEFT, Math.min(relX, pw - 100)),
-          y: Math.max(CONFIG.CANVAS.CONTAINER_PADDING_TOP, Math.min(relY, ph - 80)),
-        },
-      };
+      const pos = findFreeSpaceInContainer(n, newParent, nodes);
+      return { ...n, parentId, position: pos };
     });
 
     // Re-sort to maintain parent-before-child ordering
-    set({ nodes: sortNodesParentFirst(updated) });
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  setNodeParentAtCanvasPosition: (nodeId, parentId, position) => {
+    set({ ...pushHistory(get) });
+    const updated = attachNodeAtCanvasPosition(get().nodes, nodeId, parentId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  liveSetNodeParentAtCanvasPosition: (nodeId, parentId, position) => {
+    const updated = attachNodeAtCanvasPosition(get().nodes, nodeId, parentId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  detachNodeToCanvasPosition: (nodeId, position) => {
+    set({ ...pushHistory(get) });
+    const updated = detachNodeAtCanvasPosition(get().nodes, nodeId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  liveDetachNodeToCanvasPosition: (nodeId, position) => {
+    const updated = detachNodeAtCanvasPosition(get().nodes, nodeId, position);
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(updated)) });
+  },
+
+  setDragContainerHints: (sourceId, targetId, blockedId = null) => {
+    set({ dragSourceContainerId: sourceId, dragTargetContainerId: targetId, dragBlockedContainerId: blockedId });
+  },
+
+  clearDragContainerHints: () => {
+    set({ dragSourceContainerId: null, dragTargetContainerId: null, dragBlockedContainerId: null });
+  },
+
+  setActiveDrag: (nodeId, originParentId, grabOffset) => {
+    set({ activeDragNodeId: nodeId, dragOriginParentId: originParentId, dragGrabOffset: grabOffset, dragBoundaryLocked: false });
+  },
+
+  setDragBoundaryLocked: (locked) => {
+    set({ dragBoundaryLocked: locked });
+  },
+
+  clearActiveDrag: () => {
+    set({ activeDragNodeId: null, dragOriginParentId: null, dragGrabOffset: null, dragBoundaryLocked: false });
+  },
+
+  normalizeNodes: () => {
+    set({ nodes: clampNodesToContainerPadding(sortNodesParentFirst(get().nodes)) });
   },
 
   getChildren: (nodeId) => {
@@ -363,6 +821,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       current = nodeMap.get(current.parentId);
     }
     return ancestors;
+  },
+
+  toggleDisplayMode: () => {
+    set((state) => {
+      // Normalize isoRotation to [-180, 180] so CSS transition to 0° is short
+      const norm = ((state.isoRotation % 360) + 360) % 360;
+      const normalized = norm > 180 ? norm - 360 : norm;
+      return {
+        displayMode: state.displayMode === '2d' ? '3d' : '2d',
+        isoRotation: normalized,
+      };
+    });
+  },
+
+  rotateIso: (dir) => {
+    set((state) => ({
+      isoRotation: state.isoRotation + dir * 15,
+    }));
   },
 
   setSchemaName: (name) => {
@@ -390,6 +866,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const cur = get().edgeLabelMode;
     const next = order[(order.indexOf(cur) + 1) % order.length];
     set({ edgeLabelMode: next });
+  },
+
+  cycleEdgeRoutingMode: () => {
+    const order: EdgeRoutingMode[] = ['bezier', 'orthogonal'];
+    const cur = get().edgeRoutingMode;
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    set({ edgeRoutingMode: next });
+  },
+
+  updateEdgeWaypoints: (edgeId, waypoints) => {
+    const edges = get().edges.map(e =>
+      e.id === edgeId ? { ...e, data: { ...(e.data ?? {}), waypoints } as ComponentEdge['data'] } : e,
+    );
+    set({ ...pushHistory(get), edges });
   },
 
   exportSchema: () => {
@@ -477,6 +967,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
     }
 
+    // Migrate ServiceContainerConfig: fill missing optional fields with defaults
+    for (const node of nodes) {
+      if (node.data.componentType === 'service' && Array.isArray(node.data.config.pipelines)) {
+        const cfg = node.data.config;
+        if (cfg.dbPools === undefined)       cfg.dbPools = [];
+        if (cfg.persistentConns === undefined) cfg.persistentConns = [];
+        if (cfg.producers === undefined)     cfg.producers = [];
+        if (cfg.onDemandConns === undefined) cfg.onDemandConns = [];
+        if (cfg.internalLatency === undefined) cfg.internalLatency = 2;
+        if (cfg.collapsed === undefined)     cfg.collapsed = true;
+      }
+    }
+
     // Validate edges — drop broken references and edges to/from containers
     const nodeIds = new Set(nodes.map(n => n.id));
     const nodeById = new Map(nodes.map(n => [n.id, n]));
@@ -509,7 +1012,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
     set({
       ...pushHistory(get),
-      nodes: sortNodesParentFirst(nodes),
+      nodes: clampNodesToContainerPadding(sortNodesParentFirst(nodes)),
       edges: validEdges,
       selectedNodeId: null,
       selectedEdgeId: null,
@@ -731,6 +1234,10 @@ useCanvasStore.subscribe((state, prev) => {
   // Cross-tab broadcast: metadata
   if (metaChanged) {
     postTabMessage({ type: 'canvas:meta', name: state.schemaName, description: state.schemaDescription, tags: state.schemaTags });
+  }
+
+  if (state.displayMode !== prev.displayMode) {
+    localStorage.setItem(DISPLAY_MODE_KEY, state.displayMode);
   }
 });
 

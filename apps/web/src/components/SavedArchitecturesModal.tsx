@@ -28,7 +28,7 @@ export function SavedArchitecturesModal({ onClose }: { onClose: () => void }) {
       return;
     }
     let cancelled = false;
-    listArchitectures(user.id)
+    listArchitectures()
       .then((data) => { if (!cancelled) setItems(data); })
       .catch((e: Error) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });

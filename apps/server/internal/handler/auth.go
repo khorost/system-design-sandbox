@@ -22,7 +22,7 @@ type AuthHandler struct {
 	RedisAuth *auth.RedisAuth
 	Email     auth.EmailSender
 	Config    *config.Config
-	GeoIP     *geoip.Lookup
+	GeoIP     *geoip.Client
 }
 
 // --- Request/Response types ---
@@ -53,6 +53,11 @@ type authResponse struct {
 // SendCode handles POST /api/v1/auth/send-code
 // Unified entry point: creates user if not exists, sends auth code.
 func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req sendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -113,6 +118,11 @@ func (h *AuthHandler) AuthConfig(w http.ResponseWriter, r *http.Request) {
 
 // Verify handles POST /api/v1/auth/verify (magic link)
 func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req verifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -139,6 +149,11 @@ func (h *AuthHandler) Verify(w http.ResponseWriter, r *http.Request) {
 
 // VerifyCode handles POST /api/v1/auth/verify-code
 func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	var req verifyCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -176,6 +191,11 @@ func (h *AuthHandler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 // Logout handles POST /api/v1/auth/logout
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if h.RedisAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication is unavailable")
+		return
+	}
+
 	authUser, ok := GetAuthUser(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
@@ -269,10 +289,12 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 
 	ip := clientIP(r)
 	now := time.Now().UTC().Format(time.RFC3339)
+	geo := h.GeoIP.Lookup(r.Context(), ip)
 	sessData := auth.SessionData{
 		UserID:       userIDStr,
 		IP:           ip,
-		Geo:          h.GeoIP.City(ip),
+		Geo:          geo.Formatted,
+		CountryCode:  geo.CountryCode,
 		CreatedAt:    now,
 		LastActiveAt: now,
 	}
@@ -285,12 +307,13 @@ func (h *AuthHandler) completeVerification(w http.ResponseWriter, r *http.Reques
 	// Log login
 	if h.Config.SessionLogEnabled {
 		_ = h.Store.CreateSessionLog(r.Context(), model.SessionLogEntry{
-			UserID:    user.ID,
-			SessionID: sessionID,
-			Action:    "login",
-			IP:        ip,
-			UserAgent: r.UserAgent(),
-			Geo:       h.GeoIP.City(ip),
+			UserID:      user.ID,
+			SessionID:   sessionID,
+			Action:      "login",
+			IP:          ip,
+			UserAgent:   r.UserAgent(),
+			Geo:         geo.Formatted,
+			CountryCode: geo.CountryCode,
 		})
 	}
 

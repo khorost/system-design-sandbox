@@ -36,10 +36,11 @@ func NewRedis(ctx context.Context, cfg config.RedisConfig) (redis.UniversalClien
 			return nil, fmt.Errorf("REDIS_SENTINEL_URL is required when REDIS_SENTINEL_ACTIVE=true")
 		}
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
-			MasterName:    cfg.SentinelMaster,
-			SentinelAddrs: cfg.SentinelURLs,
-			Password:      cfg.Password,
-			DB:            cfg.DB,
+			MasterName:       cfg.SentinelMaster,
+			SentinelAddrs:    cfg.SentinelURLs,
+			SentinelPassword: cfg.SentinelPassword,
+			Password:         cfg.Password,
+			DB:               cfg.DB,
 		})
 		slog.Info("redis: connecting via sentinel", "master", cfg.SentinelMaster, "sentinels", cfg.SentinelURLs, "db", cfg.DB)
 	} else {

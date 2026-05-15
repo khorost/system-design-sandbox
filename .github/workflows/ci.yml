@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: apps/server/go.mod
-          cache-dependency-path: apps/server/go.sum
+          cache: false
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.10.1
@@ -98,7 +98,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: apps/server/go.mod
-          cache-dependency-path: apps/server/go.sum
+          cache: false
       - name: Run Go tests
         working-directory: apps/server
         run: go test ./...

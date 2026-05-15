@@ -1,0 +1,44 @@
+syntax = "proto3";
+package geoip.v1;
+option go_package = "github.com/system-design-sandbox/server/internal/geoip/proto";
+
+service GeoIPService {
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  rpc BatchLookup(BatchLookupRequest) returns (BatchLookupResponse);
+  rpc MyIP(MyIPRequest) returns (LookupResponse);
+  rpc GetDBInfo(DBInfoRequest) returns (DBInfoResponse);
+}
+
+message LookupRequest {
+  string ip = 1;
+}
+
+message LookupResponse {
+  string ip = 1;
+  string city = 2;
+  string country = 3;
+  string country_code = 4;
+  double latitude = 5;
+  double longitude = 6;
+  string formatted = 7;
+  bool found = 8;
+}
+
+message BatchLookupRequest {
+  repeated string ips = 1;
+}
+
+message BatchLookupResponse {
+  repeated LookupResponse results = 1;
+}
+
+message MyIPRequest {}
+
+message DBInfoRequest {}
+
+message DBInfoResponse {
+  string db_type = 1;
+  int64  build_epoch = 2;
+  string build_date = 3;
+  bool   loaded = 4;
+}

@@ -18,7 +18,7 @@ export function PlatformStatus() {
 
   return (
     <div
-      className="relative flex items-center gap-1.5 text-[11px] text-slate-400 cursor-default"
+      className="relative flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[rgba(6,13,19,0.48)] px-3 py-1.5 text-[11px] text-slate-400 cursor-default"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -26,7 +26,7 @@ export function PlatformStatus() {
       <span>{metrics.usersOnline} online</span>
 
       {hover && (
-        <div className="absolute top-full right-0 mt-1 z-50 w-48 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 shadow-lg text-xs text-slate-300 space-y-1">
+        <div className="absolute top-full right-0 mt-2 z-50 w-52 px-3 py-3 rounded-xl bg-[linear-gradient(180deg,rgba(19,32,44,0.97),rgba(10,17,24,0.98))] border border-[var(--color-border)] shadow-[var(--shadow-panel)] text-xs text-slate-300 space-y-2">
           <div className="flex justify-between">
             <span>Users online</span>
             <span className="text-white font-medium">{metrics.usersOnline}</span>
