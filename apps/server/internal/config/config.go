@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+type GeoIPConfig struct {
+	GRPCAddr string
+	RESTURL  string
+}
+
 type Config struct {
 	DatabaseURL          string
 	ServerPort           string
@@ -17,7 +22,7 @@ type Config struct {
 	RateLimit            RateLimitConfig
 	PublicURL            string
 	ReferralFieldEnabled bool
-	MaxMindPath          string
+	GeoIP                GeoIPConfig
 	SessionLogEnabled    bool
 }
 
@@ -181,7 +186,10 @@ func Load() (*Config, error) {
 		PublicURL:            publicURL,
 		ReferralFieldEnabled: referralFieldEnabled,
 		SessionLogEnabled:    sessionLogEnabled,
-		MaxMindPath:          os.Getenv("MAXMIND_GEOLITE2"),
+		GeoIP: GeoIPConfig{
+			GRPCAddr: os.Getenv("GEOIP_GRPC_ADDR"),
+			RESTURL:  os.Getenv("GEOIP_REST_URL"),
+		},
 		Redis: RedisConfig{
 			URL:              os.Getenv("REDIS_URL"),
 			Password:         os.Getenv("REDIS_PASSWORD"),
