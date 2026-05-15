@@ -33,6 +33,11 @@ func NewRouter(cfg *config.Config, store *storage.Storage, redisAuth *auth.Redis
 	}
 	r.Get("/ws", wsH.ServeHTTP)
 
+	// Health check (probes, no logging)
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// Prometheus metrics
 	r.Handle("/metrics", promhttp.Handler())
 
