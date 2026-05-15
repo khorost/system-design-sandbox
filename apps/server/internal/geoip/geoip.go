@@ -116,7 +116,7 @@ func (c *Client) lookupREST(ctx context.Context, ip string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return Result{}, fmt.Errorf("geoip REST: status %d", resp.StatusCode)
@@ -174,7 +174,7 @@ func (c *Client) logDBInfo() {
 		if err == nil {
 			resp, err := c.httpClient.Do(req)
 			if err == nil {
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				var info struct {
 					DBType    string `json:"db_type"`
 					BuildDate string `json:"build_date"`
