@@ -11,7 +11,6 @@ jobs:
       web: ${{ steps.changes.outputs.web }}
       server: ${{ steps.changes.outputs.server }}
       tag: ${{ steps.meta.outputs.tag }}
-      env_name: ${{ steps.meta.outputs.env_name }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -45,19 +44,17 @@ jobs:
 
       - id: meta
         run: |
-          # Определяем Docker-тег и окружение деплоя
-          #   develop → :latest  + env=beta
-          #   main    → :stable  + env=prod
-          #   v*      → :version + env= (no deploy)
+          # Определяем Docker-тег
+          #   develop → :latest
+          #   main    → :stable
+          #   v*      → :version
+          # Деплой через ArgoCD Image Updater (отслеживает digest)
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-            echo "env_name=" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
             echo "tag=stable" >> "$GITHUB_OUTPUT"
-            echo "env_name=prod" >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_REF" == refs/heads/develop ]]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "env_name=beta" >> "$GITHUB_OUTPUT"
           fi
 
   lint:
@@ -128,26 +125,6 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker tag sdsandbox-web:$TAG khorost/sdsandbox-web:$TAG
           docker push khorost/sdsandbox-web:$TAG
-      - name: Deploy to prod
-        if: needs.detect-changes.outputs.env_name == 'prod'
-        run: |
-          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-web-live/${{ secrets.UPDATER_KEY }}?async=1")
-          echo "Response: $RESPONSE"
-          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
-          if [ "$SUBMITTED" != "ok" ]; then
-            echo "Updater call failed, submitted=$SUBMITTED"
-            exit 1
-          fi
-      - name: Deploy to beta
-        if: needs.detect-changes.outputs.env_name == 'beta'
-        run: |
-          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-web-beta/${{ secrets.UPDATER_KEY }}?async=1")
-          echo "Response: $RESPONSE"
-          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
-          if [ "$SUBMITTED" != "ok" ]; then
-            echo "Updater call failed, submitted=$SUBMITTED"
-            exit 1
-          fi
 
   build-server:
     needs: [detect-changes, lint-server, test-server]
@@ -176,23 +153,3 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker tag sdsandbox-server:$TAG khorost/sdsandbox-server:$TAG
           docker push khorost/sdsandbox-server:$TAG
-      - name: Deploy to prod
-        if: needs.detect-changes.outputs.env_name == 'prod'
-        run: |
-          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-api-live/${{ secrets.UPDATER_KEY }}?async=1")
-          echo "Response: $RESPONSE"
-          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
-          if [ "$SUBMITTED" != "ok" ]; then
-            echo "Updater call failed, submitted=$SUBMITTED"
-            exit 1
-          fi
-      - name: Deploy to beta
-        if: needs.detect-changes.outputs.env_name == 'beta'
-        run: |
-          RESPONSE=$(curl -s "${{ secrets.UPDATER_URL }}/update/sdsandbox-api-beta/${{ secrets.UPDATER_KEY }}?async=1")
-          echo "Response: $RESPONSE"
-          SUBMITTED=$(echo "$RESPONSE" | jq -r '.submitted')
-          if [ "$SUBMITTED" != "ok" ]; then
-            echo "Updater call failed, submitted=$SUBMITTED"
-            exit 1
-          fi
